@@ -89,6 +89,13 @@ unsigned int minimumStep;
 - (void)delayedFullLODRendering:(id)dummy;
 @end;
 
+// SekhVet Paket BK (macOS 27): zusammengeklappte MPR-Ansichten behalten einen Rest von 2 pt. Eine Ansicht mit 0 Pixeln
+// laesst AppKit beim Anbinden/Zeichnen des GL-Kontexts in CABackingStoreEndUpdate abbrechen (Absturz beim Doppelklick-Zoom).
+#define SEKHMET_SPLIT_REST 2
+// Ansichten schmaler als SEKHMET_MIN_VIEW gelten als zusammengeklappt: nicht zeichnen, nicht rendern, den gemeinsamen
+// vrView nicht auf ihre Groesse setzen (sonst zeigt eine wachsende Nachbaransicht ein weisses Bild, Befund 17.09. in der VM).
+#define SEKHMET_MIN_VIEW 8
+
 @implementation MPRDCMView
 
 @synthesize dontUseAutoLOD, pix, camera, angleMPR, vrView, viewExport, toIntervalExport, fromIntervalExport, rotateLines, moveCenter, displayCrossLines, LOD;
@@ -192,7 +199,26 @@ unsigned int minimumStep;
 		blendingView.drawingFrameRect = [self convertRectToBacking: frameRect]; // very important to have correct position values with PET-CT
 	}
 	
+	// SekhVet Paket BK (macOS 27): eine auf 0 Pixel zusammengeklappte Ansicht (Doppelklick-Zoom, Teiler am Anschlag)
+	// darf ihren GL-Kontext nicht mehr an das Fenster binden. AppKit ruft in [super setFrame:] [NSOpenGLContext update],
+	// und QuartzCore bricht unter macOS 27 mit einer Assertion in CABackingStoreEndUpdate ab (Absturz 17.09.2026,
+	// Doppelklick im Double-MPR). Zeichenflaeche loesen, solange die Ansicht keine Flaeche hat; wieder anbinden,
+	// sobald sie eine bekommt.
+	BOOL sekhmetDegenerate = (frameRect.size.width < 1 || frameRect.size.height < 1);
+	if( sekhmetDegenerate && sekhmetGLDetached == NO)
+	{
+		[[self openGLContext] clearDrawable];
+		sekhmetGLDetached = YES;
+	}
+	
 	[super setFrame: frameRect];
+	
+	if( sekhmetDegenerate == NO && sekhmetGLDetached)
+	{
+		[[self openGLContext] setView: self];
+		sekhmetGLDetached = NO;
+		[self setNeedsDisplay: YES];
+	}
     
     NSEnableScreenUpdates();
 }
@@ -217,13 +243,13 @@ unsigned int minimumStep;
 	for( int i = 0; i < 3; i++)
 	{
 		MPRDCMView *v = views[ i];
-		if( v == nil || [v frame].size.width < 1 || [v frame].size.height < 1) continue;
+		if( v == nil || [v frame].size.width < SEKHMET_MIN_VIEW || [v frame].size.height < SEKHMET_MIN_VIEW) continue;
 		v.camera.forceUpdate = YES;
 		[v restoreCamera];            // setzt ueber checkForFrame den gemeinsamen vrView auf die Groesse dieser Ansicht
 		[v updateViewMPR];
 	}
 	// die angeklickte Ansicht zuletzt, damit der vrView mit ihrer Groesse stehen bleibt
-	if( [self frame].size.width >= 1 && [self frame].size.height >= 1)
+	if( [self frame].size.width >= SEKHMET_MIN_VIEW && [self frame].size.height >= SEKHMET_MIN_VIEW)
 	{
 		camera.forceUpdate = YES;
 		[self restoreCamera];
@@ -236,7 +262,7 @@ unsigned int minimumStep;
 	if( sekhmetDetached || windowController == nil) return;
 	MPRDCMView *views[ 3] = { windowController.mprView1, windowController.mprView2, windowController.mprView3 };
 	for( int i = 0; i < 3; i++)
-		if( views[ i] && [views[ i] frame].size.width >= 1 && [views[ i] frame].size.height >= 1)
+		if( views[ i] && [views[ i] frame].size.width >= SEKHMET_MIN_VIEW && [views[ i] frame].size.height >= SEKHMET_MIN_VIEW)
 			[[views[ i] openGLContext] update];   // Zeichenflaeche des NSOpenGLView auf den neuen Rahmen bringen
 	[self sekhmetRenderVisibleViews];
 	for( int i = 0; i < 3; i++) [views[ i] setNeedsDisplay: YES];
@@ -250,7 +276,7 @@ unsigned int minimumStep;
 	
 	// SekhVet Paket BF: eine zusammengeklappte Ansicht (Doppelklick-Zoom, Teiler am Anschlag) darf den GEMEINSAMEN
 	// vrView nicht auf null Flaeche setzen — jede spaetere Ausgabe der anderen Ansichten rendert sonst gegen 0 Pixel.
-	if( frame.size.width < 1 || frame.size.height < 1)
+	if( frame.size.width < SEKHMET_MIN_VIEW || frame.size.height < SEKHMET_MIN_VIEW)
 		return;
 	
 	if( NSEqualRects( frame, [vrView frame]) == NO)
@@ -338,6 +364,12 @@ unsigned int minimumStep;
 {
 	if( v)
 		[self checkForFrame];
+	// SekhVet Paket BK: die Kamera traegt eine eigene Fensterung, und VRView setCamera: wendet sie an (ww > 1). Ist sie
+	// veraltet (Kamera vom gemeinsamen vrView, Fensterung des 2D-Viewers), springt die sichtbare Fensterung beim
+	// Doppelklick-Zoom oder Double-MPR-Mitlauf (Weichteil -> Knochen, 0/2; macOS-27-VM 17.09.2026). Die Fensterung
+	// des angezeigten Schnittbilds ist die Wahrheit.
+	if( camera && self.curDCM && self.curDCM.ww > 1)
+		[camera setWLWW: self.curDCM.wl : self.curDCM.ww];
 	[vrView setCamera: camera];
 }
 
@@ -402,17 +434,17 @@ unsigned int minimumStep;
 
 - (void) updateViewMPROnLoading:(BOOL) isLoading :(BOOL) computeCrossReferenceLines
 {
-    if( [self frame].size.width <= 0)
+    if( [self frame].size.width < SEKHMET_MIN_VIEW)
         return;
     
-    if( [self frame].size.height <= 0)
+    if( [self frame].size.height < SEKHMET_MIN_VIEW)
         return;
     
     // SekhVet Paket AV: zweiter Riegel — der vrView ist EIN gemeinsamer VTK-Blick fuer alle drei
     // Ansichten und traegt waehrend eines Teilerwechsels kurz die Groesse einer zusammengeklappten
     // Ansicht. Ein Renderziel ohne Flaeche liefert ein schwarzes oder weisses Bild; wir lassen den
     // Durchgang aus, die 0,1-s-Nachzuegler-Aktualisierung (setFrame:) holt ihn nach.
-    if( [vrView frame].size.width < 1 || [vrView frame].size.height < 1)
+    if( [vrView frame].size.width < SEKHMET_MIN_VIEW || [vrView frame].size.height < SEKHMET_MIN_VIEW)
         return;
     
     long h, w;
@@ -470,7 +502,7 @@ unsigned int minimumStep;
         else
             [vrView setLOD: LOD];
         
-        if( [self frame].size.width > 0 && [self frame].size.height > 0)
+        if( [self frame].size.width >= SEKHMET_MIN_VIEW && [self frame].size.height >= SEKHMET_MIN_VIEW)
         {
             if( windowController.maxMovieIndex > 1 && (windowController.clippingRangeMode == 1 || windowController.clippingRangeMode == 3 || windowController.clippingRangeMode == 2))	//To avoid the wrong pixel value bug...
                 [vrView prepareFullDepthCapture];
@@ -838,6 +870,9 @@ unsigned int minimumStep;
 - (void) drawRect:(NSRect) r
 {
     if( sekhmetDetached) return;
+    // SekhVet Paket BK (macOS 27): eine Ansicht ohne Flaeche (Doppelklick-Zoom) nie zeichnen — das layer-backed
+    // NSOpenGLView ruft drawRect: trotzdem, und flushBuffer bricht dann in CABackingStoreEndUpdate ab.
+    if( [self frame].size.width < SEKHMET_MIN_VIEW || [self frame].size.height < SEKHMET_MIN_VIEW) return;
     [super drawRect: r];
 }
 
@@ -1664,18 +1699,18 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 				switch( viewID)
 				{
 					case 1:
-						[windowController.horizontalSplit setPosition: [windowController.horizontalSplit maxPossiblePositionOfDividerAtIndex: 0] ofDividerAtIndex: 0];
-						[windowController.verticalSplit setPosition: [windowController.verticalSplit maxPossiblePositionOfDividerAtIndex: 0] ofDividerAtIndex: 0];
+						[windowController.horizontalSplit setPosition: [windowController.horizontalSplit maxPossiblePositionOfDividerAtIndex: 0] - SEKHMET_SPLIT_REST ofDividerAtIndex: 0];
+						[windowController.verticalSplit setPosition: [windowController.verticalSplit maxPossiblePositionOfDividerAtIndex: 0] - SEKHMET_SPLIT_REST ofDividerAtIndex: 0];
 					break;
 					
 					case 2:
-						[windowController.horizontalSplit setPosition: [windowController.horizontalSplit minPossiblePositionOfDividerAtIndex: 0] ofDividerAtIndex: 0];
-						[windowController.verticalSplit setPosition: [windowController.verticalSplit maxPossiblePositionOfDividerAtIndex: 0] ofDividerAtIndex: 0];
+						[windowController.horizontalSplit setPosition: [windowController.horizontalSplit minPossiblePositionOfDividerAtIndex: 0] + SEKHMET_SPLIT_REST ofDividerAtIndex: 0];
+						[windowController.verticalSplit setPosition: [windowController.verticalSplit maxPossiblePositionOfDividerAtIndex: 0] - SEKHMET_SPLIT_REST ofDividerAtIndex: 0];
 					break;
 					
 					case 3:
-						[windowController.horizontalSplit setPosition: [windowController.horizontalSplit minPossiblePositionOfDividerAtIndex: 0] ofDividerAtIndex: 0];
-						[windowController.verticalSplit setPosition: [windowController.verticalSplit minPossiblePositionOfDividerAtIndex: 0] ofDividerAtIndex: 0];
+						[windowController.horizontalSplit setPosition: [windowController.horizontalSplit minPossiblePositionOfDividerAtIndex: 0] + SEKHMET_SPLIT_REST ofDividerAtIndex: 0];
+						[windowController.verticalSplit setPosition: [windowController.verticalSplit minPossiblePositionOfDividerAtIndex: 0] + SEKHMET_SPLIT_REST ofDividerAtIndex: 0];
 					break;
 				}
 			}
@@ -1690,6 +1725,10 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 			// traegt der GEMEINSAME vrView noch die Groesse der Ansicht, die der Teilerwechsel
 			// gerade auf 0 zusammenklappt (gemessen: vrView 0x942) — das gibt ein tiefschwarzes
 			// und beim Zurueckstellen ein weisses Bild. Rueckmeldung 15.09.
+			// SekhVet Paket BK: der Doppelklick ist ein Zoom, kein Werkzeugklick. Das folgende mouseUp (und ein etwaiges
+			// mouseDragged) darf nicht an DCMView gehen — dort rechnet der WL/WW-Handler den Mausweg gegen den Startpunkt,
+			// und die Ansicht ist inzwischen verschoben/vergroessert: Fensterung springt um Hunderte (2150/400, WW 2; VM 17.09.).
+			sekhmetZoomClick = YES;
 			[NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetFinishZoom) object: nil];
 			[self performSelector: @selector(sekhmetFinishZoom) withObject: nil afterDelay: 0 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
 		}
@@ -1785,6 +1824,13 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 - (void) mouseUp:(NSEvent *)theEvent
 {
 	[self checkCursor];
+	
+	if( sekhmetZoomClick) // SekhVet Paket BK: Ende des Doppelklick-Zooms, kein Werkzeug
+	{
+		sekhmetZoomClick = NO;
+		windowController.lowLOD = NO;
+		return;
+	}
 	
 	[NSObject cancelPreviousPerformRequestsWithTarget: windowController selector:@selector(delayedFullLODRendering:) object: nil];
 	
@@ -1913,6 +1959,7 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 
 - (void) mouseDragged:(NSEvent *)theEvent
 {
+	if( sekhmetZoomClick) return; // SekhVet Paket BK
 	[self restoreCamera];
 	
 	if( rotateLines)

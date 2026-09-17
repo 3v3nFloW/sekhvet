@@ -44,8 +44,7 @@ or not yet on a real device; they are marked **experimental** here and in the ma
 | Opening protocols, two-view radiograph hanging | **experimental**, device verification running |
 | Spine labeling | **experimental**, counting logic still being adjusted |
 | Ultrasound calibration from a neighbouring image | **experimental**, one device tested (Mindray Vetus 9) |
-| MPR double-click zoom | rare black or white view after the double-click; safeguards in build 92, diagnostic line in the system log |
-| macOS 27 | one test installation; daily use is on macOS 26 |
+| macOS 27 | tested in a test installation (double MPR with a large CT, double-click zoom); daily use is on macOS 26 |
 
 What a beta means here: no function is known to corrupt data, measurements are reproducible on
 the devices tested, but wording, defaults and edge cases will still change between builds. Keep
@@ -55,7 +54,11 @@ Horos or OsiriX installed alongside if you depend on them; SekhVet does not touc
 
 Horos is a good viewer, but it thinks in human terms: A/P and S/I orientation letters, hanging
 protocols for an upright patient, no spine counting with 13 thoracic vertebrae, no Norberg
-angle. Upstream Horos has seen almost no maintenance since 2025.
+angle. Upstream Horos has seen almost no maintenance since 2025, and Horos 4.0.1 freezes or
+crashes on macOS 27 in several viewer situations. SekhVet includes most of the macOS 27 fixes
+proposed for Horos in [horosproject/horos#870](https://github.com/horosproject/horos/pull/870)
+(viewer windows, VTK initialisation, process scan) plus its own fixes for toolbar icons and the
+MPR double-click zoom.
 
 SekhVet keeps the Horos core untouched — database, 2D viewer, 3D MPR, volume rendering, CPR,
 fusion, subtraction, key images, export, DICOM networking, plugins — and adds what is missing
@@ -71,7 +74,7 @@ Everything below lives in the **Vet Tools** menu unless stated otherwise.
 | **Orientation letters** | Cr/Cd and D/V instead of A/P and S/I, in 2D, MPR and on the 3D orientation cube |
 | **Hanging protocol** | Presets Head/Spine, Limbs, Custom; orientation rules per preset; keyword rules per study description; rotation and flip rules per radiography device; works in the 3D MPR too |
 | **Opening protocols** | Which series open on double-click, in which layout and with which window; templates for MR head, spine and stifle; two-view radiographs hang VD left, lateral right |
-| **Window presets** | Modality and description rules for window level and width on opening |
+| **Window presets** | Modality and description rules for window level and width on opening; editable global WL/WW presets ("CT - Bone", "CT - Abdomen" …) |
 | **Spine labeling** | Click counter for dog/cat, rabbit and horse; disc labels; rename with recount; labels stored as ROIs and shown in all planes, with the vertebral level in the transverse view |
 | **Norberg angle** | Hip dysplasia measurement on the VD pelvis: draggable femoral head circles, radius grip and mouse wheel, live angle, value stored with the study |
 | **Distraction index** | PennHIP-style laxity measurement on the distraction view, sharing the femoral head circles with the Norberg angle; optional risk level |
@@ -96,7 +99,7 @@ Removed from Horos: the Horos Cloud plugin and the hourly update check.
 ## Requirements
 
 - Apple Silicon Mac (M1 or later). There is no Intel build.
-- macOS 12 Monterey or later. Tested on macOS 26 Tahoe; one test installation on macOS 27.
+- macOS 12 Monterey or later. Tested on macOS 26 Tahoe (daily use) and macOS 27 (test installation).
 - For DICOMweb: a server offering QIDO-RS and WADO-RS, for example Orthanc with the DICOMweb
   plugin.
 

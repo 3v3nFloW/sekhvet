@@ -361,6 +361,10 @@ static float deg2rad = M_PI/180.0;
 
 - (void) windowDidLoad
 {
+	// SekhVet Paket BK: die Split-Views haben im xib keinen Delegate; Teiler nie auf 0 (siehe NSSplitViewDelegate unten).
+	[horizontalSplit setDelegate: self];
+	[verticalSplit setDelegate: self];
+
     [super windowDidLoad];
     NSLog(@"MPRController windowDidLoad");
 }
@@ -3533,6 +3537,23 @@ static float deg2rad = M_PI/180.0;
 	[[NSUserDefaults standardUserDefaults] setFloat:[colorAxis3 greenComponent] forKey:@"MPR_AXIS_3_GREEN"];
 	[[NSUserDefaults standardUserDefaults] setFloat:[colorAxis3 blueComponent] forKey:@"MPR_AXIS_3_BLUE"];
 	[[NSUserDefaults standardUserDefaults] setFloat:[colorAxis3 alphaComponent] forKey:@"MPR_AXIS_3_ALPHA"];
+}
+
+
+#pragma mark - NSSplitViewDelegate (SekhVet Paket BK)
+// macOS 27: eine auf 0 Pixel zusammengeklappte MPR-Ansicht bringt AppKit in CABackingStoreEndUpdate zum Abbruch
+// (Doppelklick-Zoom und Teiler am Anschlag). Der Teiler bleibt darum immer 2 pt vom Rand weg, kein Collapse.
+- (CGFloat) splitView:(NSSplitView*) sv constrainMinCoordinate:(CGFloat) proposedMin ofSubviewAt:(NSInteger) idx
+{
+	return proposedMin + 2;
+}
+- (CGFloat) splitView:(NSSplitView*) sv constrainMaxCoordinate:(CGFloat) proposedMax ofSubviewAt:(NSInteger) idx
+{
+	return proposedMax - 2;
+}
+- (BOOL) splitView:(NSSplitView*) sv canCollapseSubview:(NSView*) subview
+{
+	return NO;
 }
 
 @end

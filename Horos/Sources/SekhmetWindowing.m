@@ -10,6 +10,7 @@
 #import "DicomStudy.h"
 #import "DicomSeries.h"
 #import "DCM.h"
+#import "Notifications.h"
 
 static NSString* const SekhmetWLWWRulesVersionKey = @"SekhmetWLWWRulesVersion"; // SekhVet Paket AH: 2 = Regeln nach Kernel
 #define SEKHMET_WLWW_RULES_VERSION 2
@@ -161,15 +162,16 @@ static SekhmetWindowingPanel *sekhmetWindowingPanel = nil;
 
 - (id) init
 {
-    NSWindow *w = [[[NSWindow alloc] initWithContentRect: NSMakeRect( 0, 0, 640, 360)
+    NSWindow *w = [[[NSWindow alloc] initWithContentRect: NSMakeRect( 0, 0, 640, 650)
                                                styleMask: NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                                                  backing: NSBackingStoreBuffered defer: NO] autorelease];
-    [w setTitle: NSLocalizedString( @"SekhVet — Window Presets (WL/WW on open)", nil)];
+    [w setTitle: NSLocalizedString( @"SekhVet — Window Presets (WL/WW)", nil)];
     [w setReleasedWhenClosed: NO];
     self = [super initWithWindow: w];
     if( self)
     {
         rules = [[NSMutableArray alloc] init];
+        presets = [[NSMutableArray alloc] init];
         [self buildUI];
         [self loadFromDefaults];
         [w center];
@@ -180,6 +182,7 @@ static SekhmetWindowingPanel *sekhmetWindowingPanel = nil;
 - (void) dealloc
 {
     [rules release];
+    [presets release];
     [super dealloc];
 }
 
@@ -211,7 +214,7 @@ static SekhmetWindowingPanel *sekhmetWindowingPanel = nil;
 - (void) buildUI
 {
     NSView *cv = [[self window] contentView];
-    float y = 360 - 36;
+    float y = 650 - 36;
 
     NSTextField *hint = [self label: NSLocalizedString( @"When a series opens, the first matching rule (top to bottom) sets WL/WW. Keywords: study/series description, convolution kernel (0018,1210) or body part contains one of the words, separated by | — empty = any. Modality empty = any.", nil) frame: NSMakeRect( 20, y - 20, 600, 40) bold: NO];
     [hint setFont: [NSFont systemFontOfSize: 11]];
@@ -254,6 +257,42 @@ static SekhmetWindowingPanel *sekhmetWindowingPanel = nil;
     y -= 44;
     [cv addSubview: [self button: NSLocalizedString( @"Apply to open viewers", nil) frame: NSMakeRect( 20, y, 240, 30) action: @selector(applyNow:)]];
     [cv addSubview: [self button: NSLocalizedString( @"Reset to defaults", nil) frame: NSMakeRect( 270, y, 200, 30) action: @selector(resetRules:)]];
+
+    // SekhVet Paket BL: globale Presets — dieselben Namen und Werte wie im WL/WW-Menue der Viewer (Tasten 1-9 in Menue-Reihenfolge)
+    y -= 36;
+    [cv addSubview: [self label: NSLocalizedString( @"Global WL/WW presets", nil) frame: NSMakeRect( 20, y, 400, 18) bold: YES]];
+    y -= 34;
+    NSTextField *hint2 = [self label: NSLocalizedString( @"The presets of the WL/WW menu in every viewer (e.g. \"CT - Bone\", \"CT - Abdomen\"). Keys 1–9 follow the alphabetical order shown here. Changes apply to the menu immediately.", nil) frame: NSMakeRect( 20, y, 600, 30) bold: NO];
+    [hint2 setFont: [NSFont systemFontOfSize: 11]];
+    [[hint2 cell] setWraps: YES];
+    [cv addSubview: hint2];
+
+    y -= 180;
+    NSScrollView *sv2 = [[[NSScrollView alloc] initWithFrame: NSMakeRect( 20, y, 500, 174)] autorelease];
+    NSTableView *pt = [[[NSTableView alloc] initWithFrame: NSMakeRect( 0, 0, 500, 174)] autorelease];
+    NSArray *pcols = [NSArray arrayWithObjects: @"PresetName", @"PresetWL", @"PresetWW", nil];
+    NSArray *ptitles = [NSArray arrayWithObjects: @"Name", @"WL", @"WW", nil];
+    NSArray *pwidths = [NSArray arrayWithObjects: @"300", @"80", @"80", nil];
+    for( NSUInteger i = 0; i < pcols.count; i++)
+    {
+        NSTableColumn *c = [[[NSTableColumn alloc] initWithIdentifier: [pcols objectAtIndex: i]] autorelease];
+        [[c headerCell] setStringValue: [ptitles objectAtIndex: i]];
+        [c setWidth: [[pwidths objectAtIndex: i] floatValue]];
+        [c setEditable: YES];
+        [pt addTableColumn: c];
+    }
+    [pt setDataSource: self]; [pt setDelegate: self];
+    [pt setUsesAlternatingRowBackgroundColors: YES];
+    [sv2 setDocumentView: pt];
+    [sv2 setHasVerticalScroller: YES];
+    [sv2 setBorderType: NSBezelBorder];
+    presetTable = pt;
+    [cv addSubview: sv2];
+    [cv addSubview: [self button: @"+" frame: NSMakeRect( 530, y + 146, 40, 26) action: @selector(addPreset:)]];
+    [cv addSubview: [self button: @"−" frame: NSMakeRect( 575, y + 146, 40, 26) action: @selector(removePreset:)]];
+
+    y -= 44;
+    [cv addSubview: [self button: NSLocalizedString( @"Reset presets to defaults", nil) frame: NSMakeRect( 20, y, 240, 30) action: @selector(resetPresets:)]];
 }
 
 - (void) loadFromDefaults
@@ -264,6 +303,83 @@ static SekhmetWindowingPanel *sekhmetWindowingPanel = nil;
     for( NSDictionary *r in [d arrayForKey: SekhmetWLWWRulesKey])
         [rules addObject: [[r mutableCopy] autorelease]];
     [table reloadData];
+    [self loadPresets];
+}
+
+#pragma mark - SekhVet Paket BL: globale WL/WW-Presets (WLWW3)
+
+- (void) loadPresets
+{
+    [presets removeAllObjects];
+    NSDictionary *dict = [[NSUserDefaults standardUserDefaults] dictionaryForKey: @"WLWW3"];
+    for( NSString *name in [[dict allKeys] sortedArrayUsingSelector: @selector(caseInsensitiveCompare:)])
+    {
+        NSArray *v = [dict objectForKey: name];
+        if( ![v isKindOfClass: [NSArray class]] || v.count < 2) continue;
+        [presets addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys: name, @"name", [v objectAtIndex: 0], @"wl", [v objectAtIndex: 1], @"ww", nil]];
+    }
+    [presetTable reloadData];
+}
+
+- (void) savePresets
+{
+    NSMutableDictionary *dict = [NSMutableDictionary dictionary];
+    for( NSDictionary *p in presets)
+    {
+        NSString *name = [[p objectForKey: @"name"] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+        float ww = [[p objectForKey: @"ww"] floatValue];
+        if( name.length == 0) continue;
+        if( ww < 1) ww = 1;   // wie Horos: WW 0 hiesse "Full dynamic"
+        [dict setObject: [NSArray arrayWithObjects: [NSNumber numberWithFloat: [[p objectForKey: @"wl"] floatValue]], [NSNumber numberWithFloat: ww], nil] forKey: name];
+    }
+    [[NSUserDefaults standardUserDefaults] setObject: dict forKey: @"WLWW3"];
+    // userInfo gesetzt = jeder Viewer baut sein WL/WW-Menue neu (ViewerController UpdateWLWWMenu:)
+    [[NSNotificationCenter defaultCenter] postNotificationName: OsirixUpdateWLWWMenuNotification object: nil userInfo: [NSDictionary dictionary]];
+}
+
+- (IBAction) addPreset:(id) sender
+{
+    NSString *base = NSLocalizedString( @"New preset", nil), *name = base;
+    int n = 2;
+    NSDictionary *dict = [[NSUserDefaults standardUserDefaults] dictionaryForKey: @"WLWW3"];
+    while( [dict objectForKey: name]) name = [NSString stringWithFormat: @"%@ %d", base, n++];
+    [presets addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys: name, @"name", @40, @"wl", @400, @"ww", nil]];
+    [self savePresets];
+    [self loadPresets];
+    for( NSUInteger i = 0; i < presets.count; i++)
+        if( [[[presets objectAtIndex: i] objectForKey: @"name"] isEqualToString: name])
+        {
+            [presetTable selectRowIndexes: [NSIndexSet indexSetWithIndex: i] byExtendingSelection: NO];
+            [presetTable editColumn: 0 row: i withEvent: nil select: YES];
+            break;
+        }
+}
+
+- (IBAction) removePreset:(id) sender
+{
+    NSInteger r = [presetTable selectedRow];
+    if( r < 0 || r >= (NSInteger) presets.count) return;
+    NSAlert *a = [[[NSAlert alloc] init] autorelease];
+    [a setMessageText: [NSString stringWithFormat: NSLocalizedString( @"Delete the preset \"%@\"?", nil), [[presets objectAtIndex: r] objectForKey: @"name"]]];
+    [a addButtonWithTitle: NSLocalizedString( @"Delete", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Cancel", nil)];
+    if( [a runModal] != NSAlertFirstButtonReturn) return;
+    [presets removeObjectAtIndex: r];
+    [self savePresets];
+    [self loadPresets];
+}
+
+- (IBAction) resetPresets:(id) sender
+{
+    NSAlert *a = [[[NSAlert alloc] init] autorelease];
+    [a setMessageText: NSLocalizedString( @"Reset all WL/WW presets to the SekhVet defaults?", nil)];
+    [a setInformativeText: NSLocalizedString( @"Presets you added or changed are removed.", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Reset", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Cancel", nil)];
+    if( [a runModal] != NSAlertFirstButtonReturn) return;
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey: @"WLWW3"];
+    [[NSNotificationCenter defaultCenter] postNotificationName: OsirixUpdateWLWWMenuNotification object: nil userInfo: [NSDictionary dictionary]];
+    [self loadPresets];
 }
 
 - (void) save
@@ -315,11 +431,21 @@ static SekhmetWindowingPanel *sekhmetWindowingPanel = nil;
 
 - (NSInteger) numberOfRowsInTableView:(NSTableView*) tv
 {
+    if( tv == presetTable) return presets.count;
     return rules.count;
 }
 
 - (id) tableView:(NSTableView*) tv objectValueForTableColumn:(NSTableColumn*) col row:(NSInteger) row
 {
+    if( tv == presetTable)
+    {
+        NSDictionary *p = [presets objectAtIndex: row];
+        NSString *pid = [col identifier];
+        if( [pid isEqualToString: @"PresetName"]) return [p objectForKey: @"name"];
+        if( [pid isEqualToString: @"PresetWL"]) return [NSString stringWithFormat: @"%g", [[p objectForKey: @"wl"] floatValue]];
+        if( [pid isEqualToString: @"PresetWW"]) return [NSString stringWithFormat: @"%g", [[p objectForKey: @"ww"] floatValue]];
+        return nil;
+    }
     NSMutableDictionary *d = [rules objectAtIndex: row];
     NSString *ident = [col identifier];
     if( [ident isEqualToString: @"Modality"]) return [d objectForKey: @"modality"];
@@ -332,6 +458,26 @@ static SekhmetWindowingPanel *sekhmetWindowingPanel = nil;
 
 - (void) tableView:(NSTableView*) tv setObjectValue:(id) value forTableColumn:(NSTableColumn*) col row:(NSInteger) row
 {
+    if( tv == presetTable)
+    {
+        if( row < 0 || row >= (NSInteger) presets.count) return;
+        NSMutableDictionary *p = [presets objectAtIndex: row];
+        NSString *pid = [col identifier];
+        if( value == nil) value = @"";
+        if( [pid isEqualToString: @"PresetName"])
+        {
+            NSString *name = [[value description] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+            if( name.length == 0 || [name isEqualToString: [p objectForKey: @"name"]]) return;
+            for( NSDictionary *o in presets)
+                if( o != p && [[o objectForKey: @"name"] isEqualToString: name]) { NSBeep(); return; }   // Namen sind Schluessel
+            [p setObject: name forKey: @"name"];
+        }
+        else if( [pid isEqualToString: @"PresetWL"]) [p setObject: [NSNumber numberWithFloat: [value floatValue]] forKey: @"wl"];
+        else if( [pid isEqualToString: @"PresetWW"]) [p setObject: [NSNumber numberWithFloat: MAX( 1, [value floatValue])] forKey: @"ww"];
+        [self savePresets];
+        [self performSelector: @selector(loadPresets) withObject: nil afterDelay: 0];   // neu sortieren, nachdem das Editieren abgeschlossen ist
+        return;
+    }
     NSMutableDictionary *d = [rules objectAtIndex: row];
     NSString *ident = [col identifier];
     if( value == nil) value = @"";

@@ -1,6 +1,6 @@
 # SekhVet — User Guide (English)
 
-Version 1.0 beta, build 95 · 17 September 2026
+Version 1.0 beta, build 105 · 17 September 2026
 
 > **SekhVet is a veterinary DICOM viewer and is not a certified medical device.**
 > It is not cleared by the FDA, not CE-marked and has not undergone any formal validation.
@@ -33,13 +33,13 @@ an independent maintenance fork, not an upstream contribution.
 | | |
 |---|---|
 | Mac | Apple Silicon (M1 or later). No Intel build. |
-| macOS | 12 Monterey or later. Tested on macOS 26 Tahoe (daily use) and macOS 27 (build 93, test installation). |
+| macOS | 12 Monterey or later. Tested on macOS 26 Tahoe (daily use) and macOS 27 (test installation, double MPR with a large CT). |
 | Display | Any display; the "Screen Area" feature is designed for wide monitors. |
 | Network | For DICOMweb, a server with QIDO-RS/WADO-RS (e.g. Orthanc with the DICOMweb plugin). |
 
 ## 3. Installation
 
-1. Download `SekhVet-1.0-beta-build95-macOS.zip` from the releases page,
+1. Download `SekhVet-1.0-beta-build105-macOS.zip` from the releases page,
    https://github.com/3v3nFloW/sekhvet/releases, and unzip it.
 2. Drag `SekhVet.app` to `/Applications`. If an older SekhVet copy is already there, **quit it
    first**, then replace it. If two copies run at the same time, the second one reports
@@ -56,7 +56,7 @@ an independent maintenance fork, not an upstream contribution.
 5. **On first launch** SekhVet shows a one-time notice that it is not a certified medical
    device. "I understand" confirms it, "Quit" leaves the program. The notice returns only if
    its wording changes.
-6. Checksum (optional): `shasum -a 256 SekhVet-1.0-beta-build95-macOS.zip` must match the value
+6. Checksum (optional): `shasum -a 256 SekhVet-1.0-beta-build105-macOS.zip` must match the value
    shown on the releases page.
 
 **SekhVet next to Horos or OsiriX:** SekhVet has its own database (`~/Documents/SekhVet Data`),
@@ -136,10 +136,19 @@ opens the study as usual.
   the VD/DV view hangs on the left and the lateral view on the right. Switch and side choice
   ("lateral on the left") in the same panel.
 
-### 5.4 Window/level on opening (Vet Tools › Window Presets (WL/WW on open)…)
+### 5.4 Window presets (Vet Tools › Window Presets (WL/WW)…)
 
-Rules "modality + description contains … → window values" (e.g. Bone (vet), Soft tissue) that
-apply when a series opens. The opening protocols (5.3) use the same rule names.
+The panel has two parts.
+
+**Rules on opening.** Rules "modality + description contains … → window values" (e.g.
+Bone (vet), Soft tissue) that apply when a series opens. The first matching rule from the top
+wins. The opening protocols (5.3) use the same rule names.
+
+**Global WL/WW presets.** The table below lists the presets of the WL/WW menu in every viewer,
+for example "CT - Bone" or "CT - Abdomen". Name, WL and WW can be edited directly; **+** adds a
+preset, **−** deletes the selected one, **Reset presets to defaults** restores the SekhVet
+values. Open viewers pick up changes immediately. The keys 1–9 apply the presets in the
+alphabetical order shown in the table.
 
 ### 5.5 Spine Labeling (Vet Tools › Spine Labeling…)
 
@@ -343,7 +352,7 @@ All SekhVet windows open inside the viewer area. All SekhVet toolbar buttons can
 removed via **Customize Toolbar**; new buttons appear once automatically, and stay away if you
 remove them.
 
-## 7. Beta status, limitations and known restrictions (build 95)
+## 7. Beta status, limitations and known restrictions (build 105)
 
 **Experimental in this beta.** These functions work, but have been tested on few devices or
 are still being adjusted. Use them with a critical eye and report what you see:
@@ -353,10 +362,8 @@ are still being adjusted. Use them with a critical eye and report what you see:
   the two-view radiograph hanging: rebuilt in September 2026, verified headless, device
   verification still running.
 - **Ultrasound calibration from a neighbouring image** (5.16): one device tested.
-- **MPR double-click zoom** (5.10): in rare cases a view came up black or white after the
-  double-click; build 92 added safeguards, and if it happens again a diagnostic line is written
-  to the system log (`log show --predicate 'process == "Horos"' --last 30m | grep "SekhVet MPR"`).
-- **macOS 27:** one test installation so far; daily use is on macOS 26.
+- **macOS 27:** tested in a test installation, including double MPR with a large CT and the
+  double-click zoom; daily use is on macOS 26.
 
 **In daily use** (stable in the sense of this beta): orientation letters, 2D hanging protocol,
 window presets, Norberg angle, distraction index, point tool, double MPR, convolution filters,

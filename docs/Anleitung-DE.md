@@ -1,6 +1,6 @@
 # SekhVet — Anleitung (Deutsch)
 
-Version 1.0 beta, Build 95 · Stand 17.09.2026
+Version 1.0 beta, Build 105 · Stand 17.09.2026
 
 > **SekhVet ist ein veterinärmedizinischer DICOM-Viewer und kein zertifiziertes Medizinprodukt.**
 > Es ist weder FDA-cleared noch CE-gekennzeichnet und hat keine formale Validierung durchlaufen.
@@ -34,13 +34,13 @@ kein Upstream-Beitrag.
 | | |
 |---|---|
 | Mac | Apple Silicon (M1 oder neuer). Kein Intel-Build. |
-| macOS | 12 Monterey oder neuer. Getestet unter macOS 26 Tahoe (täglich) und macOS 27 (Build 93, Testinstallation). |
+| macOS | 12 Monterey oder neuer. Getestet unter macOS 26 Tahoe (täglich) und macOS 27 (Testinstallation, Double MPR mit grossem CT). |
 | Bildschirm | Läuft auf jedem Bildschirm; die Funktion „Screen Area" ist für breite Monitore gedacht. |
 | Netz | Für DICOMweb einen Server mit QIDO-RS/WADO-RS (z. B. Orthanc mit DICOMweb-Plugin). |
 
 ## 3. Installation
 
-1. `SekhVet-1.0-beta-build95-macOS.zip` von der Releases-Seite
+1. `SekhVet-1.0-beta-build105-macOS.zip` von der Releases-Seite
    https://github.com/3v3nFloW/sekhvet/releases laden und entpacken.
 2. `SekhVet.app` nach `/Programme` ziehen. Liegt dort schon eine ältere SekhVet-Kopie:
    **zuerst beenden**, dann ersetzen. Laufen zwei Kopien gleichzeitig, meldet die zweite
@@ -57,7 +57,7 @@ kein Upstream-Beitrag.
 5. **Beim ersten Start** zeigt SekhVet einmalig den Hinweis, dass es kein zertifiziertes
    Medizinprodukt ist. „I understand" bestätigt ihn, „Quit" beendet das Programm. Der Hinweis
    kommt erst wieder, wenn sich sein Wortlaut ändert.
-6. Prüfsumme (optional): `shasum -a 256 SekhVet-1.0-beta-build95-macOS.zip` muss mit dem Wert
+6. Prüfsumme (optional): `shasum -a 256 SekhVet-1.0-beta-build105-macOS.zip` muss mit dem Wert
    auf der Releases-Seite übereinstimmen.
 
 **SekhVet neben Horos oder OsiriX:** SekhVet hat eine eigene Datenbank
@@ -138,10 +138,19 @@ Horos wie gewohnt.
   hängt die VD/DV-Aufnahme links und die seitliche rechts. Schalter und Seitenwahl („lateral on
   the left") im selben Panel.
 
-### 5.4 Fensterung beim Öffnen (Vet Tools › Window Presets (WL/WW on open)…)
+### 5.4 Fensterungs-Presets (Vet Tools › Window Presets (WL/WW)…)
 
-Regeln „Modalität + Beschreibung enthält … → Fensterwerte" (z. B. Bone (vet), Soft tissue),
-die beim Öffnen greifen. Die Öffnungsprotokolle (5.3) verwenden dieselben Regelnamen.
+Das Panel hat zwei Teile.
+
+**Regeln beim Öffnen.** Regeln „Modalität + Beschreibung enthält … → Fensterwerte" (z. B.
+Bone (vet), Soft tissue), die beim Öffnen einer Serie greifen. Die erste passende Regel von oben
+gewinnt. Die Öffnungsprotokolle (5.3) verwenden dieselben Regelnamen.
+
+**Globale WL/WW-Presets.** Die Tabelle darunter enthält die Presets des WL/WW-Menüs in jedem
+Viewer, zum Beispiel „CT - Bone" oder „CT - Abdomen". Name, WL und WW lassen sich direkt
+ändern; **+** legt ein Preset an, **−** löscht das markierte, **Reset presets to defaults** stellt
+die SekhVet-Werte wieder her. Offene Viewer übernehmen Änderungen sofort. Die Tasten 1–9 wenden
+die Presets in der alphabetischen Reihenfolge der Tabelle an.
 
 ### 5.5 Spine Labeling (Vet Tools › Spine Labeling…)
 
@@ -348,7 +357,7 @@ Alle SekhVet-Fenster öffnen sich innerhalb der Viewer-Fläche. Alle Toolbar-Kn�
 lassen sich über **Customize Toolbar** verschieben oder entfernen; neue Knöpfe erscheinen einmal
 automatisch, entfernt man sie, bleiben sie weg.
 
-## 7. Beta-Stand, Grenzen und bekannte Einschränkungen (Build 95)
+## 7. Beta-Stand, Grenzen und bekannte Einschränkungen (Build 105)
 
 **Experimentell in dieser Beta.** Diese Funktionen laufen, sind aber erst an wenigen Geräten
 geprüft oder werden noch nachjustiert. Mit kritischem Blick benutzen und Auffälligkeiten melden:
@@ -358,10 +367,8 @@ geprüft oder werden noch nachjustiert. Mit kritischem Blick benutzen und Auffä
   Röntgen-Zweiebenen-Hängung: im September 2026 neu gebaut, headless geprüft, Prüfung am Gerät
   läuft noch.
 - **Ultraschall-Kalibrierung vom Nachbarbild** (5.16): an einem Gerät geprüft.
-- **MPR-Doppelklick-Zoom** (5.10): in seltenen Fällen kam eine Ansicht nach dem Doppelklick
-  schwarz oder weiss; Build 92 hat Riegel eingebaut, und tritt es wieder auf, steht eine
-  Diagnosezeile im Systemprotokoll (`log show --predicate 'process == "Horos"' --last 30m | grep "SekhVet MPR"`).
-- **macOS 27:** bisher eine Testinstallation; der Alltag läuft unter macOS 26.
+- **macOS 27:** in einer Testinstallation geprüft, auch Double MPR mit grossem CT und der
+  Doppelklick-Zoom; der Alltag läuft unter macOS 26.
 
 **Im Alltag bewährt** (stabil im Sinn dieser Beta): Randbuchstaben, Hanging Protocol in 2D,
 Fensterungs-Presets, Norberg-Winkel, Distraktionsindex, Point-Werkzeug, Double MPR,

@@ -8736,6 +8736,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 - (void) drawRect:(NSRect) r
 {
     if( drawing == NO) return;
+    if( [self frame].size.width < 1 || [self frame].size.height < 1) return; // SekhVet Paket BK: 0-Pixel-Ansicht nie zeichnen (macOS 27, CABackingStoreEndUpdate)
     
     @synchronized (self)
     {
@@ -10158,6 +10159,11 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void) setFrame:(NSRect)frameRect
 {
+    // Split-view layout can reapply the current frame on macOS 27.
+    // Do not invalidate constraints again when the geometry is unchanged.
+    if( NSEqualRects( [self frame], frameRect))
+        return;
+
     [super setFrame: frameRect];
     
     previousViewSize = frameRect.size;

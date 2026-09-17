@@ -2225,6 +2225,9 @@ public:
 {
     if( volumeMapper)
     {
+        // Direct mapper renders can precede drawRect: (MPR, CPR and exports). macOS 27, Horos PR #870.
+        [self initializeVTKRenderWindowIfNeeded];
+
         if( aRenderer == nil || aRenderer->GetRenderWindow() == NULL) { NSLog( @"SekhVet: VRView render ohne RenderWindow uebersprungen"); return; } // SekhVet: sonst Assert in vtkTextureObject::Bind (Debug)
         _cocoaRenderWindow->Start(); // SekhVet: OpenGL-Initialisierung (Texturformat-Tabelle, Shader-Cache) — eine nie gezeichnete (hidden) VRView hat sie sonst nicht, Folge: "Failed to determine texture parameters" und Absturz
         aRenderer->SetDraw( 0);
@@ -2244,6 +2247,9 @@ public:
 {
     if( blendingVolumeMapper)
     {
+        // Direct mapper renders can precede drawRect: (MPR, CPR and exports). macOS 27, Horos PR #870.
+        [self initializeVTKRenderWindowIfNeeded];
+
         if( aRenderer == nil || aRenderer->GetRenderWindow() == NULL) return; // SekhVet
         _cocoaRenderWindow->Start(); // SekhVet: siehe render
         aRenderer->SetDraw( 0);

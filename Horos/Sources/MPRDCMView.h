@@ -74,6 +74,8 @@
 	
 	BOOL dontCheckRoiChange;
 	BOOL sekhmetDetached; // SekhVet Paket AB: Fenster geschlossen, nie mehr zeichnen
+	BOOL sekhmetZoomClick; // SekhVet Paket BK: Doppelklick-Zoom laeuft, mouseUp/mouseDragged nicht als Werkzeug (Fensterung) auswerten
+	BOOL sekhmetGLDetached; // SekhVet Paket BK: GL-Zeichenflaeche geloest, solange die Ansicht 0 Pixel hat (macOS 27)
 }
 
 @property (readonly) DCMPix *pix;

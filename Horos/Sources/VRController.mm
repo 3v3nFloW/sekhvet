@@ -841,7 +841,10 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
         }
         
 //        [shadingsPresetsController setWindowController: self];
-        [shadingsPresetsController addObserver:self forKeyPath:@"selectedObjects" options:0 context:VRController.class];
+        // Retain the observed object through nib teardown. Embedded controllers
+        // can bypass this initializer and must not remove an unregistered observer.
+        observedShadingsPresetsController = [shadingsPresetsController retain];
+        [observedShadingsPresetsController addObserver:self forKeyPath:@"selectedObjects" options:0 context:VRController.class];
         
         [self setupToolbar];
     }
@@ -1137,7 +1140,8 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
 {
     NSLog(@"Dealloc VRController");
     
-    [shadingsPresetsController removeObserver:self forKeyPath:@"selectedObjects" context:VRController.class];
+    [observedShadingsPresetsController removeObserver:self forKeyPath:@"selectedObjects" context:VRController.class];
+    [observedShadingsPresetsController release];
     
     [style release];
     

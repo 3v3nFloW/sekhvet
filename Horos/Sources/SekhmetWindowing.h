@@ -26,6 +26,8 @@ extern NSString* const SekhmetWLWWApplyOnOpenKey;  // BOOL
     NSTableView *table;
     NSMutableArray *rules;
     NSButton *applyOnOpenButton;
+    NSTableView *presetTable;      // SekhVet Paket BL: globale WL/WW-Presets (WLWW3, Menue im Viewer, Tasten 1-9)
+    NSMutableArray *presets;       // {name, wl, ww}, nach Name sortiert wie das Menue
 }
 + (SekhmetWindowingPanel*) shared;
 @end

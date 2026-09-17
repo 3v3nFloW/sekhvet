@@ -124,6 +124,7 @@
 #include <kdu_OsiriXSupport.h>
 
 #include <execinfo.h>
+#include <libproc.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -435,6 +436,72 @@ int GetAllPIDsForProcessName(const char* ProcessName,
         //found matches return success.
         return(kSuccess);
     }
+}
+
+static int GetAllPIDsForProcessNameUsingLibproc(const char* processName,
+                                                pid_t returnedPIDs[],
+                                                const unsigned int returnedPIDsCapacity,
+                                                unsigned int* matchesFound,
+                                                int* processListError)
+{
+    if (processName == NULL || returnedPIDs == NULL || returnedPIDsCapacity == 0 || matchesFound == NULL)
+        return kInvalidArgumentsError;
+
+    memset(returnedPIDs, 0, returnedPIDsCapacity * sizeof(pid_t));
+    *matchesFound = 0;
+    if (processListError != NULL)
+        *processListError = 0;
+
+    int pidCapacity = proc_listallpids(NULL, 0);
+    if (pidCapacity <= 0)
+    {
+        if (processListError != NULL)
+            *processListError = errno;
+        return kErrorGettingSizeOfBufferRequired;
+    }
+
+    pidCapacity += 64; // Leave room for processes created between the sizing and retrieval calls.
+    pid_t *pids = calloc(pidCapacity, sizeof(pid_t));
+    if (pids == NULL)
+    {
+        if (processListError != NULL)
+            *processListError = ENOMEM;
+        return kUnableToAllocateMemoryForBuffer;
+    }
+
+    int pidCount = proc_listallpids(pids, pidCapacity * sizeof(pid_t));
+    if (pidCount < 0)
+    {
+        if (processListError != NULL)
+            *processListError = errno;
+        free(pids);
+        return kErrorGettingSizeOfBufferRequired;
+    }
+
+    for (int index = 0; index < pidCount; index++)
+    {
+        if (pids[index] <= 0)
+            continue;
+
+        char currentProcessName[MAXCOMLEN + 1] = {0};
+        if (proc_name(pids[index], currentProcessName, sizeof(currentProcessName)) <= 0)
+            continue;
+
+        if (strncmp(currentProcessName, processName, MAXCOMLEN) == 0)
+        {
+            if (*matchesFound >= returnedPIDsCapacity)
+            {
+                free(pids);
+                return kPIDBufferOverrunError;
+            }
+
+            returnedPIDs[*matchesFound] = pids[index];
+            (*matchesFound)++;
+        }
+    }
+
+    free(pids);
+    return *matchesFound == 0 ? kCouldNotFindRequestedProcess : kSuccess;
 }
 
 NSString* documentsDirectoryFor(int mode, NSString *url) { // __deprecated
@@ -883,7 +950,7 @@ void exceptionHandler(NSException *exception)
 	
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"] == NO)
     {
-        Error = GetAllPIDsForProcessName( [[[NSProcessInfo processInfo] processName] UTF8String], MyArray, kPIDArrayLength, &NumberOfMatches, NULL);
+        Error = GetAllPIDsForProcessNameUsingLibproc( [[[NSProcessInfo processInfo] processName] UTF8String], MyArray, kPIDArrayLength, &NumberOfMatches, NULL);
         
         if (Error == 0)
         {
@@ -902,7 +969,7 @@ void exceptionHandler(NSException *exception)
         }
     }
     
-    Error = GetAllPIDsForProcessName( "CrashReporter", MyArray, kPIDArrayLength, &NumberOfMatches, NULL);
+    Error = GetAllPIDsForProcessNameUsingLibproc( "CrashReporter", MyArray, kPIDArrayLength, &NumberOfMatches, NULL);
 	
 	if (Error == 0)
     {
@@ -3456,7 +3523,7 @@ static BOOL initialized = NO;
 {
     NSMenu *sek = [[NSMenu alloc] initWithTitle: NSLocalizedString( @"Vet Tools", nil)]; // Paket F: App-Menue heisst SekhVet, darum eigener Name
     [[sek addItemWithTitle: NSLocalizedString( @"Hanging Protocol…", nil) action: @selector(sekhmetShowOrientationPanel:) keyEquivalent: @""] setTarget: self];
-    [[sek addItemWithTitle: NSLocalizedString( @"Window Presets (WL/WW on open)…", nil) action: @selector(sekhmetShowWindowingPanel:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket AE
+    [[sek addItemWithTitle: NSLocalizedString( @"Window Presets (WL/WW)…", nil) action: @selector(sekhmetShowWindowingPanel:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket AE
     [[sek addItemWithTitle: NSLocalizedString( @"Opening Protocols (which series open)…", nil) action: @selector(sekhmetShowOpeningPanel:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket AU
     [[sek addItemWithTitle: NSLocalizedString( @"Apply Hanging Protocol to Open Viewers", nil) action: @selector(sekhmetApplyOrientation:) keyEquivalent: @""] setTarget: self];
     [[sek addItemWithTitle: NSLocalizedString( @"Display (Screen Area, Annotations, MPR)…", nil) action: @selector(sekhmetShowDisplayPanel:) keyEquivalent: @""] setTarget: self];
