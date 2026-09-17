@@ -207,6 +207,5 @@ changes to the viewer core (`DCMView`, `MPR*`, `ROI`) need a measurement check o
 not just "looks right".
 
 If SekhVet is useful to you, a voluntary contribution helps keep development going —
-**Vet Tools › Contribute to SekhVet…** in the application, or the link at
-[kappa1.vet](https://kappa1.vet). The amount is free to choose; there is no service, licence or
-extra feature in return.
+**Vet Tools › Contribute to SekhVet…** in the application. The amount is free to choose; there
+is no service, licence or extra feature in return.
