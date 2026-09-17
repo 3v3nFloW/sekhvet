@@ -105,9 +105,10 @@ Removed from Horos: the Horos Cloud plugin and the hourly update check.
 
 ## Install
 
-Download the zip from the [releases page](https://github.com/3v3nFloW/sekhvet/releases),
-unzip it and drag `SekhVet.app` to `/Applications`. Beta builds are marked as pre-releases.
-The SHA-256 of each zip is in the release notes.
+Download the **DMG** from the [releases page](https://github.com/3v3nFloW/sekhvet/releases),
+open it and drag SekhVet onto the Applications folder in the window. The zip on the same page
+contains the same app. Beta builds are marked as pre-releases; the SHA-256 of each file is in
+the release notes.
 
 SekhVet is ad-hoc signed and **not notarised**, so macOS blocks the first launch. Afterwards go
 to **System Settings › Privacy & Security › "Open Anyway"**. Since macOS 15 the right-click ›

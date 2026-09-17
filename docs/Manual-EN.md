@@ -39,10 +39,11 @@ an independent maintenance fork, not an upstream contribution.
 
 ## 3. Installation
 
-1. Download `SekhVet-1.0-beta-build105-macOS.zip` from the releases page,
-   https://github.com/3v3nFloW/sekhvet/releases, and unzip it.
-2. Drag `SekhVet.app` to `/Applications`. If an older SekhVet copy is already there, **quit it
-   first**, then replace it. If two copies run at the same time, the second one reports
+1. Download `SekhVet-1.0-beta-build105-macOS.dmg` from the releases page,
+   https://github.com/3v3nFloW/sekhvet/releases, and open it. The zip file on the same page
+   contains the same app, for those who prefer it.
+2. In the window that opens, drag SekhVet onto the Applications folder, then eject the disk
+   image. If an older SekhVet copy is already there, **quit it first**, then replace it. If two copies run at the same time, the second one reports
    "DICOM Listener Error" because the receive port is already taken.
 3. **Gatekeeper:** SekhVet is ad-hoc signed, not notarised (no Apple Developer account).
    macOS blocks the first launch. Then go to **System Settings › Privacy & Security › "Open
@@ -56,8 +57,8 @@ an independent maintenance fork, not an upstream contribution.
 5. **On first launch** SekhVet shows a one-time notice that it is not a certified medical
    device. "I understand" confirms it, "Quit" leaves the program. The notice returns only if
    its wording changes.
-6. Checksum (optional): `shasum -a 256 SekhVet-1.0-beta-build105-macOS.zip` must match the value
-   shown on the releases page.
+6. Checksum (optional): `shasum -a 256 SekhVet-1.0-beta-build105-macOS.dmg` (or the zip) must
+   match the value shown on the releases page.
 
 **SekhVet next to Horos or OsiriX:** SekhVet has its own database (`~/Documents/SekhVet Data`),
 its own preferences and its own plugin folder (`~/Library/Application Support/SekhVet/Plugins`).
