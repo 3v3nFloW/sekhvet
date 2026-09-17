@@ -456,7 +456,9 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
     
     if( [[viewer2D modality] isEqualToString: @"CT"] && maximumValue - minimumValue > 8192 && computeMinMaxDepth == 1)
     {
-        NSInteger result = NSRunCriticalAlertPanel( NSLocalizedString( @"High Dynamic Values", nil), NSLocalizedString( @"Voxel values have a very high dynamic range (>8192). Two options are available to use the 3D engine: clip values above 7168 and below -1024 or resample the values.", nil), NSLocalizedString( @"Clip", nil), NSLocalizedString( @"Resample", nil), nil);
+        NSInteger result = NSAlertDefaultReturn; // SekhVet Paket T: ohne Nachfrage clippen; Dialog nur mit `defaults write ... SekhmetHighDynamicAsk -bool YES`
+        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SekhmetHighDynamicAsk"])
+            result = NSRunCriticalAlertPanel( NSLocalizedString( @"High Dynamic Values", nil), NSLocalizedString( @"Voxel values have a very high dynamic range (>8192). Two options are available to use the 3D engine: clip values above 7168 and below -1024 or resample the values.", nil), NSLocalizedString( @"Clip", nil), NSLocalizedString( @"Resample", nil), nil);
         
         if( result == NSAlertDefaultReturn)
         {

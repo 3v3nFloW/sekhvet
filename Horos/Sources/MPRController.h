@@ -73,6 +73,9 @@
 	VRView *hiddenVRView;
 		
 	NSMutableArray *filesList[ MAX4D], *pixList[ MAX4D];
+	NSString *sekhmetConvName; // Sekhmet: Faltung im MPR
+	BOOL sekhmetObserving, sekhmetSyncPending, sekhmetHPApplied; // SekhVet Paket O: Sync erst nach dem Hanging Protocol
+	NSString *sekhmetLastSyncFingerprint; // SekhVet Paket R: zuletzt empfangener Kamerastand -> nie als eigener Stand zurueckmelden
 	DCMPix *originalPix;
 	NSData *volumeData[ MAX4D];
 	BOOL avoidReentry;
@@ -137,6 +140,13 @@
 @property (nonatomic, retain) NSColor *colorAxis1, *colorAxis2, *colorAxis3;
 @property (readonly) MPRDCMView *mprView1, *mprView2, *mprView3;
 @property (readonly) NSSplitView *horizontalSplit, *verticalSplit;
+
+// SekhVet Paket AT: Zoom-Zustand des Doppelklicks gehoert dem Fenster, nicht der Datei.
+// Horos hielt ihn als Datei-Statik in MPRDCMView.m — bei zwei MPR-Fenstern (Double MPR)
+// loeschte deshalb der Doppelklick im einen Fenster das Fadenkreuz im anderen.
+@property (nonatomic) BOOL sekhmetFrameZoomed;
+@property (nonatomic) int sekhmetSplitH, sekhmetSplitV;   // Teilerstand vor dem Zoom
+
 
 + (double) angleBetweenVector:(float*) a andPlane:(float*) orientation;
 

@@ -37,6 +37,13 @@
 
 #import "options.h"
 
+#import "SekhmetSpine.h" // Sekhmet
+#import "SekhmetDisplayPanel.h" // Sekhmet
+#import "SekhmetOrientation.h" // SekhVet
+#import "SekhmetMPRKategorie.h" // SekhVet Stufe 6c: die sekhmet*-Methoden dieser Klasse
+#import "Point3D.h"
+#import "Camera.h"
+#import "AppController.h"
 #import "MPRController.h"
 #import "BrowserController.h"
 #import "Wait.h"
@@ -54,6 +61,7 @@
 extern void setvtkMeanIPMode( int m);
 extern short intersect3D_2Planes( float *Pn1, float *Pv1, float *Pn2, float *Pv2, float *u, float *iP);
 static float deg2rad = M_PI/180.0; 
+
 
 @implementation MPRController
 
@@ -365,6 +373,27 @@ static float deg2rad = M_PI/180.0;
 
 - (void) showWindow:(id) sender
 {
+    if( sekhmetObserving == NO) // Sekhmet: Gleichlauf + Kachelung
+    {
+        sekhmetObserving = YES;
+        [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetSyncFromNotification:) name: SekhmetMPRDidChangeNotification object: nil];
+        if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetTile3DWindowsKey])
+            [[AppController sharedAppController] performSelector: @selector(tile3DWindows:) withObject: nil afterDelay: 0.6];
+        [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetPresetDidChange:) name: SekhmetVetPresetDidChangeNotification object: nil];
+        // SekhVet Paket AG: Thick-Slab-Modus beim Oeffnen (1 MIP = Horos, 2 minIP, 3 Mean); Mean als Vorgabe fuers Befunden,
+        // MIP nur fuer Gefaesse. Ueber den Setter, damit vtkMeanIPMode und das Popup (Binding) mitgehen.
+        int slabMode = (int) [[NSUserDefaults standardUserDefaults] integerForKey: @"SekhmetMPRThickSlabMode"];
+        if( slabMode >= 1 && slabMode <= 3 && slabMode != clippingRangeMode)
+        {
+            [self willChangeValueForKey: @"clippingRangeMode"];
+            [self setClippingRangeMode: slabMode];
+            [self didChangeValueForKey: @"clippingRangeMode"];
+        }
+    }
+    // Hanging Protocol auf die drei Ebenen, sobald das Fenster steht (showWindow ist auch "Reset")
+    sekhmetHPApplied = NO; // SekhVet Paket O: bis zum HP keine Sync-Nachrichten senden (sonst uebernimmt das offene Fenster die ungedrehte Kamera)
+    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetApplyHangingProtocol) object: nil];
+    [self performSelector: @selector(sekhmetApplyHangingProtocol) withObject: nil afterDelay: 0.5 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
 	mprView1.dontUseAutoLOD = YES;
 	mprView2.dontUseAutoLOD = YES;
 	mprView3.dontUseAutoLOD = YES;
@@ -621,6 +650,11 @@ static float deg2rad = M_PI/180.0;
 
 - (void) dealloc
 {
+    [NSObject cancelPreviousPerformRequestsWithTarget: self]; // Sekhmet
+    [[NSNotificationCenter defaultCenter] removeObserver: self name: SekhmetMPRDidChangeNotification object: nil];
+    [[NSNotificationCenter defaultCenter] removeObserver: self name: SekhmetVetPresetDidChangeNotification object: nil];
+    [sekhmetConvName release]; sekhmetConvName = nil;
+    [sekhmetLastSyncFingerprint release]; sekhmetLastSyncFingerprint = nil; // SekhVet Paket R
     [shadingsPresetsController removeObserver:self forKeyPath:@"selectedObjects" context:MPRController.class];
     
 	[[NSUserDefaultsController sharedUserDefaultsController] removeObserver: self forKeyPath: @"values.exportDCMIncludeAllViews"];
@@ -737,7 +771,7 @@ static float deg2rad = M_PI/180.0;
 	
 	if( sender)
 	{
-		if( [[NSUserDefaults standardUserDefaults] boolForKey: @"syncZoomLevelMPR"])
+		if( [[NSUserDefaults standardUserDefaults] boolForKey: @"syncZoomLevelMPR"] && SekhmetMPRSyncing == NO) // SekhVet Paket S: beim Empfang ist der Massstab je Ansicht schon gesetzt, selectedView waere beliebig
 		{
 			MPRDCMView *selectedView = [self selectedView];
 			
@@ -2017,7 +2051,19 @@ static float deg2rad = M_PI/180.0;
 	if( [win firstResponder] == mprView3)
 		v = mprView3;
 	
-	if( v == nil) v = mprView3;
+	// SekhVet Paket BF: ohne Erstantworter die GROESSTE Ansicht, nicht stur mprView3 — die kann nach dem
+	// Doppelklick-Zoom zusammengeklappt sein, und restoreCamera wuerde den gemeinsamen vrView auf 0 setzen.
+	if( v == nil)
+	{
+		MPRDCMView *views[ 3] = { mprView1, mprView2, mprView3 };
+		CGFloat best = -1;
+		for( int i = 0; i < 3; i++)
+		{
+			CGFloat a = [views[ i] frame].size.width * [views[ i] frame].size.height;
+			if( views[ i] && a > best) { best = a; v = views[ i]; }
+		}
+		if( v == nil) v = mprView3;
+	}
 	
 	return v;
 }
@@ -2769,7 +2815,11 @@ static float deg2rad = M_PI/180.0;
 	{
 		[[self window] setAcceptsMouseMovedEvents: NO];
 		
+		[self sekhmetSaveViewState]; // SekhVet Paket AH: vor dem Abkoppeln, solange die Kameras noch stehen
+		
 		windowWillClose = YES;
+		
+		[mprView1 sekhmetDetachFromController]; [mprView2 sekhmetDetachFromController]; [mprView3 sekhmetDetachFromController]; // SekhVet Paket AB
 		
 		[[NSUserDefaults standardUserDefaults] setBool: self.displayMousePosition forKey: @"MPRDisplayMousePosition"];
 	
@@ -2886,6 +2936,17 @@ static float deg2rad = M_PI/180.0;
     [toolbar setDelegate: self];
     
     [[self window] setToolbar: toolbar];
+    // SekhVet Paket P: Zoom-Gleichlauf-Knopf auch in eine gespeicherte Toolbar-Konfiguration einfuegen (hinter MPR-Sync)
+    {
+        BOOL haveZoom = NO; NSInteger syncIdx = -1, idx = 0;
+        for( NSToolbarItem *it in [toolbar items])
+        {
+            if( [[it itemIdentifier] isEqualToString: @"SekhmetZoomSync"]) haveZoom = YES;
+            if( [[it itemIdentifier] isEqualToString: @"SekhmetMPRSync"]) syncIdx = idx;
+            idx++;
+        }
+        if( haveZoom == NO) [toolbar insertItemWithItemIdentifier: @"SekhmetZoomSync" atIndex: (syncIdx >= 0) ? syncIdx + 1 : [[toolbar items] count]];
+    }
 	[[self window] setShowsToolbarButton: NO];
 	[[[self window] toolbar] setVisible: YES];
 	
@@ -2944,6 +3005,75 @@ static float deg2rad = M_PI/180.0;
 {
     NSToolbarItem *toolbarItem = [[[NSToolbarItem alloc] initWithItemIdentifier: itemIdent] autorelease];
     
+    if ([itemIdent isEqualToString: @"SekhmetMPRConv"]) // Sekhmet: Faltung im MPR
+    {
+        NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 0, 0, 150, 22) pullsDown: NO] autorelease];
+        [pb addItemWithTitle: NSLocalizedString( @"No filter", nil)];
+        NSArray *names = [[[[NSUserDefaults standardUserDefaults] dictionaryForKey: @"Convolution"] allKeys] sortedArrayUsingSelector: @selector(caseInsensitiveCompare:)];
+        for( NSString *n in names) [pb addItemWithTitle: n];
+        [[pb cell] setControlSize: NSControlSizeSmall];
+        [pb setFont: [NSFont systemFontOfSize: 11]];
+        if( sekhmetConvName && [pb indexOfItemWithTitle: sekhmetConvName] >= 0) [pb selectItemWithTitle: sekhmetConvName];
+        [pb setTarget: self];
+        [pb setAction: @selector(sekhmetConvChanged:)];
+        [toolbarItem setLabel: NSLocalizedString( @"Filter", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Convolution filter (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Convolution filter on the three MPR planes", nil)];
+        [toolbarItem setView: pb];
+        [toolbarItem setMinSize: NSMakeSize( 150, 22)];
+        [toolbarItem setMaxSize: NSMakeSize( 150, 22)];
+    }
+    else if ([itemIdent isEqualToString: @"SekhmetSpine"]) // Sekhmet: Wirbel-Labels
+    {
+        [toolbarItem setLabel: NSLocalizedString( @"Spine Labeling", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Spine Labeling (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Spine labeling: click counter with the point tool, points in all planes", nil)];
+        [toolbarItem setImage: [NSImage imageNamed: @"Point.pdf"]];
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(sekhmetSpineTool:)];
+    }
+    else if ([itemIdent isEqualToString: @"SekhmetVetPreset"]) // SekhVet: Hanging Protocol je Studie, auch im MPR
+    {
+        NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 0, 0, 150, 22) pullsDown: NO] autorelease];
+        [pb addItemsWithTitles: [SekhmetOrientation presetNames]];
+        [[pb cell] setControlSize: NSControlSizeSmall];
+        [pb setFont: [NSFont systemFontOfSize: 11]];
+        [pb selectItemAtIndex: [SekhmetOrientation presetForStudyUID: [[self viewer] studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: [self viewer]]]];
+        [pb setTarget: self];
+        [pb setAction: @selector(sekhmetPresetChanged:)];
+        [toolbarItem setLabel: NSLocalizedString( @"Hanging Protocol", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Hanging Protocol (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Hanging protocol preset for this study: rotates the three MPR planes", nil)];
+        [toolbarItem setView: pb];
+        [toolbarItem setMinSize: NSMakeSize( 150, 22)];
+        [toolbarItem setMaxSize: NSMakeSize( 150, 22)];
+    }
+    else if ([itemIdent isEqualToString: @"SekhmetZoomSync"]) // SekhVet Paket P: Zoom-Gleichlauf (drei Ansichten + zwischen MPR-Fenstern)
+    {
+        NSButton *b = [[[NSButton alloc] initWithFrame: NSMakeRect( 0, 0, 70, 24)] autorelease];
+        [b setButtonType: NSButtonTypeSwitch];
+        [b setTitle: NSLocalizedString( @"Zoom", nil)];
+        [b setFont: [NSFont systemFontOfSize: 11]];
+        [b bind: @"value" toObject: [NSUserDefaultsController sharedUserDefaultsController] withKeyPath: @"values.syncZoomLevelMPR" options: nil];
+        [b setTarget: self]; [b setAction: @selector(sekhmetToggleZoomSync:)];
+        [toolbarItem setLabel: NSLocalizedString( @"Zoom-Sync", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Zoom sync (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"The three views of this window zoom together (between MPR windows the zoom always follows per view)", nil)];
+        [toolbarItem setView: b];
+        [toolbarItem setMinSize: NSMakeSize( 70, 24)];
+        [toolbarItem setMaxSize: NSMakeSize( 70, 24)];
+    }
+    else if ([itemIdent isEqualToString: @"SekhmetMPRSync"]) // Sekhmet: Double MPR
+    {
+        BOOL on = [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncKey];
+        [toolbarItem setLabel: NSLocalizedString( @"MPR-Sync", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"MPR sync (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"MPR windows of the same study follow point, planes and thickness", nil)];
+        [toolbarItem setImage: [NSImage imageNamed: on ? @"SyncLock.pdf" : @"Sync.pdf"]];
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(sekhmetToggleSync:)];
+    }
+    else
 	if ([itemIdent isEqualToString: @"tbLOD"])
 	{
 		[toolbarItem setLabel: NSLocalizedString(@"LOD",nil)];
@@ -2958,7 +3088,7 @@ static float deg2rad = M_PI/180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString(@"Reset",nil)];
 		[toolbarItem setImage: [NSImage imageNamed: @"Reset.pdf"]];
 		[toolbarItem setTarget: self];
-		[toolbarItem setAction: @selector(showWindow:)];
+		[toolbarItem setAction: @selector(sekhmetResetView:)]; // SekhVet Paket AH: sonst kaeme die gespeicherte Lage nach dem Reset zurueck
     }
 	else if ([itemIdent isEqualToString: @"Export.icns"])
 	{
@@ -3102,7 +3232,7 @@ static float deg2rad = M_PI/180.0;
 
 - (NSArray *) toolbarDefaultItemIdentifiers: (NSToolbar *) toolbar
 {
-		return [NSArray arrayWithObjects: @"tbTools", @"tbWLWW", @"tbThickSlab", @"tbShading", NSToolbarFlexibleSpaceItemIdentifier, @"ViewsPosition", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", nil];
+		return [NSArray arrayWithObjects: @"tbTools", @"tbWLWW", @"tbThickSlab", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetSpine", NSToolbarFlexibleSpaceItemIdentifier, @"ViewsPosition", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", nil];
 }
 
 - (NSArray *) toolbarAllowedItemIdentifiers: (NSToolbar *) toolbar
@@ -3111,7 +3241,7 @@ static float deg2rad = M_PI/180.0;
 											NSToolbarFlexibleSpaceItemIdentifier,
 											NSToolbarSpaceItemIdentifier,
 											NSToolbarSeparatorItemIdentifier,
-											@"tbTools", @"tbWLWW", @"tbLOD", @"tbThickSlab", @"tbBlending", @"tbShading", @"tbMovie", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisColors", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"ViewsPosition", nil];
+											@"tbTools", @"tbWLWW", @"tbLOD", @"tbThickSlab", @"tbBlending", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetSpine", @"tbMovie", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisColors", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"ViewsPosition", nil];
     for (id key in [PluginManager plugins])
     {
         if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])

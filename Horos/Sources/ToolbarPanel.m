@@ -35,6 +35,7 @@
  Ê Ê PURPOSE.
  ============================================================================*/
 
+#import "SekhmetDisplayPanel.h" // Sekhmet
 #import "ToolbarPanel.h"
 #import "ToolBarNSWindow.h"
 #import "ViewerController.h"
@@ -86,7 +87,7 @@ static int fixedHeight = 100;
 
 -(void)applicationDidChangeScreenParameters:(NSNotification*)aNotification
 {
-	NSRect screenRect = [viewer.window.screen visibleFrame];
+	NSRect screenRect = [SekhmetDisplayPanel areaForScreen: viewer.window.screen frame: [viewer.window.screen visibleFrame]]; // Sekhmet: Viewer-Flaeche
 	
 	NSRect dstframe;
 	dstframe.size.height = [self fixedHeight];

@@ -112,7 +112,7 @@ NSString* const CurrentDatabaseVersion = @"2.5";
 }
 
 static NSString* const SqlFileName = @"Database.sql";
-NSString* const OsirixDataDirName = @"Horos Data";
+NSString* const OsirixDataDirName = @"SekhVet Data"; // Sekhmet: eigener Datenordner, nie die Horos-Datenbank anfassen
 NSString* const O2ScreenCapturesSeriesName = NSLocalizedString(@"OsiriX Screen Captures", nil);;
 
 +(NSString*)baseDirPathForPath:(NSString*)path {
@@ -3525,7 +3525,7 @@ static BOOL protectionAgainstReentry = NO;
                 r = NSAlertDefaultReturn;
             }
             else
-                r = NSRunAlertPanel(NSLocalizedString(@"Horos Database", nil), NSLocalizedString(@"Horos cannot understand the model of current saved database... The database index will be deleted and reconstructed (no images are lost).", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Quit", nil), nil);
+                r = NSRunAlertPanel(NSLocalizedString(@"Horos Database", nil), NSLocalizedString(@"SekhVet cannot understand the model of current saved database... The database index will be deleted and reconstructed (no images are lost).", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Quit", nil), nil);
             
             if (r == NSAlertAlternateReturn)
             {

@@ -317,7 +317,7 @@ static NSString* purgedDatabasePath = nil;
             if (error)
             {
                 NSRunInformationalAlertPanel( NSLocalizedString( @"Failure", nil),
-                                             NSLocalizedString( @"Operation has failed. Horos will restart and try to restore your database.", nil),
+                                             NSLocalizedString( @"Operation has failed. SekhVet will restart and try to restore your database.", nil),
                                              NSLocalizedString( @"Restart", nil), nil, nil, nil );
                 
                 [[self window] orderOut:self];
@@ -344,7 +344,7 @@ static NSString* purgedDatabasePath = nil;
                 [[NSFileManager defaultManager] removeItemAtPath:newDatabasePath error:nil];
                 
                 NSRunInformationalAlertPanel( NSLocalizedString( @"Failure", nil),
-                                              NSLocalizedString( @"Operation has failed. Horos will restart and try to restore your database.", nil),
+                                              NSLocalizedString( @"Operation has failed. SekhVet will restart and try to restore your database.", nil),
                                               NSLocalizedString( @"Restart", nil), nil, nil, nil );
                 
                 [[self window] orderOut:self];

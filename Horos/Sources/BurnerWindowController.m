@@ -1089,7 +1089,7 @@
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"BurnOsirixApplication"] && cancelled == NO)
             {
                 thread.name = NSLocalizedString( @"Burning...", nil);
-                thread.status = NSLocalizedString( @"Adding Horos Lite...", nil);
+                thread.status = NSLocalizedString( @"Adding SekhVet Lite...", nil);
                 // unzip the file
                 NSTask *unzipTask = [[NSTask alloc] init];
                 [unzipTask setLaunchPath: @"/usr/bin/unzip"];

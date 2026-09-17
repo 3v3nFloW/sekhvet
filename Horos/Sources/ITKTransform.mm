@@ -368,8 +368,8 @@ typedef itk::ResampleImageFilter<ImageType, ImageType> ResampleFilterType;
 	else
 	{
 		if( NSRunCriticalAlertPanel(NSLocalizedString(@"32-bit", nil),
-								NSLocalizedString(@"Cannot complete the operation.\r\rUpgrade to Horos 64-bit or Horos MD to solve this issue.", nil),
-								NSLocalizedString(@"OK", nil), NSLocalizedString(@"Horos 64-bit", nil), nil) == NSAlertAlternateReturn)
+								NSLocalizedString(@"Cannot complete the operation.\r\rUpgrade to SekhVet 64-bit or SekhVet MD to solve this issue.", nil),
+								NSLocalizedString(@"OK", nil), NSLocalizedString(@"SekhVet 64-bit", nil), nil) == NSAlertAlternateReturn)
 									[[AppController sharedAppController] osirix64bit: self];
 	}
 	

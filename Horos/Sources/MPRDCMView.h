@@ -73,6 +73,7 @@
 	BOOL dontReenterCrossReferenceLines;
 	
 	BOOL dontCheckRoiChange;
+	BOOL sekhmetDetached; // SekhVet Paket AB: Fenster geschlossen, nie mehr zeichnen
 }
 
 @property (readonly) DCMPix *pix;
@@ -95,6 +96,10 @@
 - (void) restoreCameraAndCheckForFrame: (BOOL) v;
 - (void) updateMousePosition: (NSEvent*) theEvent;
 - (void) detect2DPointInThisSlice;
+- (ROI*) sekhmetLastAdded2DPoint; // Sekhmet
+- (void) sekhmetDetachFromController; // SekhVet Paket AB: beim Schliessen des MPR-Fensters aufrufen
+- (void) sekhmetRenderVisibleViews;    // SekhVet Paket BF: jede Ansicht mit Flaeche neu rendern, die eigene zuletzt
+- (void) sekhmetFinishZoomSecondPass;  // SekhVet Paket BF: zweiter Durchgang nach dem Doppelklick-Zoom
 - (void) magicTrick;
 - (void) removeROI: (NSNotification*) note;
 

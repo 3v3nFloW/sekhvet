@@ -41,6 +41,9 @@ args+=(-Wno-dev)
 args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
 args+=(-DCMAKE_OSX_ARCHITECTURES="$ARCHS")
 args+=(-DDCMTK_ENABLE_MANPAGES=OFF)
+# Sachmet: clang 21 verwirft die C++98-Rueckfallimplementierung von OFrvalue (ofutil.h:79, rhs.pt); mit C++11 wird sie nicht uebersetzt
+args+=(-DDCMTK_ENABLE_CXX11=ON)
+args+=(-DCMAKE_CXX_STANDARD=11)
 
 args+=(-DCMAKE_INSTALL_PREFIX="$install_dir")
 

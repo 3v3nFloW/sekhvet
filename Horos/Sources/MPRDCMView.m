@@ -35,8 +35,10 @@
      PURPOSE.
  ============================================================================*/
 
+#import "SekhmetMPRKategorie.h" // SekhVet Stufe 6c
 #import "options.h"
 
+#import "SekhmetSpine.h" // Sekhmet
 #import "MPRDCMView.h"
 #import "VRController.h"
 #import "VRView.h"
@@ -73,8 +75,8 @@ BOOL arePlanesParallel( float *Pn1, float *Pn2)
 
 #define VIEW_COLOR_LABEL_SIZE 25
 
-static	int splitPosition[ 2];
-static	BOOL frameZoomed = NO;
+// SekhVet Paket AT: der Zoom-Zustand des Doppelklicks lag hier als Datei-Statik und galt
+// damit fuer ALLE MPR-Fenster zugleich. Er sitzt jetzt am MPRController (je Fenster).
 unsigned int minimumStep;
 
 @interface MPRDCMView ()
@@ -153,10 +155,10 @@ unsigned int minimumStep;
 	
 	currentTool = t3DRotate;
 	
-	frameZoomed = NO;
 	displayCrossLines = YES;
 	
 	windowController = [self windowController];
+	windowController.sekhmetFrameZoomed = NO;
 	
 	[windowController updateToolbarItems];
 }
@@ -195,11 +197,61 @@ unsigned int minimumStep;
     NSEnableScreenUpdates();
 }
 
+// SekhVet Paket AV: Abschluss des Doppelklick-Zooms, nachdem die NSSplitView ihr Layout hat.
+// Paket BF: nicht nur die angeklickte Ansicht, sondern JEDE Ansicht mit Flaeche neu rendern (beim Zurueckstellen
+// wachsen zwei Ansichten, die sonst ihr altes Bild nur skaliert zeigten), und 0,25 s spaeter ein zweiter Durchgang
+// mit aufgefrischtem GL-Kontext — das ist, was der "zweite Doppelklick" von Hand tat.
+- (void) sekhmetFinishZoom
+{
+	if( sekhmetDetached) return;
+	windowController.lowLOD = NO;
+	[self sekhmetRenderVisibleViews];
+	[NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetFinishZoomSecondPass) object: nil];
+	[self performSelector: @selector(sekhmetFinishZoomSecondPass) withObject: nil afterDelay: 0.25 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
+
+- (void) sekhmetRenderVisibleViews
+{
+	if( sekhmetDetached || windowController == nil) return;
+	MPRDCMView *views[ 3] = { windowController.mprView1, windowController.mprView2, windowController.mprView3 };
+	for( int i = 0; i < 3; i++)
+	{
+		MPRDCMView *v = views[ i];
+		if( v == nil || [v frame].size.width < 1 || [v frame].size.height < 1) continue;
+		v.camera.forceUpdate = YES;
+		[v restoreCamera];            // setzt ueber checkForFrame den gemeinsamen vrView auf die Groesse dieser Ansicht
+		[v updateViewMPR];
+	}
+	// die angeklickte Ansicht zuletzt, damit der vrView mit ihrer Groesse stehen bleibt
+	if( [self frame].size.width >= 1 && [self frame].size.height >= 1)
+	{
+		camera.forceUpdate = YES;
+		[self restoreCamera];
+		[self updateViewMPR];
+	}
+}
+
+- (void) sekhmetFinishZoomSecondPass
+{
+	if( sekhmetDetached || windowController == nil) return;
+	MPRDCMView *views[ 3] = { windowController.mprView1, windowController.mprView2, windowController.mprView3 };
+	for( int i = 0; i < 3; i++)
+		if( views[ i] && [views[ i] frame].size.width >= 1 && [views[ i] frame].size.height >= 1)
+			[[views[ i] openGLContext] update];   // Zeichenflaeche des NSOpenGLView auf den neuen Rahmen bringen
+	[self sekhmetRenderVisibleViews];
+	for( int i = 0; i < 3; i++) [views[ i] setNeedsDisplay: YES];
+}
+
 - (void) checkForFrame
 {
 	NSRect frame = [self convertRectToBacking: [self frame]];
 	NSPoint o = [self convertPoint: NSMakePoint(0, 0) toView:0L];
 	frame.origin = o;
+	
+	// SekhVet Paket BF: eine zusammengeklappte Ansicht (Doppelklick-Zoom, Teiler am Anschlag) darf den GEMEINSAMEN
+	// vrView nicht auf null Flaeche setzen — jede spaetere Ausgabe der anderen Ansichten rendert sonst gegen 0 Pixel.
+	if( frame.size.width < 1 || frame.size.height < 1)
+		return;
 	
 	if( NSEqualRects( frame, [vrView frame]) == NO)
 	{
@@ -354,6 +406,13 @@ unsigned int minimumStep;
         return;
     
     if( [self frame].size.height <= 0)
+        return;
+    
+    // SekhVet Paket AV: zweiter Riegel — der vrView ist EIN gemeinsamer VTK-Blick fuer alle drei
+    // Ansichten und traegt waehrend eines Teilerwechsels kurz die Groesse einer zusammengeklappten
+    // Ansicht. Ein Renderziel ohne Flaeche liefert ein schwarzes oder weisses Bild; wir lassen den
+    // Durchgang aus, die 0,1-s-Nachzuegler-Aktualisierung (setFrame:) holt ihn nach.
+    if( [vrView frame].size.width < 1 || [vrView frame].size.height < 1)
         return;
     
     long h, w;
@@ -515,6 +574,23 @@ unsigned int minimumStep;
             
             [pix setOrientation: orientation];
             [pix setSliceThickness: [vrView getClippingRangeThicknessInMm]];
+            [windowController sekhmetApplyConvolutionToPix: pix]; // Sekhmet: Faltung auf das Schnittbild
+            
+            // SekhVet Paket BF: Diagnose fuer "Bild tiefschwarz / alles weiss" — ein Schnittbild aus lauter gleichen Werten
+            // ist nie ein echtes Bild. Einmal je Vorfall ins Protokoll (Konsole / log show, Prozess Horos).
+            {
+                float *f = [pix fImage];
+                long n = (long) w * h;
+                if( f && n > 64)
+                {
+                    BOOL uniform = YES;
+                    float v0 = f[ 0];
+                    for( int k = 1; k < 64 && uniform; k++)
+                        if( f[ (n - 1) * k / 63] != v0) uniform = NO;
+                    if( uniform)
+                        NSLog( @"SekhVet MPR: uniform slice image (value %.1f, %ldx%ld) in view %d, frame %.0fx%.0f, vrView %.0fx%.0f, WL/WW %.0f/%.0f, LOD %.2f, zoomed %d", v0, w, h, viewID, [self frame].size.width, [self frame].size.height, [vrView frame].size.width, [vrView frame].size.height, previousWL, previousWW, LOD, (int) windowController.sekhmetFrameZoomed);
+                }
+            }
             
             [self setWLWW: previousWL :previousWW];
             
@@ -610,6 +686,7 @@ unsigned int minimumStep;
             float orientation[ 9];
             [vrView getOrientation: orientation];
             [bPix setOrientation: orientation];
+            [windowController sekhmetApplyConvolutionToPix: bPix]; // Sekhmet
             [bPix setSliceThickness: [vrView getClippingRangeThicknessInMm]];
             
             [blendingView setWLWW: previousWL :previousWW];
@@ -630,6 +707,9 @@ unsigned int minimumStep;
         
         dontReenterCrossReferenceLines = NO;
     }
+    
+    [SekhmetSpine updateLevelAnnotationForMPRView: self]; // SekhVet: Wirbelhoehe oben links
+    if( isLoading == NO) [windowController sekhmetScheduleSyncBroadcast]; // Sekhmet: Double MPR
     
     [self setNeedsDisplay: YES];
 }
@@ -745,8 +825,26 @@ unsigned int minimumStep;
 	scaleValue = copyScale;
 }
 
+// SekhVet Paket AB: Nach dem Schliessen des MPR-Fensters (z.B. closeAllViewers bei Bildschirmwechsel nach dem Aufwachen)
+// zeichnet die OpenGL-Ebene der Ansicht noch einen CoreAnimation-Commit lang weiter, der MPRController ist da schon
+// freigegeben -> objc_msgSend auf windowController in subDrawRect (Horos #753/#758). Abkoppeln und nichts mehr zeichnen.
+- (void) sekhmetDetachFromController
+{
+    sekhmetDetached = YES;
+    windowController = nil;
+    vrView = nil;
+}
+
+- (void) drawRect:(NSRect) r
+{
+    if( sekhmetDetached) return;
+    [super drawRect: r];
+}
+
 - (void) subDrawRect: (NSRect) r
 {
+    if( sekhmetDetached || windowController == nil) return; // SekhVet Paket AB
+
 	if( [stringID isEqualToString: @"export"] && [[NSUserDefaults standardUserDefaults] boolForKey: @"exportDCMIncludeAllViews"] == NO)
 		return;
 	
@@ -762,7 +860,7 @@ unsigned int minimumStep;
 	glEnable(GL_LINE_SMOOTH);
 	glPointSize( 12 * self.window.backingScaleFactor);
 	
-	if( displayCrossLines && frameZoomed == NO)
+	if( displayCrossLines && windowController.sekhmetFrameZoomed == NO)
 	{
 		// All pix have the same thickness
 		float thickness = [pix sliceThickness];
@@ -857,7 +955,7 @@ unsigned int minimumStep;
 	[self colorForView: viewID];
 	
 	// Red Square
-	if( [[self window] firstResponder] == self && frameZoomed == NO)
+	if( [[self window] firstResponder] == self && windowController.sekhmetFrameZoomed == NO)
 	{
 		glLineWidth(8.0 * self.window.backingScaleFactor);
 		glBegin(GL_LINE_LOOP);
@@ -877,7 +975,7 @@ unsigned int minimumStep;
 	glEnd();
 	glLineWidth(1.0 * self.window.backingScaleFactor);
 	
-	if( displayCrossLines && frameZoomed == NO && windowController.displayMousePosition && !windowController.mprView1.rotateLines && !windowController.mprView2.rotateLines && !windowController.mprView3.rotateLines
+	if( displayCrossLines && windowController.sekhmetFrameZoomed == NO && windowController.displayMousePosition && !windowController.mprView1.rotateLines && !windowController.mprView2.rotateLines && !windowController.mprView3.rotateLines
 																					&& !windowController.mprView1.moveCenter && !windowController.mprView2.moveCenter && !windowController.mprView3.moveCenter)
 	{
 		// Mouse Position
@@ -1213,6 +1311,7 @@ unsigned int minimumStep;
 						[new2DPointROI setROIRect: NSMakeRect( sc[ 0], sc[ 1], 0, 0)];
 						
 						[new2DPointROI setParentROI: r];
+						[new2DPointROI setName: r.name]; // Sekhmet: Label in allen MPR-Ebenen zeigen
 						[self roiSet: new2DPointROI];
 						[curRoiList addObject: new2DPointROI];
 						
@@ -1228,9 +1327,13 @@ unsigned int minimumStep;
 	}
 }
 
+static ROI *sekhmetLastAdded = nil;
+- (ROI*) sekhmetLastAdded2DPoint { ROI *r = sekhmetLastAdded; sekhmetLastAdded = nil; return r; }
+
 - (void) add2DPoint: (float*) r
 {
 	ViewerController *viewer2D = [windowController viewer];
+	sekhmetLastAdded = nil; // Sekhmet: nie einen Zeiger aus einem frueheren Aufruf liefern
 	
 	if (viewer2D)
 	{
@@ -1255,6 +1358,7 @@ unsigned int minimumStep;
 			
 			[[viewer2D imageView] roiSet:new2DPointROI];
 			[[[viewer2D roiList] objectAtIndex: sc[ 2]] addObject: new2DPointROI];
+			sekhmetLastAdded = new2DPointROI; // Sekhmet (nicht retained; nur fuer den unmittelbaren Aufrufer)
 			
 			// notify the change
 			[[NSNotificationCenter defaultCenter] postNotificationName: OsirixROIChangeNotification object: new2DPointROI userInfo: nil];
@@ -1296,7 +1400,11 @@ unsigned int minimumStep;
 #pragma mark-
 #pragma mark Mouse Events	
 
-#define BS 10.
+// SekhVet: Fadenkreuz-Zonen einstellbar (Bildschirmpunkte); Horos: 10/10. Zu grosse Zonen lassen den Cursor staendig wechseln.
+static float sekhmetCenterZone( void) { float v = [[NSUserDefaults standardUserDefaults] floatForKey: @"SekhmetMPRCenterZone"]; return v > 0 ? v : 18; }
+static float sekhmetLineZone( void)   { float v = [[NSUserDefaults standardUserDefaults] floatForKey: @"SekhmetMPRLineZone"];   return v > 0 ? v : 12; }
+#define BS sekhmetCenterZone()
+static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDefaults] boolForKey: @"SekhmetMPRStaticCursor"]; }
 
 - (float) angleBetween:(NSPoint) mouseLocation center:(NSPoint) center
 {
@@ -1350,7 +1458,7 @@ unsigned int minimumStep;
 	if( [[NSUserDefaults standardUserDefaults] integerForKey: @"ANNOTATIONS"] == annotNone)
 		return 0;
 	
-	if( displayCrossLines == NO || frameZoomed)
+	if( displayCrossLines == NO || windowController.sekhmetFrameZoomed)
 		return 0;
 	
 	if( LOD == 0)
@@ -1396,7 +1504,7 @@ unsigned int minimumStep;
                 distance2 /= self.curDCM.pixelSpacingX;
 			}
             
-			if( distance1 * scaleValue < 10*self.window.backingScaleFactor || distance2 * scaleValue < 10*self.window.backingScaleFactor)
+			if( distance1 * scaleValue < sekhmetLineZone()*self.window.backingScaleFactor || distance2 * scaleValue < sekhmetLineZone()*self.window.backingScaleFactor)
 			{
 				return 1;
 			}
@@ -1540,19 +1648,19 @@ unsigned int minimumStep;
 		}
 		else
 		{
-			if( frameZoomed == NO)
+			if( windowController.sekhmetFrameZoomed == NO)
 			{
                 if( [windowController.horizontalSplit isVertical])
-                    splitPosition[ 0] = [[windowController mprView2] frame].origin.x;
+                    windowController.sekhmetSplitH = [[windowController mprView2] frame].origin.x;
 				else
-                    splitPosition[ 0] = [[windowController mprView2] frame].origin.y;
+                    windowController.sekhmetSplitH = [[windowController mprView2] frame].origin.y;
                 
                 if( [windowController.verticalSplit isVertical])
-                    splitPosition[ 1] = [[windowController mprView3] frame].origin.x;
+                    windowController.sekhmetSplitV = [[windowController mprView3] frame].origin.x;
 				else
-                    splitPosition[ 1] = [[windowController mprView3] frame].origin.y;
+                    windowController.sekhmetSplitV = [[windowController mprView3] frame].origin.y;
                 
-				frameZoomed = YES;
+				windowController.sekhmetFrameZoomed = YES;
 				switch( viewID)
 				{
 					case 1:
@@ -1573,14 +1681,17 @@ unsigned int minimumStep;
 			}
 			else
 			{
-				frameZoomed = NO;
-                [windowController.verticalSplit setPosition: splitPosition[ 1] ofDividerAtIndex: 0];
-				[windowController.horizontalSplit setPosition: splitPosition[ 0] ofDividerAtIndex: 0];
+				windowController.sekhmetFrameZoomed = NO;
+                [windowController.verticalSplit setPosition: windowController.sekhmetSplitV ofDividerAtIndex: 0];
+				[windowController.horizontalSplit setPosition: windowController.sekhmetSplitH ofDividerAtIndex: 0];
 			}
 			
-			[self restoreCamera];
-			windowController.lowLOD = NO;
-			[self updateViewMPR];
+			// SekhVet Paket AV: erst im naechsten Runloop-Durchgang rendern. Sofort gerendert
+			// traegt der GEMEINSAME vrView noch die Groesse der Ansicht, die der Teilerwechsel
+			// gerade auf 0 zusammenklappt (gemessen: vrView 0x942) — das gibt ein tiefschwarzes
+			// und beim Zurueckstellen ein weisses Bild. Rueckmeldung 15.09.
+			[NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetFinishZoom) object: nil];
+			[self performSelector: @selector(sekhmetFinishZoom) withObject: nil afterDelay: 0 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
 		}
 	}
 	else
@@ -1599,7 +1710,7 @@ unsigned int minimumStep;
 			
 			[self mouseDragged: theEvent];
 			
-			[[NSCursor closedHandCursor] set];
+			if( sekhmetStaticCursor() == NO) [[NSCursor closedHandCursor] set];
 		}
 		else if( mouseOnLines == 1)
 		{
@@ -1611,7 +1722,7 @@ unsigned int minimumStep;
 			
 			[self mouseDragged: theEvent];
 			
-			[[NSCursor rotateAxisCursor] set];
+			if( sekhmetStaticCursor() == NO) [[NSCursor rotateAxisCursor] set];
 		}
 		else
 		{
@@ -1627,7 +1738,7 @@ unsigned int minimumStep;
 			vrView.keep3DRotateCentered = YES;
 			if( mouseDownTool == tCamera3D)
 			{
-				if( displayCrossLines == NO || frameZoomed == YES)
+				if( displayCrossLines == NO || windowController.sekhmetFrameZoomed == YES)
 					vrView.keep3DRotateCentered = NO;
 				else
 				{
@@ -1726,6 +1837,7 @@ unsigned int minimumStep;
 					float location[ 3];
 					[pix convertPixX: r.rect.origin.x pixY: r.rect.origin.y toDICOMCoords: location pixelCenter: YES];
 					[self add2DPoint: location];
+					if( r.name.length) { ROI *pers = [self sekhmetLastAdded2DPoint]; if( pers) { [pers setName: r.name]; [SekhmetSpine notePersistentROI: pers]; } } // Sekhmet
 				}
 			}
 			
@@ -1805,7 +1917,7 @@ unsigned int minimumStep;
 	
 	if( rotateLines)
 	{
-		[[NSCursor rotateAxisCursor] set];
+		if( sekhmetStaticCursor() == NO) [[NSCursor rotateAxisCursor] set];
 		
 		windowController.lowLOD = YES;
 		
@@ -1866,7 +1978,7 @@ unsigned int minimumStep;
 				
 				[self updateViewMPR: NO];
 			}
-			else if( [vrView _tool] == tZoom) [self updateViewMPR: NO];
+			else if( [vrView _tool] == tZoom) [self updateViewMPR: [[NSUserDefaults standardUserDefaults] boolForKey: @"syncZoomLevelMPR"]]; // SekhVet Paket S: mit Zoom-Schalter die anderen zwei Ansichten live mitzoomen, nicht erst beim Loslassen
 			else [self updateViewMPR];
 			
 			[NSObject cancelPreviousPerformRequestsWithTarget: windowController selector:@selector(delayedFullLODRendering:) object: nil];
@@ -1919,6 +2031,7 @@ unsigned int minimumStep;
 		{
 			[cursor set];
 		}
+		if( sekhmetStaticCursor()) [[NSCursor arrowCursor] set];   // SekhVet: kein Hin- und Herspringen zwischen Hand/Drehen/Werkzeug
 		
 		[self updateMousePosition: theEvent];
 	}

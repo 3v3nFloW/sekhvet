@@ -41,6 +41,10 @@
 
 #import "ToolbarPanel.h"
 #import "DicomDatabase.h"
+#import "SekhmetImport.h"
+#import "SekhmetOpening.h" // SekhVet
+#import "SekhmetDisplayPanel.h" // SekhVet Paket BB: SekhmetSliderSetTickMarks
+#import "SekhmetRename.h" // SekhVet Paket BC: Patient umbenennen
 #import "DicomDatabase+Routing.h"
 #import "DicomDatabase+Clean.h"
 #import "DicomDatabase+DCMTK.h"
@@ -271,6 +275,7 @@ static NSString*	ExportToolbarItemIdentifier			= @"Export.pdf";
 static NSString*	ExportROIAndKeyImagesToolbarItemIdentifier	= @"ExportROIAndKeyImages.tif";
 static NSString*	AnonymizerToolbarItemIdentifier		= @"Anonymizer.pdf";
 static NSString*	QueryToolbarItemIdentifier			= @"QueryRetrieve.pdf";
+static NSString*	SekhmetDICOMwebToolbarItemIdentifier = @"SekhmetDICOMweb"; // SekhVet Paket R
 static NSString*	SendToolbarItemIdentifier			= @"Send.pdf";
 static NSString*	ViewerToolbarItemIdentifier			= @"Viewer.pdf";
 //static NSString*	CDRomToolbarItemIdentifier			= @"cd.icns";
@@ -996,6 +1001,8 @@ static NSConditionLock *threadLock = nil;
         [pool release];
     }
     
+    filesArray = [SekhmetImport takeConvertibleFilesFrom: filesArray]; // SekhVet: JPG/PNG/TIFF/PDF ueber den DICOM-Import-Dialog wandeln statt roh ablegen
+    if( filesArray.count == 0) return;
     [self copyFilesIntoDatabaseIfNeeded: filesArray options: [NSDictionary dictionaryWithObjectsAndKeys: [[NSUserDefaults standardUserDefaults] objectForKey: @"onlyDICOM"], @"onlyDICOM", [NSNumber numberWithBool: YES], @"async", [NSNumber numberWithBool: YES], @"addToAlbum",  [NSNumber numberWithBool: YES], @"selectStudy", nil]];
 }
 
@@ -1886,10 +1893,10 @@ static NSConditionLock *threadLock = nil;
         
         NSString *location = oPanel.URL.path;
         
-        if( [[location lastPathComponent] isEqualToString:@"Horos Data"])
+        if( [[location lastPathComponent] isEqualToString: OsirixDataDirName] /* Sekhmet */)
             location = [location stringByDeletingLastPathComponent];
         
-        if( [[location lastPathComponent] isEqualToString:@"DATABASE.noindex"] && [[[location stringByDeletingLastPathComponent] lastPathComponent] isEqualToString:@"Horos Data"])
+        if( [[location lastPathComponent] isEqualToString:@"DATABASE.noindex"] && [[[location stringByDeletingLastPathComponent] lastPathComponent] isEqualToString: OsirixDataDirName] /* Sekhmet */)
             location = [[location stringByDeletingLastPathComponent] stringByDeletingLastPathComponent];
         
         [self openDatabasePath: location];
@@ -1966,7 +1973,7 @@ static NSConditionLock *threadLock = nil;
         if( isDirectory)
         {
             // Default SQL file
-            NSString	*index = [[path stringByAppendingPathComponent:@"Horos Data"] stringByAppendingPathComponent:@"Database.sql"];
+            NSString	*index = [[path stringByAppendingPathComponent: OsirixDataDirName] /* Sekhmet */ stringByAppendingPathComponent:@"Database.sql"];
             
             if( [[NSFileManager defaultManager] fileExistsAtPath: index])
             {
@@ -5341,6 +5348,11 @@ static NSConditionLock *threadLock = nil;
 }
 
 #ifndef OSIRIX_LIGHT
+- (IBAction) sekhmetRenamePatient:(id) sender // SekhVet Paket BC
+{
+    [[SekhmetRename shared] runForStudies: [SekhmetRename selectedStudies]];
+}
+
 - (IBAction) unifyStudies:(id) sender
 {
     [ViewerController closeAllWindows];
@@ -7097,6 +7109,11 @@ static NSConditionLock *threadLock = nil;
 
 - (void) databaseOpenStudy:(DicomStudy*) currentStudy withProtocol:(NSDictionary*) currentHangingProtocol
 {
+    // SekhVet Paket AU: Passt ein Oeffnungsprotokoll, bestimmt es Serienwahl, Reihenfolge,
+    // Kachelung und Fensterung - und Horos' eigener Weg bleibt aussen vor. Passt keines,
+    // faellt alles auf Horos zurueck (applyToStudy: liefert dann NO).
+    if( [SekhmetOpening applyToStudy: currentStudy]) return;
+
     BOOL restoreNOAutotiling = NO;
     int WINDOWSIZEVIEWERCopy = 0;
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"AUTOTILING"] != YES)
@@ -7129,9 +7146,15 @@ static NSConditionLock *threadLock = nil;
                 [DCMView setSyncro: syncroOFF];
         }
         
+        // SekhVet Paket AS: Hanging-Protokolle duerfen Propagate nicht mehr EINschalten.
+        // Horos schrieb hier den Wert des Protokolls nach COPYSETTINGS. Alle mitgelieferten
+        // Protokolle tragen Propagate = 1 und hoben damit die Einstellung aus Paket AH bei
+        // jedem Studienwechsel wieder auf (Rueckmeldung 15.09.: "Propagate per default ausgeschaltet").
+        // Ausschalten darf ein Protokoll weiterhin, einschalten nicht.
         if( [currentHangingProtocol valueForKey: @"Propagate"])
         {
-            [[NSUserDefaults standardUserDefaults] setBool: [[currentHangingProtocol valueForKey: @"Propagate"] boolValue] forKey:@"COPYSETTINGS"];
+            if( [[currentHangingProtocol valueForKey: @"Propagate"] boolValue] == NO)
+                [[NSUserDefaults standardUserDefaults] setBool: NO forKey:@"COPYSETTINGS"];
         }
         
         NSMutableArray *seriesArray = nil;
@@ -8941,7 +8964,7 @@ static BOOL withReset = NO;
         {
             [animationSlider setEnabled:YES];
             [animationSlider setMaxValue: noOfImages-1];
-            [animationSlider setNumberOfTickMarks: noOfImages];
+            SekhmetSliderSetTickMarks( animationSlider, noOfImages); // SekhVet Paket BB: keine Striche je Bild
             [animationSlider setIntValue:0];	//noOfImages/2
         }
     }
@@ -13819,7 +13842,7 @@ static NSArray*	openSubSeriesArray = nil;
         
         if( [DCMPix isRunOsiriXInProtectedModeActivated])
         {
-            NSRunCriticalAlertPanel(NSLocalizedString(@"Protected Mode", nil), NSLocalizedString(@"Horos is now running in Protected Mode (shift + option keys at startup): no images are displayed, allowing you to delete crashing or corrupted images/studies.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            NSRunCriticalAlertPanel(NSLocalizedString(@"Protected Mode", nil), NSLocalizedString(@"SekhVet is now running in Protected Mode (shift + option keys at startup): no images are displayed, allowing you to delete crashing or corrupted images/studies.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         }
         
         _distantAlbumNoOfStudiesCache = [[NSMutableDictionary alloc] init];
@@ -14104,6 +14127,7 @@ static NSArray*	openSubSeriesArray = nil;
         [menu addItem: [NSMenuItem separatorItem]];
         [menu addItemWithTitle: NSLocalizedString(@"Merge Selected Studies", nil) action: @selector(mergeStudies:) keyEquivalent:@""];
         [menu addItemWithTitle: NSLocalizedString(@"Unify patient identity", nil) action: @selector(unifyStudies:) keyEquivalent:@""];
+        [menu addItemWithTitle: NSLocalizedString(@"Rename Patient (DICOM)…", nil) action: @selector(sekhmetRenamePatient:) keyEquivalent:@""]; // SekhVet Paket BC
     }
     
     if (isWritable) {
@@ -14414,7 +14438,7 @@ static NSArray*	openSubSeriesArray = nil;
             N2LogExceptionWithStackTrace(ne);
             [@"" writeToFile:_database.loadingFilePath atomically:NO encoding:NSUTF8StringEncoding error:NULL];
             
-            NSString *message = [NSString stringWithFormat: NSLocalizedString(@"A problem occured during start-up of Horos:\r\r%@\r\r%@",nil), [ne description], [AppController printStackTrace: ne]];
+            NSString *message = [NSString stringWithFormat: NSLocalizedString(@"A problem occured during start-up of SekhVet:\r\r%@\r\r%@",nil), [ne description], [AppController printStackTrace: ne]];
             
             NSRunCriticalAlertPanel(NSLocalizedString(@"Error",nil), @"%@", NSLocalizedString( @"OK",nil), nil, nil, message);
             
@@ -14534,7 +14558,7 @@ static NSArray*	openSubSeriesArray = nil;
         NSAlert *alert = [[NSAlert alloc] init];
         [alert addButtonWithTitle:NSLocalizedString(@"OK",nil)];
         [alert setMessageText:NSLocalizedString(@"Not validated OsiriX plugins were detected!",nil)];
-        [alert setInformativeText:NSLocalizedString(@"Not validated OsiriX plugins may cause Horos run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. A brand new Horos plugin database is being built for you.",nil)];
+        [alert setInformativeText:NSLocalizedString(@"Not validated OsiriX plugins may cause SekhVet run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. A brand new SekhVet plugin database is being built for you.",nil)];
         [alert setAlertStyle:NSWarningAlertStyle];
         [alert runModal];
         [alert release];
@@ -15030,6 +15054,11 @@ static NSArray*	openSubSeriesArray = nil;
     {
         return [[[NSApp mainWindow] windowController] isKindOfClass:[ViewerController class]];
     }
+    else if( [menuItem action] == @selector(sekhmetRenamePatient:)) // SekhVet Paket BC: eine oder mehrere Studien, nur lokale DB
+    {
+        if (![_database isLocal]) return NO;
+        return [[databaseOutline selectedRowIndexes] count] >= 1;
+    }
     else if( [menuItem action] == @selector(unifyStudies:))
     {
         if (![_database isLocal]) return NO;
@@ -15266,7 +15295,7 @@ static NSArray*	openSubSeriesArray = nil;
     [helpMenu addItem: [NSMenuItem separatorItem]];
     [helpMenu addItemWithTitle: NSLocalizedString(@"Report a bug", nil) action: @selector(openBugReportPage:) keyEquivalent: @""];
     //[helpMenu addItem: [NSMenuItem separatorItem]];
-    //[helpMenu addItemWithTitle: NSLocalizedString(@"Send an email to Horos support", nil) action: @selector(sendEmail:) keyEquivalent: @""];
+    //[helpMenu addItemWithTitle: NSLocalizedString(@"Send an email to SekhVet support", nil) action: @selector(sendEmail:) keyEquivalent: @""];
     
     [helpMenu release];
 }
@@ -19116,6 +19145,16 @@ restart:
     
     // Attach the toolbar to the document window 
     [self.window setToolbar: toolbar];
+    { // SekhVet Paket R: DICOMweb-Knopf hinter Query einfuegen, falls die gesicherte Toolbar-Konfiguration ihn nicht kennt
+        BOOL have = NO; NSInteger qIdx = -1, idx = 0;
+        for( NSToolbarItem *it in [toolbar items])
+        {
+            if( [[it itemIdentifier] isEqualToString: SekhmetDICOMwebToolbarItemIdentifier]) have = YES;
+            if( [[it itemIdentifier] isEqualToString: QueryToolbarItemIdentifier]) qIdx = idx;
+            idx++;
+        }
+        if( have == NO) [toolbar insertItemWithItemIdentifier: SekhmetDICOMwebToolbarItemIdentifier atIndex: (qIdx >= 0) ? qIdx + 1 : 0];
+    }
     [self.window setShowsToolbarButton:NO];
     [[self.window toolbar] setVisible: YES];
     
@@ -19248,6 +19287,15 @@ restart:
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(anonymizeDICOM:)];
     } 
+    else if ([itemIdent isEqualToString: SekhmetDICOMwebToolbarItemIdentifier]) // SekhVet Paket R: DICOMweb-Abfrage direkt aus der DB
+    {
+        [toolbarItem setLabel: NSLocalizedString(@"DICOMweb",nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"DICOMweb (SekhVet)",nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"Query and retrieve studies from your DICOMweb servers (QIDO-RS / WADO-RS)",nil)];
+        [toolbarItem setImage: [NSImage imageNamed: QueryToolbarItemIdentifier]];
+        [toolbarItem setTarget: [AppController sharedAppController]];
+        [toolbarItem setAction: @selector(sekhmetShowDICOMweb:)];
+    }
     else if ([itemIdent isEqualToString: QueryToolbarItemIdentifier])
     {
         
@@ -19402,7 +19450,7 @@ restart:
     {
         [toolbarItem setLabel: NSLocalizedString(@"Migration Assistant",nil)];
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Migration Assistant",nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"Open Horos Migration Assistant",nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"Open SekhVet Migration Assistant",nil)];
         [toolbarItem setImage: [NSImage imageNamed: HorosMigrationAssistantIdentifier]];
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(openHorosMigrationAssistant:)];
@@ -19457,7 +19505,7 @@ restart:
 
     if ([O2HMigrationAssistant isOsiriXInstalled] == NO)
     {
-        NSRunInformationalAlertPanel(NSLocalizedString(@"Horos Migration Assistant", nil),
+        NSRunInformationalAlertPanel(NSLocalizedString(@"SekhVet Migration Assistant", nil),
                                      NSLocalizedString(@"It seems you don't have OsiriX installed.", nil),
                                      NSLocalizedString(@"Return",nil), nil, nil);
         return;
@@ -19597,6 +19645,7 @@ restart:
 - (NSArray *)toolbarAllowedItemIdentifiers: (NSToolbar *)toolbar
 {	
     NSMutableArray *array = [NSMutableArray arrayWithObjects:
+                             SekhmetDICOMwebToolbarItemIdentifier, // SekhVet Paket R
                              ViewersToolbarItemIdentifier,
                              SearchToolbarItemIdentifier,
                              TimeIntervalToolbarItemIdentifier,
@@ -20221,7 +20270,7 @@ restart:
     @catch (NSException* e)
     {
         N2LogExceptionWithStackTrace(e);
-        NSRunAlertPanel(NSLocalizedString(@"Horos Database", nil), NSLocalizedString( @"Horos cannot read/create this file/folder. Permissions error?", nil), nil, nil, nil);
+        NSRunAlertPanel(NSLocalizedString(@"Horos Database", nil), NSLocalizedString( @"SekhVet cannot read/create this file/folder. Permissions error?", nil), nil, nil, nil);
         [self resetToLocalDatabase];
     }
     

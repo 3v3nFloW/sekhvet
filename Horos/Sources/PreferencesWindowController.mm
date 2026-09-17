@@ -489,7 +489,7 @@ static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
         
         // add new view
 
-        NSString* title = NSLocalizedString(@"Horos Preferences", NULL);
+        NSString* title = NSLocalizedString(@"SekhVet Preferences", NULL);
         NSSize newSize;
 
         if (!context) {

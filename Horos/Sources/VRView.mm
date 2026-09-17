@@ -35,6 +35,7 @@
  Ê Ê PURPOSE.
  ============================================================================*/
 
+#import "SekhmetOrientation.h" // SekhVet Stufe 6c: SekhmetVetLetter()
 #import "options.h"
 
 #if !__LP64__ && !__arm64__
@@ -755,6 +756,10 @@ public:
         orientationY = vector[ 1] < 0 ? NSLocalizedString( @"A", @"A: Anterior") : NSLocalizedString( @"P", @"P: Posterior");
         orientationZ = vector[ 2] < 0 ? NSLocalizedString( @"I", @"I: Inferior") : NSLocalizedString( @"S", @"S: Superior");
     }
+    
+    // Sekhmet: veterinaere Randbuchstaben
+    orientationY = SekhmetVetLetter( orientationY);
+    orientationZ = SekhmetVetLetter( orientationZ);
     
     float absX = fabs( vector[ 0]);
     float absY = fabs( vector[ 1]);
@@ -2220,6 +2225,8 @@ public:
 {
     if( volumeMapper)
     {
+        if( aRenderer == nil || aRenderer->GetRenderWindow() == NULL) { NSLog( @"SekhVet: VRView render ohne RenderWindow uebersprungen"); return; } // SekhVet: sonst Assert in vtkTextureObject::Bind (Debug)
+        _cocoaRenderWindow->Start(); // SekhVet: OpenGL-Initialisierung (Texturformat-Tabelle, Shader-Cache) â€” eine nie gezeichnete (hidden) VRView hat sie sonst nicht, Folge: "Failed to determine texture parameters" und Absturz
         aRenderer->SetDraw( 0);
         
         dontRenderVolumeRenderingOsiriX = 0;
@@ -2237,6 +2244,8 @@ public:
 {
     if( blendingVolumeMapper)
     {
+        if( aRenderer == nil || aRenderer->GetRenderWindow() == NULL) return; // SekhVet
+        _cocoaRenderWindow->Start(); // SekhVet: siehe render
         aRenderer->SetDraw( 0);
         
         dontRenderVolumeRenderingOsiriX = 0;
@@ -6462,10 +6471,10 @@ public:
     vtkAnnotatedCubeActor* cube = vtkAnnotatedCubeActor::New();
     cube->SetXPlusFaceText ( [NSLocalizedString( @"L", @"L: Left") UTF8String]);
     cube->SetXMinusFaceText( [NSLocalizedString( @"R", @"R: Right") UTF8String]);
-    cube->SetYPlusFaceText ( [NSLocalizedString( @"P", @"P: Posterior") UTF8String]);
-    cube->SetYMinusFaceText( [NSLocalizedString( @"A", @"A: Anterior") UTF8String]);
-    cube->SetZPlusFaceText ( [NSLocalizedString( @"S", @"S: Superior") UTF8String]);
-    cube->SetZMinusFaceText( [NSLocalizedString( @"I", @"I: Inferior") UTF8String]);
+    cube->SetYPlusFaceText ( [SekhmetVetLetter( NSLocalizedString( @"P", @"P: Posterior")) UTF8String]);
+    cube->SetYMinusFaceText( [SekhmetVetLetter( NSLocalizedString( @"A", @"A: Anterior")) UTF8String]);
+    cube->SetZPlusFaceText ( [SekhmetVetLetter( NSLocalizedString( @"S", @"S: Superior")) UTF8String]);
+    cube->SetZMinusFaceText( [SekhmetVetLetter( NSLocalizedString( @"I", @"I: Inferior")) UTF8String]);
     cube->SetFaceTextScale( 0.67 );
     
     vtkProperty* property = cube->GetXPlusFaceProperty();

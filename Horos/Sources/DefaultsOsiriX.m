@@ -35,6 +35,7 @@
      PURPOSE.
  ============================================================================*/
 
+#import "SekhmetOrientation.h" // Sekhmet (nur Deklaration; Aufruf per NSClassFromString)
 #import "DefaultsOsiriX.h"
 #import "PluginManager.h"
 #import "NSUserDefaults+OsiriX.h"
@@ -317,7 +318,7 @@ static NSHost *currentHost = nil;
 	iww = 1400;          iwl = -500;
 	[wlwwValues setObject:[NSArray arrayWithObjects:[NSNumber numberWithFloat:iwl], [NSNumber numberWithFloat:iww], nil] forKey:@"CT - Pulmonary"];
 	
-	iww = 1500;          iwl = 300;
+	iww = 5000;          iwl = 700; // SekhVet Paket AE: Knochenfenster Vet (Vorgabe 11.09.: 700/5000)
 	[wlwwValues setObject:[NSArray arrayWithObjects:[NSNumber numberWithFloat:iwl], [NSNumber numberWithFloat:iww], nil] forKey:@"CT - Bone"];
 	
 	iww = 100;          iwl = 50;
@@ -328,6 +329,9 @@ static NSHost *currentHost = nil;
 	
 	iww = 700;          iwl = -300;
 	[wlwwValues setObject:[NSArray arrayWithObjects:[NSNumber numberWithFloat:iwl], [NSNumber numberWithFloat:iww], nil] forKey:@"VR - Endoscopy"];
+	
+	iww = 400;          iwl = 40; // SekhVet Paket AE: Weichteilfenster als Preset (Hotkey-Ziffer nach alphabetischer Reihenfolge)
+	[wlwwValues setObject:[NSArray arrayWithObjects:[NSNumber numberWithFloat:iwl], [NSNumber numberWithFloat:iww], nil] forKey:@"CT - Soft tissue"];
 	
 	[defaultValues setObject:wlwwValues forKey:@"WLWW3"];
 	
@@ -375,6 +379,27 @@ static NSHost *currentHost = nil;
 	{
 		short				vals[25] = {3, 3, 2, 3, 3, 3, 2, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 2, 3, 3, 3, 2, 3, 3};
 		[self addConvolutionFilter:5 :vals :@"Inverted blur" :convValues];
+	}
+	// Sekhmet: Kernel-Satz aus ImagoPilot (Summe > 0, damit die Normalisierung greift)
+	{
+		short vals[25] = {1,4,6,4,1, 4,16,24,16,4, 6,24,36,24,6, 4,16,24,16,4, 1,4,6,4,1};
+		[self addConvolutionFilter:5 :vals :@"Gauss 5x5" :convValues];
+	}
+	{
+		short vals[9] = {0,-1,0, -1,5,-1, 0,-1,0};
+		[self addConvolutionFilter:3 :vals :@"Sharpen 3x3" :convValues];
+	}
+	{
+		short vals[25] = {-1,-1,-1,-1,-1, -1,-1,-1,-1,-1, -1,-1,25,-1,-1, -1,-1,-1,-1,-1, -1,-1,-1,-1,-1};
+		[self addConvolutionFilter:5 :vals :@"Sharpen 5x5" :convValues];
+	}
+	{
+		short vals[25] = {-1,-4,-6,-4,-1, -4,-16,-24,-16,-4, -6,-24,476,-24,-6, -4,-16,-24,-16,-4, -1,-4,-6,-4,-1};
+		[self addConvolutionFilter:5 :vals :@"Unsharp Mask 5x5" :convValues];
+	}
+	{
+		short vals[25] = {0,0,-1,0,0, 0,-1,-2,-1,0, -1,-2,17,-2,-1, 0,-1,-2,-1,0, 0,0,-1,0,0};
+		[self addConvolutionFilter:5 :vals :@"Highpass 5x5" :convValues];
 	}
 	{
 		short				vals[25] = {0, 0, -1, 0, 0, 0, -1, -2, -1, 0, -1, -2, -3, -2, -1, 0, -1, -2, -1, 0, 0, 0, -1, 0, 0};
@@ -781,13 +806,13 @@ static NSHost *currentHost = nil;
     if( [defaultValues objectForKey:@"AETITLE"] == nil)
         [defaultValues setObject:@"OSIRIX" forKey:@"AETITLE"];
     
-	[defaultValues setObject:@"11112" forKey:@"AEPORT"];
+	[defaultValues setObject:@"11113" forKey:@"AEPORT"]; // Sachmet: 11112 gehoert dem taeglichen Horos auf demselben Rechner
 
 	[defaultValues setObject:@"1" forKey:@"points3DcolorRed"];
 	[defaultValues setObject:@"0" forKey:@"points3DcolorGreen"];
 	[defaultValues setObject:@"0" forKey:@"points3DcolorBlue"];
 	[defaultValues setObject:@"1" forKey:@"points3DcolorAlpha"];
-	[defaultValues setObject:@"1" forKey:@"MagneticWindows"];
+	[defaultValues setObject:@"0" forKey:@"MagneticWindows"]; // SekhVet Paket AH: Fenster frei verschiebbar (Horos: 1)
 	[defaultValues setObject:@"0" forKey:@"MPR2DViewsPosition"];
 	
 	[defaultValues setObject:@"1" forKey:@"StoreThumbnailsInDB"];
@@ -875,6 +900,29 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"3" forKey: @"LISTENERCHECKINTERVAL"];
 	[defaultValues setObject:@"1" forKey: @"AUTOTILING"];
 	[defaultValues setObject:@"1" forKey: @"USEALWAYSTOOLBARPANEL2"];
+	[defaultValues setObject:@"1" forKey: @"VetOrientationLetters"]; // Sekhmet: A->V, P->D, S->Cr, I->Cd
+	[defaultValues setObject: @"1" forKey: @"moveToApplicationsFolderAlertSuppress"]; // SekhVet: LetsMove-Dialog (Release, App nicht in /Applications) nie zeigen
+	[defaultValues setObject: @"3" forKey: @"SekhmetAnnotationBackground"]; // Sekhmet: 0 Horos, 1 Kontur, 2 Kasten, 3 beide (Paket N: Vorgabe 3)
+	[defaultValues setObject: @"2" forKey: @"SekhmetAppearance"]; // SekhVet Paket N: 0 System, 1 Hell, 2 Dunkel
+	[defaultValues setObject: @"sekhvet@kappa1.vet" forKey: @"SekhmetFeedbackAddress"]; // SekhVet Paket AZ: Ziel von "Send Feedback…" (16.09.26)
+	[defaultValues setObject: @"https://github.com/3v3nFloW/sekhvet" forKey: @"SekhmetSourceURL"]; // SekhVet Paket F: LGPL-Quelltext
+	[defaultValues setObject: @"https://tryvoiceink.com/?atp=FMWmEuE" forKey: @"SekhmetVoiceInkURL"]; // SekhVet Paket F: Partnerlink
+	[defaultValues setObject: @"1" forKey: @"SekhmetModalityColors"]; // SekhVet Paket N: DB-Zeilen je Modalitaet toenen
+	[defaultValues setObject: @"1" forKey: @"SekhmetROITextColorMode"]; // SekhVet Paket N: 0 ROI-Farbe, 1 Weiss, 2 Gelb, 3 eigene
+	[defaultValues setObject: @"1 1 1" forKey: @"SekhmetROITextColor"]; // SekhVet Paket N: eigene Textfarbe r g b
+	[defaultValues setObject: @"0 0 0 0.7" forKey: @"SekhmetAnnotationBoxColor"]; // SekhVet Paket N: Kasten r g b a
+	[defaultValues setObject: @"1" forKey: @"SekhmetMPRSync"];
+	[defaultValues setObject: @"18" forKey: @"SekhmetMPRCenterZone"]; // SekhVet: Fadenkreuz-Mittenzone px
+	[defaultValues setObject: @"12" forKey: @"SekhmetMPRLineZone"];   // SekhVet: Fadenkreuz-Linienzone px
+	[defaultValues setObject: @"1" forKey: @"SekhmetMPRStaticCursor"]; // SekhVet: im MPR nur der Pfeil-Cursor
+	[defaultValues setObject: @"1" forKey: @"SekhmetTile3DWindows"];
+	[defaultValues setObject: @"3" forKey: @"SekhmetMPRThickSlabMode"]; // SekhVet Paket AG: 1 MIP, 2 minIP, 3 Mean
+	[defaultValues setObject: [NSDictionary dictionary] forKey: @"SekhmetScreenAreas"];
+	[defaultValues setObject: [NSDictionary dictionary] forKey: @"SekhmetScreenAreaRects"];
+	if( NSClassFromString( @"SekhmetDICOMweb")) [NSClassFromString( @"SekhmetDICOMweb") registerDefaults: defaultValues]; // Sekhmet: DICOMweb-Knoten
+	if( NSClassFromString( @"SekhmetOrientation")) [NSClassFromString( @"SekhmetOrientation") registerDefaults: defaultValues]; // Sekhmet: Vet-Orientierung (Decompress-Ziel hat die Klasse nicht)
+	if( NSClassFromString( @"SekhmetWindowing")) [NSClassFromString( @"SekhmetWindowing") registerDefaults: defaultValues]; // SekhVet Paket AE: WL/WW beim Oeffnen
+	if( NSClassFromString( @"SekhmetOpening")) [NSClassFromString( @"SekhmetOpening") registerDefaults: defaultValues]; // SekhVet Paket AU: Oeffnungsprotokolle
 	[defaultValues setObject:@"1" forKey: @"SquareWindowForPrinting"];
 	[defaultValues setObject:@"Softw Tissue CT" forKey: @"LAST_3D_PRESET"];
 	[defaultValues setObject:@"0" forKey:@"HIDEPATIENTNAME"];
@@ -885,8 +933,8 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"1" forKey:@"checkForUpdatesPlugins"];
     [defaultValues setObject:@"0" forKey:@"DoNotDeleteCrashingPlugins"];
 	[defaultValues setObject:@"1" forKey:@"magnifyingLens"];
-	[defaultValues setObject:@"12" forKey:@"LabelFONTSIZE"];
-	[defaultValues setObject:@"Geneva" forKey:@"LabelFONTNAME"];
+	[defaultValues setObject:@"14" forKey:@"LabelFONTSIZE"]; // SekhVet Paket N: 12 -> 14
+	[defaultValues setObject:@"Helvetica-Bold" forKey:@"LabelFONTNAME"]; // SekhVet Paket N: Geneva -> Helvetica-Bold
 	[defaultValues setObject:@"1" forKey:@"EmptyNameForNewROIs"];
 	[defaultValues setObject:@"1" forKey:@"nextSeriesToAllViewers"];
 	[defaultValues setObject:@"1" forKey:@"dontDeleteStudiesWithComments"];
@@ -1240,7 +1288,7 @@ static NSHost *currentHost = nil;
     [defaultValues setObject: @"1" forKey: @"noPropagateInSeriesForRF"];
     [defaultValues setObject: @"1" forKey: @"noPropagateInSeriesForXA"];
     
-	[defaultValues setObject: @"1" forKey: @"COPYSETTINGS"];
+	[defaultValues setObject: @"0" forKey: @"COPYSETTINGS"]; // SekhVet Paket AH: Propagate aus, sonst ueberschreibt es die Fensterung je Serie (Paket AE)
 	[defaultValues setObject: @"1" forKey: @"USESTORESCP"];
 	[defaultValues setObject: @"1" forKey: @"splitMultiEchoMR"];
 	[defaultValues setObject: @"0" forKey: @"useSeriesDescription"];

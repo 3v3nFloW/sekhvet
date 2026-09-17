@@ -41,8 +41,34 @@
 #import "DicomDatabase.h"
 #import "DicomStudy.h"
 #import "N2Debug.h"
+#import "SekhmetDisplayPanel.h" // SekhVet Paket N
 
 @implementation MyOutlineView
+
+// SekhVet Paket N: Zeilen der Datenbankliste je Modalitaet toenen. Im Hintergrund gezeichnet, also unter
+// Auswahl und Zellen; markierte Zeilen behalten die Systemfarbe.
+- (void) drawBackgroundInClipRect:(NSRect) clipRect
+{
+    [super drawBackgroundInClipRect: clipRect];
+    if( ![[NSUserDefaults standardUserDefaults] boolForKey: @"SekhmetModalityColors"]) return;
+    NSRange rows = [self rowsInRect: clipRect];
+    for( NSInteger row = rows.location; row < (NSInteger) NSMaxRange( rows); row++)
+    {
+        if( [self isRowSelected: row]) continue;
+        @try
+        {
+            id item = [self itemAtRow: row];
+            if( item == nil) continue;
+            NSString *type = [item valueForKey: @"type"];
+            if( ![type isEqualToString: @"Study"] && ![type isEqualToString: @"Series"]) continue;
+            NSColor *c = [SekhmetDisplayPanel modalityColorForModality: [item valueForKey: @"modality"]];
+            if( c == nil) continue;
+            [c setFill];
+            NSRectFillUsingOperation( NSIntersectionRect( [self rectOfRow: row], clipRect), NSCompositingOperationSourceOver);
+        }
+        @catch (NSException *e) { }
+    }
+}
 
 - (void)removeTableColumn:(NSTableColumn*)tableColumn {
     N2LogStackTrace(@"this is not allowed");
@@ -284,7 +310,7 @@
 	
 	if( [fileArray count] == 1 && [[NSFileManager defaultManager] fileExistsAtPath: [fileArray objectAtIndex: 0]  isDirectory: &directory])
 	{
-		if( [[[fileArray objectAtIndex: 0] lastPathComponent] isEqualToString: @"Horos Data"])	// It's a database folder !
+		if( [[[fileArray objectAtIndex: 0] lastPathComponent] isEqualToString: OsirixDataDirName] /* Sekhmet */)	// It's a database folder !
 		{
 			if( [[NSFileManager defaultManager] fileExistsAtPath: [[fileArray objectAtIndex: 0] stringByAppendingPathComponent: @"Database.sql"]])
 			{

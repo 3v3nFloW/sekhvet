@@ -1,0 +1,7 @@
+script print("=== PANEL")
+po [(NSView*)[(NSView*)[(NSWindow*)[(ToolbarPanelController*)[(ViewerController*)[(NSArray*)[ViewerController getDisplayed2DViewers] objectAtIndex:0] toolbarPanel] window] contentView] superview] _subtreeDescription]
+script print("=== DBWINDOW")
+po [(NSView*)[(NSView*)[(NSWindow*)[(BrowserController*)[BrowserController currentBrowser] window] contentView] superview] _subtreeDescription]
+script print("=== VIEWER")
+po [(NSView*)[(NSView*)[(NSWindow*)[(ViewerController*)[(NSArray*)[ViewerController getDisplayed2DViewers] objectAtIndex:0] window] contentView] superview] _subtreeDescription]
+detach

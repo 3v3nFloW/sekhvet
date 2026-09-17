@@ -42,6 +42,8 @@
 #include <OpenGL/glu.h>
 
 #import "ROI.h"
+#import "SekhmetSpine.h" // SekhVet
+#import "SekhmetUSKalibrierung.h" // SekhVet Paket BH
 #import "DCMView.h"
 #import "DCMPix.h"
 #import "ITKSegmentation3D.h"
@@ -1640,11 +1642,47 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
     xc = xx - 2*curView.window.backingScaleFactor;
     yc = yy-[sT texSize].height;
     
+    // Sekhmet: Hintergrund der ROI-Texte
+    int sekhmetBG = (int) [[NSUserDefaults standardUserDefaults] integerForKey: @"SekhmetAnnotationBackground"];
+    if( sekhmetBG == 2 || sekhmetBG == 3)
+    {
+        // Blend-Zustand des Aufrufers (drawROI: GL_ONE / GL_ONE_MINUS_SRC_ALPHA) merken und wiederherstellen,
+        // sonst zeichnen die folgenden Textzeilen ohne Blending (schwarze Rechtecke)
+        GLboolean sekhmetBlendWasOn = glIsEnabled( GL_BLEND);
+        GLint sekhmetBlendSrc = GL_ONE, sekhmetBlendDst = GL_ONE_MINUS_SRC_ALPHA;
+        glGetIntegerv( GL_BLEND_SRC, &sekhmetBlendSrc);
+        glGetIntegerv( GL_BLEND_DST, &sekhmetBlendDst);
+        glDisable (GL_TEXTURE_RECTANGLE_EXT);
+        glEnable( GL_BLEND);
+        glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        float sekhmetBox[4] = {0, 0, 0, 0.7f}; // SekhVet Paket N: Kastenfarbe r g b a
+        sscanf( [[[NSUserDefaults standardUserDefaults] stringForKey: @"SekhmetAnnotationBoxColor"] UTF8String] ?: "", "%f %f %f %f", &sekhmetBox[0], &sekhmetBox[1], &sekhmetBox[2], &sekhmetBox[3]);
+        glColor4f( sekhmetBox[0], sekhmetBox[1], sekhmetBox[2], sekhmetBox[3]);
+        glBegin( GL_QUADS);
+        glVertex2f( xc-3, yc-2); glVertex2f( xc+[sT texSize].width+3, yc-2); glVertex2f( xc+[sT texSize].width+3, yc+[sT texSize].height+2); glVertex2f( xc-3, yc+[sT texSize].height+2);
+        glEnd();
+        glBlendFunc( sekhmetBlendSrc, sekhmetBlendDst);
+        if( sekhmetBlendWasOn == GL_FALSE) glDisable( GL_BLEND);
+        glEnable (GL_TEXTURE_RECTANGLE_EXT);
+    }
     glColor4f (0, 0, 0, 1.0f);
+    if( sekhmetBG == 1 || sekhmetBG == 3)
+    {
+        [sT drawAtPoint: NSMakePoint( xc-1, yc-1)];
+        [sT drawAtPoint: NSMakePoint( xc+1, yc-1)];
+        [sT drawAtPoint: NSMakePoint( xc-1, yc+1)];
+    }
     [sT drawAtPoint: NSMakePoint( xc+1, yc+1)];
     
-    //glColor4f (1.0f, 1.0f, 1.0f, 1.0f);
-    glColor4f (color.red/65535., color.green/65535., color.blue/65535., 1.0f);
+    // SekhVet Paket N: Textfarbe der Messwerte (0 ROI-Farbe wie Horos, 1 Weiss, 2 Gelb, 3 eigene)
+    {
+        int sekhmetMode = (int) [[NSUserDefaults standardUserDefaults] integerForKey: @"SekhmetROITextColorMode"];
+        float tr = color.red/65535., tg = color.green/65535., tb = color.blue/65535.;
+        if( sekhmetMode == 1) { tr = tg = tb = 1.0f; }
+        else if( sekhmetMode == 2) { tr = 1.0f; tg = 0.95f; tb = 0.2f; }
+        else if( sekhmetMode == 3) sscanf( [[[NSUserDefaults standardUserDefaults] stringForKey: @"SekhmetROITextColor"] UTF8String] ?: "", "%f %f %f", &tr, &tg, &tb);
+        glColor4f( tr, tg, tb, 1.0f);
+    }
     [sT drawAtPoint: NSMakePoint( xc, yc)];
     
 //    glDisable(GL_BLEND);
@@ -2076,6 +2114,32 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 	}
 	else
 	{
+		// SekhVet Paket X: HD-Messung (Norberg) — grosszuegige Trefferzone fuer Griff und Pfannenrand-Punkt;
+		// der Femurkopfkreis wird nur ueber sein Zentrum gefasst (Groesse ueber den Griff, nicht ueber den Rand).
+		if( type == t2DPoint && ([name hasPrefix: @"HD "] || [name hasPrefix: @"Norberg "]))
+			neighborhoodRad *= 2.2;
+		if( type == tOval && ([name hasPrefix: @"HD head"] || [name hasPrefix: @"HD cup"]))
+		{
+			float distance = [self Magnitude: pt :rect.origin];
+			float tol = MAX( neighborhoodRad * 1.6, fabs( rect.size.width) * scale * 0.45);
+			if( distance*scale >= tol) return ROI_sleep;
+			// SekhVet Paket BD/BE: a point of the measurement (rim, grip) under the click wins, whatever its position in curRoiList;
+			// head and cup circle overlap (Paket BE) — the circle whose centre is nearer takes the click.
+			for( ROI *o in [curView curRoiList])
+			{
+				if( o == self || o.name == nil) continue;
+				if( o.type == t2DPoint && ([o.name hasPrefix: @"HD "] || [o.name hasPrefix: @"Norberg "]))
+				{
+					if( fabs( pt.x - o.rect.origin.x) * scale < neighborhoodRad * 2.2 && fabs( pt.y - o.rect.origin.y) * scale < neighborhoodRad * 2.2)
+						return ROI_sleep;
+				}
+				else if( o.type == tOval && ([o.name hasPrefix: @"HD head"] || [o.name hasPrefix: @"HD cup"]))
+				{
+					if( [self Magnitude: pt :o.rect.origin] < distance) return ROI_sleep;
+				}
+			}
+			return ROI_selected;
+		}
 		switch( type)
 		{
 			case tLayerROI:
@@ -4241,6 +4305,14 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
 	tPt = [curView ConvertFromGL2View: ctPt];
 	drawRect.origin = tPt;
 	
+	NSString *sekhmetCalSource = [SekhmetUSKalibrierung borrowedSourceForPix: [self pix]]; // SekhVet Paket BH: geborgte US-Kalibrierung kenntlich machen
+	if( sekhmetCalSource && (textualBoxLine1.length || textualBoxLine2.length))
+	{
+		NSString *hint = [NSString stringWithFormat: @"US calibration from %@", sekhmetCalSource];
+		if( textualBoxLine6.length == 0) self.textualBoxLine6 = hint;
+		else if( [textualBoxLine6 hasSuffix: hint] == NO) self.textualBoxLine6 = [NSString stringWithFormat: @"%@ - %@", textualBoxLine6, hint];
+	}
+	
 	line = 0;
 	maxWidth = [self maxStringWidth:textualBoxLine1 max: maxWidth];	if( textualBoxLine1.length) line++;
 	maxWidth = [self maxStringWidth:textualBoxLine2 max: maxWidth];	if( textualBoxLine2.length) line++;
@@ -4940,6 +5012,7 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
 						[[curView curDCM] convertPixX: rect.origin.x pixY: rect.origin.y toDICOMCoords: location pixelCenter: YES];
                         
 						self.textualBoxLine5 = [NSString stringWithFormat: NSLocalizedString( @"3D Pos: X:%0.3f mm Y:%0.3f mm Z:%0.3f mm", nil), location[0], location[1], location[2]];
+						if( self.name.length && [SekhmetSpine rankOfLabel: self.name] >= 0) { self.textualBoxLine2 = nil; self.textualBoxLine3 = nil; self.textualBoxLine4 = nil; self.textualBoxLine5 = nil; } // SekhVet: Wirbel-Label zeigt nur den Namen
 					}
 					[self prepareTextualData:tPt];
 				}

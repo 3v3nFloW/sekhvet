@@ -53,6 +53,12 @@ openjpeg_include="$openjpeg_install/include/openjpeg-2.5"
 if [ ! -d "$openjpeg_include" ]; then
     openjpeg_include="$openjpeg_install/include/openjpeg-2.3"
 fi
+# Sachmet: unser OpenJPEG installiert nach include/OpenJPEG (OPENJPEG_INSTALL_INCLUDE_DIR); pkg-config sieht
+# die .pc-Datei nicht, darum Version von Hand (Submodul ist OpenJPEG 2.5), sonst "Could NOT find OpenJPEG"
+if [ ! -d "$openjpeg_include" ]; then
+    openjpeg_include="$openjpeg_install/include/OpenJPEG"
+fi
+args+=(-DOPENJPEG_VERSION=2.5.0)
 args+=(-DOPENJPEG_LIBRARIES="$openjpeg_install/lib/libopenjp2.a")
 args+=(-DOPENJPEG_INCLUDE_DIRS="$openjpeg_include")
 

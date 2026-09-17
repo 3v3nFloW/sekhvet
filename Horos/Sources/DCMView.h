@@ -158,6 +158,7 @@ typedef enum {DCMViewTextAlignLeft, DCMViewTextAlignCenter, DCMViewTextAlignRigh
 	
 	float			sliceVector[ 3];
 	float			slicePoint3D[ 3];
+	float			sekhmetOwnPoint[ 3]; int sekhmetOwnPointImage; BOOL sekhmetOwnPointSet; // SekhVet Build 67: eigener Klickpunkt des Point-Werkzeugs
 	float			syncRelativeDiff;
 	long			syncSeriesIndex;
 	

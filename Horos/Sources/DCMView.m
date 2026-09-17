@@ -36,6 +36,11 @@
  ============================================================================*/
 
 #import "DCMAbstractSyntaxUID.h"
+#import "SekhmetTesthaken.h" // SekhVet: Testhaken nur mit Build-Flag SEKHVET_TESTHAKEN=1
+#import "SekhmetDCMViewKategorie.h" // SekhVet Stufe 6c: die sekhmet*-Methoden dieser Klasse
+#import "SekhmetOrientation.h"      // SekhVet Stufe 6c: SekhmetVetLetter()
+#import "SekhmetSpine.h" // Sekhmet
+#import "SekhmetNorberg.h" // SekhVet Paket Y
 #import "DCMView.h"
 #import "StringTexture.h"
 #import "DCMPix.h"
@@ -1835,12 +1840,39 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             xc = x+2;
             yc = y+1-[stringTex texSize].height;
             
+            // Sekhmet: Hintergrund der Beschriftung (0 Horos, 1 Kontur, 2 Kasten, 3 beide)
+            int sekhmetBG = (int) [[NSUserDefaults standardUserDefaults] integerForKey: @"SekhmetAnnotationBackground"];
+            float tw = [stringTex texSize].width, th = [stringTex texSize].height;
+            if( sekhmetBG == 2 || sekhmetBG == 3)
+            {
+                glDisable (GL_TEXTURE_RECTANGLE_EXT);
+                glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                float sekhmetBox[4] = {0, 0, 0, 0.7f}; // SekhVet Paket N: Kastenfarbe r g b a
+                sscanf( [[[NSUserDefaults standardUserDefaults] stringForKey: @"SekhmetAnnotationBoxColor"] UTF8String] ?: "", "%f %f %f %f", &sekhmetBox[0], &sekhmetBox[1], &sekhmetBox[2], &sekhmetBox[3]);
+                if( whiteBackground) glColor4f (1.0f, 1.0f, 1.0f, sekhmetBox[3]);
+                else glColor4f( sekhmetBox[0], sekhmetBox[1], sekhmetBox[2], sekhmetBox[3]);
+                glBegin( GL_QUADS);
+                glVertex2f( xc-3, yc-2); glVertex2f( xc+tw+3, yc-2); glVertex2f( xc+tw+3, yc+th+2); glVertex2f( xc-3, yc+th+2);
+                glEnd();
+                glBlendFunc( GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                glEnable (GL_TEXTURE_RECTANGLE_EXT);
+            }
             if( whiteBackground)
                 glColor4f (1.0f, 1.0f, 1.0f, 1.0f);
             else
                 glColor4f (0.0f, 0.0f, 0.0f, 1.0f);
-            
-            [stringTex drawWithBounds: NSMakeRect( xc+1, yc+1, [stringTex texSize].width, [stringTex texSize].height)];
+            if( sekhmetBG == 1 || sekhmetBG == 3)
+            {
+                // SekhVet Paket AC: Kontur etwas weicher (Deckung 0,75), damit die weisse Schrift nicht duenn und grau wirkt.
+                // (Ein Strich per NSStrokeWidth in der Textur liefert unter Tahoe Rauschen: StringTexture raet das Pixelformat.)
+                if( whiteBackground) glColor4f (1.0f, 1.0f, 1.0f, 0.75f); else glColor4f (0.0f, 0.0f, 0.0f, 0.75f);
+                [stringTex drawWithBounds: NSMakeRect( xc-1, yc-1, tw, th)];
+                [stringTex drawWithBounds: NSMakeRect( xc+1, yc-1, tw, th)];
+                [stringTex drawWithBounds: NSMakeRect( xc-1, yc+1, tw, th)];
+                [stringTex drawWithBounds: NSMakeRect( xc+1, yc+1, tw, th)];
+            }
+            else
+                [stringTex drawWithBounds: NSMakeRect( xc+1, yc+1, [stringTex texSize].width, [stringTex texSize].height)];
             
             if( whiteBackground)
                 glColor4f (0.0f, 0.0f, 0.0f, 1.0f);
@@ -1947,6 +1979,9 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 -(void) setCurrentTool:(ToolMode) i
 {
+    if( currentTool == t3Dpoint && i != t3Dpoint) // SekhVet Paket AM: Point-Werkzeug abgewaehlt -> alle Marker weg
+        [DCMView sekhmetClearPointMarkers];
+
     BOOL keepROITool = (i == tROISelector || i == tRepulsor || currentTool == tROISelector || currentTool == tRepulsor);
     
     keepROITool = keepROITool || [self roiTool:currentTool] || [self roiTool:i];
@@ -2734,6 +2769,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     if( [[event characters] length] == 0) return;
     
     unichar		c = [[event characters] characterAtIndex:0];
+    if( [SekhmetSpine handleKey: c]) return; // Sekhmet: ⌫ / Esc fuer Wirbel-Labels
     long		xMove = 0, yMove = 0, val;
     BOOL		Jog = NO;
     
@@ -3055,9 +3091,11 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         
         if( previmage != curImage)
         {
+            [DCMView sekhmetClearPointMarkers]; // SekhVet Paket AM: Blättern per Tastatur beendet die Punkt-Marker wie das Scrollen
+
             if( listType == 'i') [self setIndex:curImage];
             else [self setIndexWithReset:curImage :YES];
-            
+
             if( matrix ) {
                 NSInteger rows, cols; [matrix getNumberOfRows:&rows columns:&cols];  if( cols < 1) cols = 1;
                 [matrix selectCellAtRow:curImage/cols column:curImage%cols];
@@ -4220,6 +4258,8 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 - (void) mouseDown:(NSEvent *)event
 {
     if( CGCursorIsVisible() == NO && lensTexture == nil) return; //For Synergy compatibility
+    if( [self is2DViewer] && [[self window] isKeyWindow] == NO) [[self window] makeKeyAndOrderFront: self]; // SekhVet: Werkzeugleiste/MPR gelten sonst fuer das alte Fenster
+    if( [self is2DViewer] && [[self window] firstResponder] != self) [[self window] makeFirstResponder: self]; // SekhVet: geklickte Kachel wird Key-View (Horos tut das nur bei Rechtsklick)
     if ([self eventToPlugins:event]) return;
     
     currentMouseEventTool = -1;
@@ -4334,6 +4374,12 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             }
             
             crossMove = -1;
+            
+            if( tool == t3Dpoint) // Sekhmet: Werkzeug "Punkt in anderen Serien zeigen" — Klick ins Bild = sync3DPosition
+            {
+                NSPoint sekhmetPt = [self ConvertFromNSView2GL: [self convertPoint: eventLocation fromView: nil]];
+                [self sekhmetSync3DPointAtPixX: sekhmetPt.x pixY: sekhmetPt.y]; // SekhVet Build 67: markiert auch im eigenen Bild
+            }
             
             if( tool == tRotate)
             {
@@ -4658,6 +4704,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                                 [curROI autorelease];
                                 curROI = aNewROI = [[[ROI alloc] initWithType: tool : self.curDCM.pixelSpacingX :self.curDCM.pixelSpacingY : [DCMPix originCorrectedAccordingToOrientation: self.curDCM]] autorelease];	//NSMakePoint( self.curDCM.originX, self.curDCM.originY)];
                                 [curROI retain];
+                                if( tool == t2DPoint) [SekhmetSpine willCreatePointROI: aNewROI inView: self modifiers: [event modifierFlags]]; // Sekhmet: Wirbel-Label
                                 
                                 if ( [ROI defaultName] != nil )
                                 {
@@ -4846,6 +4893,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void)scrollWheel:(NSEvent *)theEvent
 {
+    if( [SekhmetNorberg handleScrollWheel: theEvent inView: self]) return; // SekhVet Paket Y: Mausrad ueber dem Femurkopfkreis = Radius
     float reverseScrollWheel;
     
     float deltaX = [theEvent deltaX];
@@ -4870,7 +4918,9 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     {
         if( [[self windowController] windowWillClose]) return;
     }
-    
+
+    [DCMView sekhmetClearPointMarkers]; // SekhVet Paket AM: Scrollen beendet die Lebensdauer der Punkt-Marker
+
     BOOL SelectWindowScrollWheel = [[NSUserDefaults standardUserDefaults] boolForKey: @"SelectWindowScrollWheel"];
     
     if( [theEvent modifierFlags] & NSAlphaShiftKeyMask) // Caps Lock
@@ -7004,12 +7054,20 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                         float resultPoint[ 3];
                         
                         int newIndex = [self findPlaneAndPoint: destPoint3D :resultPoint];
+                        if( sekhvetTesthaken( "SEKHVET_POINT_TEST")) // SekhVet Build 67: Testhaken
+                        {
+                            float dist = 0; [self findPlaneForPoint: destPoint3D localPoint: nil distanceWithPlane: &dist];
+                            NSLog( @"SekhVet Point-Test Empfaenger %@: Punkt (%.2f %.2f %.2f) -> newIndex %d (cur %d von %d) Abstand %.2f mm, Schicht %.1f mm, Ergebnis (%.2f %.2f %.2f)", [[self seriesObj] valueForKey: @"name"], destPoint3D[ 0], destPoint3D[ 1], destPoint3D[ 2], newIndex, curImage, (int) [dcmPixList count], dist, self.curDCM.sliceThickness, resultPoint[ 0], resultPoint[ 1], resultPoint[ 2]);
+                            NSLog( @"SekhVet Point-Test Empfaenger %@: frontMost=%@ Absender=%@ keyWindow=%d", [[self seriesObj] valueForKey: @"name"], [[[[ViewerController frontMostDisplayed2DViewer] imageView] seriesObj] valueForKey: @"name"], [[otherView seriesObj] valueForKey: @"name"], (int) [[otherView window] isKeyWindow]);
+                        }
                         
                         if( newIndex != -1)
                         {
                             newImage = newIndex;
                             
-                            [self.curDCM convertDICOMCoords: resultPoint toSliceCoords: slicePoint3D];
+                            // SekhVet Build 67: Kreuz aus der Zielschicht rechnen (Horos nahm die noch angezeigte Schicht — bei driftendem Stapelursprung um Millimeter daneben)
+                            DCMPix *sekhmetTarget = (newIndex < [dcmPixList count]) ? [dcmPixList objectAtIndex: newIndex] : self.curDCM;
+                            [sekhmetTarget convertDICOMCoords: resultPoint toSliceCoords: slicePoint3D];
                             [self setNeedsDisplay:YES];
                         }
                         else
@@ -7197,7 +7255,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 {
                     if( avoidRecursiveSync <= 1)
                     {
-                        if((selfViewer != frontMostViewer && otherViewer == frontMostViewer) || otherViewer.timer)
+                        if( point3D || (selfViewer != frontMostViewer && otherViewer == frontMostViewer) || otherViewer.timer) // SekhVet Build 67: Point-Werkzeug wechselt die Schicht immer (Horos nur, wenn der Absender das vorderste Fenster ist — Cache!)
                         {
                             if( listType == 'i') [self setIndex:newImage];
                             else [self setIndexWithReset:newImage :YES];
@@ -7749,6 +7807,10 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         orientationY = vector[ 1] < 0 ? NSLocalizedString( @"A", @"A: Anterior") : NSLocalizedString( @"P", @"P: Posterior");
         orientationZ = vector[ 2] < 0 ? NSLocalizedString( @"I", @"I: Inferior") : NSLocalizedString( @"S", @"S: Superior");
     }
+    
+    // Sekhmet: veterinaere Randbuchstaben
+    orientationY = SekhmetVetLetter( orientationY);
+    orientationZ = SekhmetVetLetter( orientationZ);
     
     float absX = fabs( vector[ 0]);
     float absY = fabs( vector[ 1]);
@@ -8643,7 +8705,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         yRaster = size.origin.y + size.size.height-2;
         xRaster = size.origin.x + size.size.width-2;
         if( fullText)
-            [self DrawNSStringGL: @"Made In Horos" :fontList :xRaster :yRaster rightAlignment:YES useStringTexture:YES];
+            [self DrawNSStringGL: @"Made in SekhVet" :fontList :xRaster :yRaster rightAlignment:YES useStringTexture:YES];
     }
 }
 
@@ -9492,6 +9554,22 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 
                 //** SLICE CUT BETWEEN SERIES - CROSS REFERENCES LINES
                 
+                if( is2DViewer && frontMost && sekhmetOwnPointSet && curImage == sekhmetOwnPointImage && self.curDCM && stringID == nil) // SekhVet Build 67: Klickpunkt des Point-Werkzeugs im Quellfenster (orange)
+                {
+                    float sfo = self.window.backingScaleFactor, cx = sekhmetOwnPoint[ 0] / self.curDCM.pixelSpacingX - self.curDCM.pwidth * 0.5f, cy = sekhmetOwnPoint[ 1] / self.curDCM.pixelSpacingY - self.curDCM.pheight * 0.5f;
+                    float lx = 15 / self.curDCM.pixelSpacingX, gx = 5 / self.curDCM.pixelSpacingX;
+                    glEnable( GL_BLEND); glEnable( GL_LINE_SMOOTH);
+                    glColor3f( 1.0f, 0.65f, 0.0f);
+                    glLineWidth( 2.0 * sfo);
+                    glBegin( GL_LINES);
+                    glVertex2f( scaleValue * (cx - lx), scaleValue * cy); glVertex2f( scaleValue * (cx - gx), scaleValue * cy);
+                    glVertex2f( scaleValue * (cx + gx), scaleValue * cy); glVertex2f( scaleValue * (cx + lx), scaleValue * cy);
+                    glVertex2f( scaleValue * cx, scaleValue * (cy - lx)); glVertex2f( scaleValue * cx, scaleValue * (cy - gx));
+                    glVertex2f( scaleValue * cx, scaleValue * (cy + gx)); glVertex2f( scaleValue * cx, scaleValue * (cy + lx));
+                    glEnd();
+                    glLineWidth( 1.0 * sfo);
+                    glDisable( GL_LINE_SMOOTH); glDisable( GL_BLEND);
+                }
                 if( is2DViewer && (stringID == nil || [stringID isEqualToString:@"export"]) && frontMost == NO)
                 {
                     glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );

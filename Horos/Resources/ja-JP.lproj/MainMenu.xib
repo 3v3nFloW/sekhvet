@@ -17,10 +17,10 @@
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
         <menu title="MainMenu" systemMenu="main" id="29" userLabel="MainMenu">
             <items>
-                <menuItem title="Horos" id="56">
-                    <menu key="submenu" title="Horos" systemMenu="apple" id="57">
+                <menuItem title="SekhVet" id="56">
+                    <menu key="submenu" title="SekhVet" systemMenu="apple" id="57">
                         <items>
-                            <menuItem title="Horos について" id="58">
+                            <menuItem title="SekhVet について" id="58">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="about:" target="694" id="1115"/>
@@ -40,7 +40,7 @@
                             <menuItem isSeparatorItem="YES" id="143">
                                 <modifierMask key="keyEquivalentModifierMask" command="YES"/>
                             </menuItem>
-                            <menuItem title="Horosを隠す" keyEquivalent="h" id="134">
+                            <menuItem title="SekhVetを隠す" keyEquivalent="h" id="134">
                                 <connections>
                                     <action selector="hide:" target="-2" id="152"/>
                                 </connections>
@@ -59,7 +59,7 @@
                             <menuItem isSeparatorItem="YES" id="149">
                                 <modifierMask key="keyEquivalentModifierMask" command="YES"/>
                             </menuItem>
-                            <menuItem title="Horosを終了" keyEquivalent="q" id="136">
+                            <menuItem title="SekhVetを終了" keyEquivalent="q" id="136">
                                 <connections>
                                     <action selector="terminate:" target="694" id="1722"/>
                                 </connections>

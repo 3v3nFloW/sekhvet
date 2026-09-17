@@ -582,6 +582,17 @@
                                         <binding destination="308" name="selectedTag" keyPath="values.WINDOWSIZEVIEWER" id="533"/>
                                     </connections>
                                 </matrix>
+                                <button verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" id="560">
+                                    <rect key="frame" x="130" y="345" width="434" height="18"/>
+                                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+                                    <buttonCell key="cell" type="check" title="Veterinäre Randbuchstaben (Cr/Cd, D/V) — Sekhmet" bezelStyle="regularSquare" imagePosition="left" alignment="left" scrollable="YES" lineBreakMode="clipping" inset="2" id="561">
+                                        <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                                        <font key="font" metaFont="system"/>
+                                    </buttonCell>
+                                    <connections>
+                                        <binding destination="308" name="value" keyPath="values.VetOrientationLetters" id="562"/>
+                                    </connections>
+                                </button>
                                 <button verticalHuggingPriority="751" horizontalCompressionResistancePriority="1000" id="298">
                                     <rect key="frame" x="130" y="211" width="434" height="18"/>
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>

@@ -1562,7 +1562,7 @@ const NSString* const GenerateMovieDicomImagesParamKey = @"dicomImageArray";
 						
                         NSString *webPortalDefaultTitle = [[NSUserDefaults standardUserDefaults] stringForKey: @"WebPortalTitle"];
                         if( webPortalDefaultTitle.length == 0)
-                            webPortalDefaultTitle = NSLocalizedString(@"Horos Web Portal", @"Web Portal, general default title");
+                            webPortalDefaultTitle = NSLocalizedString(@"SekhVet Web Portal", @"Web Portal, general default title");
                         
                         [emailMessage appendString: webPortalDefaultTitle];
                         [emailMessage appendString: @"<br><br>"];
@@ -2020,7 +2020,7 @@ const NSString* const GenerateMovieDicomImagesParamKey = @"dicomImageArray";
 	if (!self.portal.wadoEnabled)
     {
 		self.response.statusCode = 403;
-		[self.response setDataWithString:NSLocalizedString(@"Horos cannot fulfill your request because the WADO service is disabled.", NULL)];
+		[self.response setDataWithString:NSLocalizedString(@"SekhVet cannot fulfill your request because the WADO service is disabled.", NULL)];
 		return;
 	}
 	

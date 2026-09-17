@@ -1,0 +1,2 @@
+// SekhVet: Testbuild mit Testhaken (siehe Horos/Sources/SekhmetTesthaken.h)
+OTHER_CFLAGS = $(inherited) -DSEKHVET_TESTHAKEN=1

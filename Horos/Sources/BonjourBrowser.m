@@ -38,6 +38,7 @@
 #include <netdb.h>
 #import "DCMTKStoreSCU.h"
 #import "BonjourBrowser.h"
+#import "DicomDatabase.h" // Sekhmet: OsirixDataDirName
 #import "BrowserController.h"
 #import "AppController.h"
 #import "DicomFile.h"
@@ -226,7 +227,7 @@ static BonjourBrowser *currentBrowser = nil;
         NSMutableDictionary	*dict = [NSMutableDictionary dictionaryWithDictionary: [dbArray objectAtIndex: i]];
         
         if( [[dict valueForKey:@"Path"] isEqualToString: defaultPath] == NO &&
-           [[[dict valueForKey:@"Path"] stringByAppendingPathComponent:@"Horos Data"] isEqualToString: defaultPath] == NO)
+           [[[dict valueForKey:@"Path"] stringByAppendingPathComponent: OsirixDataDirName] /* Sekhmet */ isEqualToString: defaultPath] == NO)
         {
             [dict setValue:@"localPath" forKey:@"type"];
             [services addObject: dict];

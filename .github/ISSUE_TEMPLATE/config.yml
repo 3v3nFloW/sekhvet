@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: E-mail feedback
+    url: mailto:sekhvet@kappa1.vet
+    about: Vet Tools › Send Feedback… in SekhVet prepares this e-mail with build and macOS version. Use it for anything that must not be public.
+  - name: Horos (upstream) issues
+    url: https://github.com/horosproject/horos/issues
+    about: Only for problems you can reproduce in Horos itself. SekhVet issues do not belong there.

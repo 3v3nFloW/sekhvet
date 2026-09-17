@@ -52,6 +52,13 @@
 #import "OsiriXToolbar.h"
 #import "MPR2DController.h"
 #import "NSFullScreenWindow.h"
+#import "SekhmetSpine.h" // Sekhmet
+#import "SekhmetNorberg.h" // SekhVet Paket V
+#import "SekhmetOrientation.h" // Sekhmet
+#import "SekhmetViewerKategorie.h" // SekhVet Stufe 6c: die sekhmet*-Methoden dieser Klasse
+#import "SekhmetMPRKategorie.h"    // SekhVet Stufe 6c
+#import "SekhmetDisplayPanel.h" // SekhVet
+#import "SekhmetWindowing.h" // SekhVet Paket AE
 #import "ViewerController.h"
 #import "BrowserController.h"
 #import "Wait.h"
@@ -164,6 +171,7 @@ static NSString*	MailToolbarItemIdentifier			= @"Mail.icns";
 //static NSString*	iChatBroadCastToolbarItemIdentifier = @"iChat.icns";
 static NSString*	StatusToolbarItemIdentifier			= @"status";
 static NSString*	SyncSeriesToolbarItemIdentifier		= @"Sync.pdf";
+static NSString*	Show3DPointToolbarItemIdentifier	= @"Sekhmet3DPoint"; // Sekhmet: Punkt in anderen Serien zeigen
 static NSString*	ResetToolbarItemIdentifier			= @"Reset.pdf";
 static NSString*	RevertToolbarItemIdentifier			= @"Revert.tif";
 static NSString*	FlipDataToolbarItemIdentifier		= @"FlipData.tif";
@@ -1107,7 +1115,7 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
                 [dict setObject: @([view origin].y) forKey:@"y"];
                 [dict setObject: @([view rotation]) forKey:@"rotation"];
                 [dict setObject: @([view xFlipped]) forKey:@"xFlipped"];
-                [dict setObject: @([view xFlipped]) forKey:@"yFlipped"];
+                [dict setObject: @([view yFlipped]) forKey:@"yFlipped"]; // Sekhmet: Bugfix, war xFlipped
                 
                 [dict setObject: [win studyInstanceUID] forKey:@"studyInstanceUID"];
                 
@@ -2296,6 +2304,7 @@ static volatile int numberOfThreadsForRelisce = 0;
     }
     
     BOOL executed = [self setOrientation:newOrientationTool];
+    if( executed) { [SekhmetOrientation applyToViewer: self]; [self sekhmetUpdatePresetPopup]; [self setWindowTitle: self]; } // SekhVet: Hanging Protocol auch fuer die Rekonstruktion
     if( executed == NO)
         {
             // TODO check/create localizedStrings for first two strings
@@ -2838,7 +2847,7 @@ static volatile int numberOfThreadsForRelisce = 0;
             
             windowTitle = [windowTitle stringByAppendingString: loading];
             
-            [[self window] setTitle: windowTitle];
+            [[self window] setTitle: [SekhmetOrientation titleForViewer: self baseTitle: windowTitle]]; // Sekhmet: Badge
             
             @synchronized( loadingThread)
             {
@@ -6193,6 +6202,84 @@ static ViewerController *draggedController = nil;
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(PlayStop:)];
     }
+    else if ([itemIdent isEqualToString: SekhmetSpineToolbarItemIdentifier]) { // Sekhmet: Wirbel-Labels
+        [toolbarItem setLabel: NSLocalizedString( @"Spine Labeling", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Spine Labeling (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Spine labeling: click counter with the point tool", nil)];
+        [toolbarItem setImage: [NSImage imageNamed: @"Point.pdf"]];
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(sekhmetSpineTool:)];
+    }
+    else if ([itemIdent isEqualToString: SekhmetNorbergToolbarItemIdentifier]) { // SekhVet Paket V: Norberg-Winkel
+        [toolbarItem setLabel: NSLocalizedString( @"Norberg Angle", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Norberg Angle (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Hip dysplasia: place both femoral head circles and acetabular rim points, then drag them. Click again to reset the measurement.", nil)];
+        [toolbarItem setImage: [SekhmetNorberg toolbarIcon]];
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(sekhmetNorbergTool:)];
+    }
+    else if ([itemIdent isEqualToString: SekhmetNorbergDeleteToolbarItemIdentifier]) { // SekhVet Paket W
+        [toolbarItem setLabel: NSLocalizedString( @"Delete Norberg", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Delete Norberg Measurement (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Removes the Norberg measurement (circles, rim points, grips) from this image", nil)];
+        [toolbarItem setImage: [SekhmetNorberg toolbarDeleteIcon]];
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(sekhmetNorbergDeleteTool:)];
+    }
+    else if ([itemIdent isEqualToString: SekhmetDIToolbarItemIdentifier]) { // SekhVet Paket BD: Distraktionsindex
+        [toolbarItem setLabel: NSLocalizedString( @"Distraction Index", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Distraction Index (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"PennHIP distraction view: places a yellow acetabular cup circle on each femoral head circle; DI = distance of the two centres / head radius. Drag a circle at its centre, its grip or use the scroll wheel over it to resize. Click again to reset the cups.", nil)];
+        [toolbarItem setImage: [SekhmetNorberg toolbarDIIcon]];
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(sekhmetDITool:)];
+    }
+    else if ([itemIdent isEqualToString: SekhmetDIDeleteToolbarItemIdentifier]) { // SekhVet Paket BD
+        [toolbarItem setLabel: NSLocalizedString( @"Delete DI", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Delete Distraction Index (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Removes the distraction index (cup circles; the head circles too unless a Norberg measurement uses them) from this image", nil)];
+        [toolbarItem setImage: [SekhmetNorberg toolbarDIDeleteIcon]];
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(sekhmetDIDeleteTool:)];
+    }
+    else if ([itemIdent isEqualToString: SekhmetScreenAreaToolbarItemIdentifier]) { // SekhVet: Bildschirmflaeche je Bildschirm
+        NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 0, 0, 150, 22) pullsDown: NO] autorelease];
+        [pb addItemsWithTitles: [SekhmetDisplayPanel areaModeNames]];
+        [[pb cell] setControlSize: NSControlSizeSmall];
+        [pb setFont: [NSFont systemFontOfSize: 11]];
+        [pb selectItemAtIndex: [SekhmetDisplayPanel indexForMode: [SekhmetDisplayPanel modeForScreen: [[self window] screen]]]];
+        [pb setTarget: self];
+        [pb setAction: @selector(sekhmetScreenAreaChanged:)];
+        [toolbarItem setLabel: NSLocalizedString(@"Screen", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"Screen Area (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"Part of this screen used for viewer windows; re-tiles immediately", nil)];
+        [toolbarItem setView: pb];
+        [toolbarItem setMinSize: NSMakeSize( 150, 22)];
+        [toolbarItem setMaxSize: NSMakeSize( 150, 22)];
+    }
+    else if ([itemIdent isEqualToString: SekhmetVetPresetToolbarItemIdentifier]) { // Sekhmet
+        NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 0, 0, 150, 22) pullsDown: NO] autorelease];
+        [pb addItemsWithTitles: [SekhmetOrientation presetNames]];
+        [[pb cell] setControlSize: NSControlSizeSmall];
+        [pb setFont: [NSFont systemFontOfSize: 11]];
+        [pb selectItemAtIndex: [SekhmetOrientation presetForStudyUID: [self studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: self]]];
+        [pb setTarget: self];
+        [pb setAction: @selector(sekhmetPresetChanged:)];
+        [toolbarItem setLabel: NSLocalizedString( @"Hanging Protocol", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Hanging Protocol (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Hanging protocol preset for this study", nil)];
+        [toolbarItem setView: pb];
+        [toolbarItem setMinSize: NSMakeSize( 150, 22)];
+        [toolbarItem setMaxSize: NSMakeSize( 150, 22)];
+    }
+    else if ([itemIdent isEqualToString: Show3DPointToolbarItemIdentifier]) { // Sekhmet
+        [toolbarItem setLabel: NSLocalizedString(@"Point", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"Show point in other series", nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"Point tool: click into the image to show this point in all other series (SekhVet)", nil)];
+        [toolbarItem setImage: [SekhmetDisplayPanel crosshairIcon]]; // SekhVet Paket AH: Fadenkreuz statt Horos-Punkt
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(sekhmetShow3DPointTool:)];
+    }
     else if ([itemIdent isEqualToString: SyncSeriesToolbarItemIdentifier]) {
         
         [toolbarItem setTarget: self];
@@ -6695,12 +6782,25 @@ static ViewerController *draggedController = nil;
             NSToolbarFlexibleSpaceItemIdentifier,
             QTSaveToolbarItemIdentifier,
             SyncSeriesToolbarItemIdentifier,
+            Show3DPointToolbarItemIdentifier,
+            SekhmetVetPresetToolbarItemIdentifier,
+            SekhmetSpineToolbarItemIdentifier,
+							 SekhmetNorbergToolbarItemIdentifier,
+							 SekhmetNorbergDeleteToolbarItemIdentifier,
+							 SekhmetDIToolbarItemIdentifier,
+							 SekhmetDIDeleteToolbarItemIdentifier,
+            SekhmetScreenAreaToolbarItemIdentifier,
             PropagateSettingsToolbarItemIdentifier,
             PlayToolbarItemIdentifier,
             SpeedToolbarItemIdentifier,
             VRPanelToolbarItemIdentifier,
             XMLToolbarItemIdentifier,
             nil];
+}
+
+- (NSArray *) toolbarSelectableItemIdentifiers: (NSToolbar *) toolbar // SekhVet Build 67: Point-Knopf zeigt seinen Zustand
+{
+    return [NSArray arrayWithObject: Show3DPointToolbarItemIdentifier];
 }
 
 - (NSArray *) toolbarAllowedItemIdentifiers: (NSToolbar *) toolbar
@@ -6719,6 +6819,14 @@ static ViewerController *draggedController = nil;
                              ReconstructionToolbarItemIdentifier,
                              BlendingToolbarItemIdentifier,
                              SyncSeriesToolbarItemIdentifier,
+                             Show3DPointToolbarItemIdentifier,
+                             SekhmetVetPresetToolbarItemIdentifier,
+                             SekhmetSpineToolbarItemIdentifier,
+							 SekhmetNorbergToolbarItemIdentifier,
+							 SekhmetNorbergDeleteToolbarItemIdentifier,
+							 SekhmetDIToolbarItemIdentifier,
+							 SekhmetDIDeleteToolbarItemIdentifier,
+                             SekhmetScreenAreaToolbarItemIdentifier,
                              PropagateSettingsToolbarItemIdentifier,
                              ResetToolbarItemIdentifier,
                              RevertToolbarItemIdentifier,
@@ -6939,6 +7047,15 @@ static ViewerController *draggedController = nil;
             break;
     }
     
+    // SekhVet Build 67: Point-Werkzeug sichtbar — Toolbar-Knopf markiert, Werkzeugmatrix ohne Auswahl; jedes andere Werkzeug hebt die Markierung auf
+    if( (ToolMode)tag == t3Dpoint)
+    {
+        [toolbar setSelectedItemIdentifier: Show3DPointToolbarItemIdentifier];
+        [toolsMatrix setAllowsEmptySelection: YES]; [toolsMatrix deselectAllCells]; [toolsMatrix setAllowsEmptySelection: NO];
+    }
+    else if( tag >= 0 && [[toolbar selectedItemIdentifier] isEqualToString: Show3DPointToolbarItemIdentifier])
+        [toolbar setSelectedItemIdentifier: nil];
+
     if( tag >= 0)
     {
         [imageView setCurrentTool: (ToolMode)tag];
@@ -7203,6 +7320,7 @@ static ViewerController *draggedController = nil;
     
     // We are the delegate
     [toolbar setDelegate: self];
+    [self performSelector: @selector(sekhmetEnsureNorbergToolbarItem) withObject: nil afterDelay: 1.0]; // SekhVet Paket V
     
     if( [AppController USETOOLBARPANEL] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"USEALWAYSTOOLBARPANEL2"] == NO)
     {
@@ -7641,6 +7759,7 @@ static ViewerController *draggedController = nil;
     retainedToolbarItems = [[NSMutableArray alloc] initWithCapacity: 0];
     
     [self setupToolbar];
+    [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetPresetDidChange:) name: SekhmetVetPresetDidChangeNotification object: nil]; // Sekhmet
     
     [ROI loadDefaultSettings];
     
@@ -8334,7 +8453,7 @@ static int avoidReentryRefreshDatabase = 0;
                     [self setWindowTitle:self];
                     
                     [slider setMaxValue:(long)[pixList[0] count]-1];
-                    [slider setNumberOfTickMarks:[pixList[0] count]];
+                    SekhmetSliderSetTickMarks( slider, [pixList[0] count]); // SekhVet Paket BB: keine Striche je Bild (Wartecursor)
                     [self adjustSlider];
                     
                     if([fileList[0] count] == 1)
@@ -9022,6 +9141,10 @@ static int avoidReentryRefreshDatabase = 0;
         if( firstPix.shutterEnabled)
             [self setShutterOnOffButton: [NSNumber numberWithBool: YES]];
         
+        if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetWLWWApplyOnOpenKey]) [SekhmetWindowing applyToViewer: self]; // SekhVet Paket AE: WL/WW nach Regel
+        [self sekhmetBorrowUSCalibration: pixListArray]; // SekhVet Paket BH: US-Kalibrierung vom Nachbarbild
+        [SekhmetOrientation applyToViewer: self]; // Sekhmet: Vet-Orientierung nach dem Laden
+        [self sekhmetUpdatePresetPopup];
         [self setWindowTitle:self];
         
         originalOrientation = -1;
@@ -18526,8 +18649,8 @@ static float oldsetww, oldsetwl;
     [printFrom setMaxValue: [pixList[ curMovieIndex] count]];
     [printTo setMaxValue: [pixList[ curMovieIndex] count]];
     
-    [printFrom setNumberOfTickMarks: [pixList[ curMovieIndex] count]];
-    [printTo setNumberOfTickMarks: [pixList[ curMovieIndex] count]];
+    SekhmetSliderSetTickMarks( printFrom, [pixList[ curMovieIndex] count]); // SekhVet Paket BB
+    SekhmetSliderSetTickMarks( printTo, [pixList[ curMovieIndex] count]);
     
     [printFrom setIntValue: 1];
     [printTo setIntValue: [pixList[ curMovieIndex] count]];
@@ -18817,8 +18940,8 @@ static float oldsetww, oldsetwl;
     [quicktimeFrom setMaxValue: [pixList[ curMovieIndex] count]];
     [quicktimeTo setMaxValue: [pixList[ curMovieIndex] count]];
     
-    [quicktimeFrom setNumberOfTickMarks: [pixList[ curMovieIndex] count]];
-    [quicktimeTo setNumberOfTickMarks: [pixList[ curMovieIndex] count]];
+    SekhmetSliderSetTickMarks( quicktimeFrom, [pixList[ curMovieIndex] count]); // SekhVet Paket BB
+    SekhmetSliderSetTickMarks( quicktimeTo, [pixList[ curMovieIndex] count]);
     
     //	if( [pixList[ curMovieIndex] count] < 20)
     //	{
@@ -19426,8 +19549,8 @@ static float oldsetww, oldsetwl;
     [dcmFrom setMaxValue: [pixList[ curMovieIndex] count]];
     [dcmTo setMaxValue: [pixList[ curMovieIndex] count]];
     
-    [dcmFrom setNumberOfTickMarks: [pixList[ curMovieIndex] count]];
-    [dcmTo setNumberOfTickMarks: [pixList[ curMovieIndex] count]];
+    SekhmetSliderSetTickMarks( dcmFrom, [pixList[ curMovieIndex] count]); // SekhVet Paket BB
+    SekhmetSliderSetTickMarks( dcmTo, [pixList[ curMovieIndex] count]);
     
     //	if( [pixList[ curMovieIndex] count] < 20)
     //	{
@@ -21171,7 +21294,13 @@ static float oldsetww, oldsetwl;
 
 - (void) place3DViewerWindow:(NSWindowController*) viewer
 {
-    [[viewer window] setFrame: [[self get3DViewerScreen: self] visibleFrame] display:NO];
+    NSScreen *s = [self get3DViewerScreen: self];
+    NSRect area = [SekhmetDisplayPanel areaForScreen: s frame: [s visibleFrame]]; // SekhVet: Viewer-Flaeche je Bildschirm
+    // SekhVet Paket AD: ueber dem eigenen 2D-Fenster starten; die Kachelung (tile3DWindows sortiert nach Position) legt das MPR dann
+    // ueber seine Serie statt in Fensterreihenfolge. Ein einzelnes MPR wird von der Kachelung wieder auf die ganze Flaeche gesetzt.
+    NSRect f = NSIntersectionRect( [[self window] frame], area);
+    if( f.size.width < 300 || f.size.height < 300 || [[self window] screen] != s) f = area;
+    [[viewer window] setFrame: f display:NO];
 }
 
 #ifndef OSIRIX_LIGHT

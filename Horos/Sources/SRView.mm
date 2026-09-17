@@ -35,6 +35,7 @@
  Ê Ê PURPOSE.
  ============================================================================*/
 
+#import "SekhmetOrientation.h" // SekhVet Stufe 6c: SekhmetVetLetter()
 #import "options.h"
 #if !__LP64__ && !__arm64__
 #define USE3DCONNEXION 1
@@ -214,7 +215,11 @@ typedef struct _xyzArray
 		orientationZ = vector[ 2] < 0 ? NSLocalizedString( @"I", @"I: Inferior") : NSLocalizedString( @"S", @"S: Superior");
 	}
 	
-	float absX = fabs( vector[ 0]);
+	// Sekhmet: veterinaere Randbuchstaben
+    orientationY = SekhmetVetLetter( orientationY);
+    orientationZ = SekhmetVetLetter( orientationZ);
+    
+    float absX = fabs( vector[ 0]);
 	float absY = fabs( vector[ 1]);
 	float absZ = fabs( vector[ 2]);
 	
@@ -2339,10 +2344,10 @@ typedef struct _xyzArray
 			vtkAnnotatedCubeActor* cube = vtkAnnotatedCubeActor::New();
 			cube->SetXPlusFaceText ( [NSLocalizedString( @"L", @"L: Left") UTF8String] );		
 			cube->SetXMinusFaceText( [NSLocalizedString( @"R", @"R: Right") UTF8String] );
-			cube->SetYPlusFaceText ( [NSLocalizedString( @"P", @"P: Posterior") UTF8String] );
-			cube->SetYMinusFaceText( [NSLocalizedString( @"A", @"A: Anterior") UTF8String] );
-			cube->SetZPlusFaceText ( [NSLocalizedString( @"S", @"S: Superior") UTF8String] );
-			cube->SetZMinusFaceText( [NSLocalizedString( @"I", @"I: Inferior") UTF8String] );
+			cube->SetYPlusFaceText ( [SekhmetVetLetter( NSLocalizedString( @"P", @"P: Posterior")) UTF8String] /* Sekhmet */ );
+			cube->SetYMinusFaceText( [SekhmetVetLetter( NSLocalizedString( @"A", @"A: Anterior")) UTF8String] /* Sekhmet */ );
+			cube->SetZPlusFaceText ( [SekhmetVetLetter( NSLocalizedString( @"S", @"S: Superior")) UTF8String] /* Sekhmet */ );
+			cube->SetZMinusFaceText( [SekhmetVetLetter( NSLocalizedString( @"I", @"I: Inferior")) UTF8String] /* Sekhmet */ );
 			cube->SetFaceTextScale( 0.67 );
 
 

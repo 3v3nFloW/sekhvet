@@ -278,7 +278,7 @@
                                         <subviews>
                                             <slider verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="11">
                                                 <rect key="frame" x="0.0" y="0.0" width="607" height="16"/>
-                                                <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" maxValue="100" doubleValue="45.45454545454546" tickMarkPosition="below" numberOfTickMarks="100" allowsTickMarkValuesOnly="YES" sliderType="linear" id="2109"/>
+                                                <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" maxValue="100" doubleValue="45.45454545454546" tickMarkPosition="below" allowsTickMarkValuesOnly="YES" sliderType="linear" id="2109"/>
                                                 <connections>
                                                     <action selector="sliderAction:" target="-1" id="931"/>
                                                 </connections>

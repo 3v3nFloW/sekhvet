@@ -7,10 +7,10 @@
 //
 
 /// String that uniquely identifies the bundle
-PRODUCT_BUNDLE_IDENTIFIER_PREFIX = org.horosproject
+PRODUCT_BUNDLE_IDENTIFIER_PREFIX = vet.kappa1.sekhvet
 
 /// Current version of the project
-CURRENT_PROJECT_VERSION = 20220801
+CURRENT_PROJECT_VERSION = 95
 
 /// User-visible version of the project
 MARKETING_VERSION = 4.0.0

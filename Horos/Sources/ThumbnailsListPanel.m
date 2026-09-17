@@ -35,6 +35,7 @@
      PURPOSE.
  ============================================================================*/
 
+#import "SekhmetDisplayPanel.h" // Sekhmet
 #import "ThumbnailsListPanel.h"
 #import "ViewerController.h"
 #import "AppController.h"
@@ -77,7 +78,7 @@ static 	NSMutableDictionary *associatedScreen = nil;
 	if ([[NSScreen screens] count] <= screen)
 		return;
     
-	NSRect screenRect = [[[NSScreen screens] objectAtIndex:screen] visibleFrame];
+	NSRect screenRect = [SekhmetDisplayPanel areaForScreen: [[NSScreen screens] objectAtIndex:screen] frame: [[[NSScreen screens] objectAtIndex:screen] visibleFrame]]; // Sekhmet: Viewer-Flaeche
 	
 	NSRect dstframe;
 	dstframe.size.height = screenRect.size.height;

@@ -655,7 +655,7 @@
     
     if( templatePath == nil || ![[NSFileManager defaultManager] fileExistsAtPath:templatePath])
     {
-        NSRunCriticalAlertPanel( NSLocalizedString( @"Microsoft Word", nil),  NSLocalizedString(@"I cannot find the Horos Word Template doc file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        NSRunCriticalAlertPanel( NSLocalizedString( @"Microsoft Word", nil),  NSLocalizedString(@"I cannot find the SekhVet Word Template doc file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         return NO;
     }
     
@@ -919,7 +919,7 @@ static int Pages5orHigher = -1;
         
         if( [[NSFileManager defaultManager] fileExistsAtPath:indexFilePath] == NO)
         {
-            NSRunCriticalAlertPanel( NSLocalizedString( @"Pages", nil),  NSLocalizedString(@"Horos requires templates files in Pages '09 format. Open your template in Pages, select File menu and Export to Pages '09 format.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            NSRunCriticalAlertPanel( NSLocalizedString( @"Pages", nil),  NSLocalizedString(@"SekhVet requires templates files in Pages '09 format. Open your template in Pages, select File menu and Export to Pages '09 format.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             return NO;
         }
     }

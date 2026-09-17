@@ -735,102 +735,13 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
 }
 
 
-+ (void) deployHorosCloudPluginAtPath:(NSString*) path deployedPlugins:(NSMutableArray*) deployedPlugins
-{
-    BOOL foundHorosCloud = NO;
-    
-    if ([[NSFileManager defaultManager] fileExistsAtPath:path] == NO)
-    {
-        [[NSFileManager defaultManager] createDirectoryAtPath:path withIntermediateDirectories:YES attributes:nil error:nil];
-    }
-    else
-    {
-        NSNumber* flag = [[NSUserDefaults standardUserDefaults] objectForKey:@"HOROSCLOUD_PLUGIN_DEPLOYED"];
-        if (flag == nil || [flag integerValue] == 0)
-        {
-            for (NSInteger i = deployedPlugins.count-1; i >= 0; --i)
-            {
-                NSBundle* bundle = [NSBundle bundleWithPath:[deployedPlugins objectAtIndex:i]];
-                NSString* name = [bundle.infoDictionary objectForKey:@"CFBundleName"];
-                if (!name)
-                {
-                    name = [[[deployedPlugins objectAtIndex:i] lastPathComponent] stringByDeletingPathExtension];
-                }
-                
-                if( [name caseInsensitiveCompare:@"HorosCloud"] == NSOrderedSame ) {
-                    foundHorosCloud = YES;
-                    break;
-                }
-            }
-        }
-        else
-        {
-            foundHorosCloud = YES;
-        }
-    }
-    
-    if (!foundHorosCloud)
-    {
-        NSString* srcPath = [[NSBundle mainBundle] pathForResource:@"HorosCloud.horosplugin" ofType:@"zip"];
-        if ([[NSFileManager defaultManager] fileExistsAtPath:srcPath])
-        {
-            NSString* dstPath = [NSString stringWithFormat:@"%@/HorosCloud.horosplugin.zip",path];
-            
-            [[NSFileManager defaultManager] removeItemAtPath:dstPath error:nil];
-
-            if (![[NSFileManager defaultManager] fileExistsAtPath:dstPath])
-            {
-                [[NSFileManager defaultManager] copyItemAtPath:srcPath toPath:dstPath error:nil];
-                
-                if ([[NSFileManager defaultManager] fileExistsAtPath:dstPath])
-                {
-                    //Unzip plugin
-                    @try
-                    {
-                        NSTask *aTask = [[NSTask alloc] init];
-                        NSMutableArray *args = [NSMutableArray array];
-                        
-                        [args addObject:@"-o"];
-                        [args addObject:dstPath];
-                        [args addObject:@"-d"];
-                        [args addObject:[dstPath stringByDeletingLastPathComponent]];
-                        [aTask setLaunchPath:@"/usr/bin/unzip"];
-                        [aTask setArguments:args];
-                        [aTask launch];
-                        while( [aTask isRunning])
-                            [NSThread sleepForTimeInterval: 0.1];
-                        
-                        //[aTask waitUntilExit]; // <- This is VERY DANGEROUS : the main runloop is continuing...
-                        [aTask release];
-                    }
-                    @catch (NSException *e)
-                    {
-                        NSLog( @"***** exception in %s: %@", __PRETTY_FUNCTION__, e);
-                    }
-                    
-                    
-                    //Clean
-                    [[NSFileManager defaultManager] removeItemAtPath:dstPath error:nil];
-                    
-                    
-                    //Add to list of deployedPlugins
-                    NSString* pluginPath = [NSString stringWithFormat:@"%@/HorosCloud.horosplugin",path];
-                    if ([[NSFileManager defaultManager] fileExistsAtPath:pluginPath])
-                    {
-                        [deployedPlugins addObject:pluginPath];
-                    }
-                }
-            }
-        }
-    }
-}
-
+// Sekhmet: Horos Cloud (geschlossenes Plugin) entfernt.
 
 + (void) discoverPlugins
 {
 	@try
 	{
-		NSString	*appSupport = @"Library/Application Support/Horos/";
+		NSString	*appSupport = @"Library/Application Support/SekhVet/"; // Sekhmet: eigener Plugin-Ordner, nie den von Horos 4.0.1 anfassen (Horos loescht abstuerzende Plugins)
         NSString	*appAppStoreSupport = @"Library/Application Support/Horos App/";
 		NSString	*appPath = [[NSBundle mainBundle] builtInPlugInsPath];
         NSString	*userAppStorePath = [NSHomeDirectory() stringByAppendingPathComponent:appAppStoreSupport];
@@ -879,7 +790,7 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
         {
             NSString *pluginCrashPath = [NSString stringWithContentsOfFile: pluginCrash encoding: NSUTF8StringEncoding error: nil];
             
-            int result = NSRunInformationalAlertPanel(NSLocalizedString(@"Horos crashed", nil), NSLocalizedString(@"Previous crash is maybe related to a plugin.\r\rShould I remove this plugin (%@)?", nil), NSLocalizedString(@"Delete Plugin",nil), NSLocalizedString(@"Continue",nil), nil, [pluginCrashPath lastPathComponent]);
+            int result = NSRunInformationalAlertPanel(NSLocalizedString(@"SekhVet crashed", nil), NSLocalizedString(@"Previous crash is maybe related to a plugin.\r\rShould I remove this plugin (%@)?", nil), NSLocalizedString(@"Delete Plugin",nil), NSLocalizedString(@"Continue",nil), nil, [pluginCrashPath lastPathComponent]);
             
             if( result == NSAlertDefaultReturn) // Delete Plugin
             {
@@ -940,7 +851,6 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
         
 //        NSLog(@"paths: %@", pathsOfPluginsToLoad);
 
-        [self deployHorosCloudPluginAtPath:userPath deployedPlugins:pathsOfPluginsToLoad];
         
         // some plugins require other plugins to be loaded before them
         for (__block NSInteger i = pathsOfPluginsToLoad.count-1; i >= 0; --i) {
@@ -1007,7 +917,7 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
     #ifdef MACAPPSTORE
 	return @"Library/Application Support/Horos App/Plugins/";
     #else
-    return @"Library/Application Support/Horos/Plugins/";
+    return @"Library/Application Support/SekhVet/Plugins/"; // Sekhmet
     #endif
 }
 
@@ -1018,7 +928,7 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
     #ifdef MACAPPSTORE
 	return @"Library/Application Support/Horos App/Plugins Disabled/";
     #else
-    return @"Library/Application Support/Horos/Plugins Disabled/";
+    return @"Library/Application Support/SekhVet/Plugins Disabled/"; // Sekhmet: nie den Ordner von Horos 4.0.1 anfassen
     #endif
 }
 
@@ -1163,7 +1073,7 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
 	}
     
     if( !gPluginsAlertAlreadyDisplayed)
-        NSRunInformationalAlertPanel(NSLocalizedString(@"Plugins", @""), NSLocalizedString( @"Restart Horos to apply the changes to the plugins.", @""), NSLocalizedString(@"OK", @""), nil, nil);
+        NSRunInformationalAlertPanel(NSLocalizedString(@"Plugins", @""), NSLocalizedString( @"Restart SekhVet to apply the changes to the plugins.", @""), NSLocalizedString(@"OK", @""), nil, nil);
     gPluginsAlertAlreadyDisplayed = YES;
 }
 
@@ -1201,7 +1111,7 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
 	}
     
     if( !gPluginsAlertAlreadyDisplayed)
-        NSRunInformationalAlertPanel(NSLocalizedString(@"Plugins", @""), NSLocalizedString( @"Restart Horos to apply the changes to the plugins.", @""), NSLocalizedString(@"OK", @""), nil, nil);
+        NSRunInformationalAlertPanel(NSLocalizedString(@"Plugins", @""), NSLocalizedString( @"Restart SekhVet to apply the changes to the plugins.", @""), NSLocalizedString(@"OK", @""), nil, nil);
     gPluginsAlertAlreadyDisplayed = YES;
 }
 
@@ -1214,7 +1124,7 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
 #ifdef MACAPPSTORE
     if([availability isEqualTo:[availabilities objectAtIndex:0]] == NO)
     {
-        NSRunCriticalAlertPanel( NSLocalizedString(@"Plugin",nil),  NSLocalizedString( @"You cannot move the plugin to another location with this version of Horos.", nil), NSLocalizedString(@"OK",nil), nil, nil);
+        NSRunCriticalAlertPanel( NSLocalizedString(@"Plugin",nil),  NSLocalizedString( @"You cannot move the plugin to another location with this version of SekhVet.", nil), NSLocalizedString(@"OK",nil), nil, nil);
     }
 #endif
     
@@ -1445,7 +1355,7 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
 	}
 	
     if( !gPluginsAlertAlreadyDisplayed)
-        NSRunInformationalAlertPanel(NSLocalizedString(@"Plugins", @""), NSLocalizedString( @"Restart Horos to apply the changes to the plugins.", @""), NSLocalizedString(@"OK", @""), nil, nil);
+        NSRunInformationalAlertPanel(NSLocalizedString(@"Plugins", @""), NSLocalizedString( @"Restart SekhVet to apply the changes to the plugins.", @""), NSLocalizedString(@"OK", @""), nil, nil);
     gPluginsAlertAlreadyDisplayed = YES;
     
 	return returnPath;
@@ -1610,7 +1520,7 @@ NSInteger sortPluginArray(id plugin1, id plugin2, void *context)
 {
 	return [NSArray arrayWithObjects:NSLocalizedString(@"Current user", nil),
                                      NSLocalizedString(@"All users", nil),
-                                     NSLocalizedString(@"Horos bundle", nil), nil];
+                                     NSLocalizedString(@"SekhVet bundle", nil), nil];
 }
 
 
@@ -1860,7 +1770,7 @@ NSInteger sortPluginArray(id plugin1, id plugin2, void *context)
 	else
 	{
         if( !gPluginsAlertAlreadyDisplayed)
-            NSRunInformationalAlertPanel(NSLocalizedString(@"Plugin Update Completed", @""), NSLocalizedString(@"All your plugins are now up to date. Restart Horos to use the new or updated plugins.", @""), NSLocalizedString(@"OK", @""), nil, nil);
+            NSRunInformationalAlertPanel(NSLocalizedString(@"Plugin Update Completed", @""), NSLocalizedString(@"All your plugins are now up to date. Restart SekhVet to use the new or updated plugins.", @""), NSLocalizedString(@"OK", @""), nil, nil);
 		gPluginsAlertAlreadyDisplayed = YES;
         
         startedUpdateProcess = NO;

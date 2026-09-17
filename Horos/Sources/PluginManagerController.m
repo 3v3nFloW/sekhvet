@@ -347,13 +347,13 @@ static NSDate *CachedHorosPluginsListDate = nil;
                 [horosPluginDownloadButton setEnabled:NO];
                 
                 [horosPluginStatusTextField setHidden:NO];
-                [horosPluginStatusTextField setStringValue:NSLocalizedString(@"No Horos plugin server available.", nil)];
+                [horosPluginStatusTextField setStringValue:NSLocalizedString(@"No SekhVet plugin server available.", nil)];
             }
             else
             {
                 [self generateAvailableHorosPluginsMenu];
                 
-                if ([horosPluginListPopUp indexOfItemWithTitle:@"HorosCloud"] != -1)
+                if (NO) // Sekhmet: HorosCloud entfernt, keine Vorauswahl
                 {
                     NSInteger idx = [horosPluginListPopUp indexOfItemWithTitle:@"HorosCloud"];
                     
@@ -544,7 +544,7 @@ NSInteger sortPluginArrayByName(id plugin1, id plugin2, void *context)
 	
 	//[[horosPluginListPopUp menu] addItem:[NSMenuItem separatorItem]];
     
-	//[horosPluginListPopUp addItemWithTitle:NSLocalizedString(@"Your Horos Plugin here!", nil)];
+	//[horosPluginListPopUp addItemWithTitle:NSLocalizedString(@"Your SekhVet Plugin here!", nil)];
 }
 
 
@@ -705,7 +705,7 @@ NSInteger sortPluginArrayByName(id plugin1, id plugin2, void *context)
             
             return;
         }
-        else if ([name isEqualToString:NSLocalizedString(@"Your Horos Plugin here!", nil)])
+        else if ([name isEqualToString:NSLocalizedString(@"Your SekhVet Plugin here!", nil)])
         {
             [self loadSubmitPluginPage];
             
@@ -802,7 +802,7 @@ NSInteger sortPluginArrayByName(id plugin1, id plugin2, void *context)
         [alert addButtonWithTitle:NSLocalizedString(@"Yes",nil)];
         [alert addButtonWithTitle:NSLocalizedString(@"No",nil)];
         [alert setMessageText:NSLocalizedString(@"Not validated OsiriX plugin.",nil)];
-        [alert setInformativeText:NSLocalizedString(@"Not validated OsiriX plugins may cause Horos run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. Continue installing?",nil)];
+        [alert setInformativeText:NSLocalizedString(@"Not validated OsiriX plugins may cause SekhVet run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. Continue installing?",nil)];
         [alert setAlertStyle:NSWarningAlertStyle];
         
         if ([alert runModal] != NSAlertFirstButtonReturn)

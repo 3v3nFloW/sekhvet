@@ -339,7 +339,7 @@ static float deg2rad = M_PI / 180.0f;
     if (result.good()) result = dataset->putAndInsertString(DCM_SOPClassUID, UID_SecondaryCaptureImageStorage);
     
 	// insert const value attributes
-	if (result.good()) result = dataset->putAndInsertString(DCM_SpecificCharacterSet, "ISO_IR 100");
+	if (result.good()) result = dataset->putAndInsertString(DCM_SpecificCharacterSet, "ISO_IR 192"); // SekhVet: die Werte unten kommen als UTF8String
 	
 	// there is no way we could determine a meaningful series number, so we just use a constant.
 	if (result.good()) result = dataset->putAndInsertString(DCM_SeriesNumber, "1");
@@ -817,7 +817,9 @@ static float deg2rad = M_PI / 180.0f;
 					
 					if( modalityAsSource == NO || spp == 3)
                     {
-						dataset->putAndInsertString( DCM_Modality, "SC");
+						// SekhVet: gewuenschte Modalitaet (OT/XC/ES …) aus metaDataDict, sonst wie Horos "SC"
+						NSString *sekhmetModality = [metaDataDict objectForKey: @"modality"];
+						dataset->putAndInsertString( DCM_Modality, [sekhmetModality length] ? [sekhmetModality UTF8String] : "SC");
                         metaInfo->putAndInsertString( DCM_MediaStorageSOPClassUID, UID_SecondaryCaptureImageStorage);
                         dataset->putAndInsertString( DCM_SOPClassUID, UID_SecondaryCaptureImageStorage);
                     }

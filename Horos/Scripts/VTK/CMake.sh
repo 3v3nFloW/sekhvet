@@ -48,6 +48,12 @@ args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
 args+=(-DCMAKE_OSX_ARCHITECTURES="$ARCHS")
 
 args+=(-DVTK_USE_SYSTEM_ZLIB:BOOL=ON)
+# Sachmet: das mitgelieferte libpng haelt TARGET_OS_MAC (Xcode-26-SDK) fuer Classic Mac OS und sucht <fp.h>; statisches Homebrew-libpng
+args+=(-DVTK_USE_SYSTEM_PNG:BOOL=ON)
+args+=(-DPNG_LIBRARY=/opt/homebrew/lib/libpng16.a)
+# Sachmet: /opt/homebrew/include darf NICHT als Ganzes in den Suchpfad, sonst deckt Homebrews tiffconf.h die generierte
+# von vtktiff zu (unknown type name TIFF_INT8_T). libpng16/ enthaelt nur die drei png-Header.
+args+=(-DPNG_PNG_INCLUDE_DIR=/opt/homebrew/include/libpng16)
 args+=(-DVTK_USE_SYSTEM_EXPAT=ON)
 args+=(-DVTK_USE_SYSTEM_LIBXML2=ON)
 
@@ -104,6 +110,10 @@ fi
 args+=(-DCMAKE_CXX_STANDARD=11)
 args+=(-DCMAKE_CXX_STANDARD_REQUIRED=ON)
 
+# Sachmet: Eigen 3.3.4 im VTK-Submodul scheitert mit clang 21 (Transpositions.h:387 "no member named derived");
+# Korrektur wie in Eigen 3.3.7: trt statt trt.derived(). Idempotent, direkt im Submodul-Arbeitsbaum.
+eig="$PROJECT_DIR/$TARGET_NAME/ThirdParty/eigen/vtkeigen/eigen/src/Core/Transpositions.h"
+grep -q "matrix.derived(), trt.derived())" "$eig" && sed -i "" "s/matrix.derived(), trt.derived())/matrix.derived(), trt)/" "$eig"
 cmake "${args[@]}"
 
 echo "$hash" > "$cmake_dir/.cmakehash"

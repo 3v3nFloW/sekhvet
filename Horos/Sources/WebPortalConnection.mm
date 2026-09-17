@@ -1235,7 +1235,7 @@ NSString* const SessionDicomCStorePortKey = @"DicomCStorePort"; // NSNumber (int
 	NSString *webPortalDefaultTitle = [[NSUserDefaults standardUserDefaults] stringForKey: @"WebPortalTitle"];
 	
 	if( webPortalDefaultTitle.length == 0)
-		webPortalDefaultTitle = NSLocalizedString(@"Horos Web Portal", @"Web Portal, general default title");
+		webPortalDefaultTitle = NSLocalizedString(@"SekhVet Web Portal", @"Web Portal, general default title");
 	
 	[response.tokens setObject: webPortalDefaultTitle forKey:@"PageTitle"]; // the default title
 	[response.tokens setObject:[WebPortalProxy createWithObject:self transformer:[InfoTransformer create]] forKey:@"Info"];

@@ -37,6 +37,7 @@
 
 //diskutil erasevolume HFS+ "ramdisk" `hdiutil attach -nomount ram://1165430`
 #import "SystemConfiguration/SCDynamicStoreCopySpecific.h"
+#import "SekhmetTesthaken.h" // SekhVet: Testhaken nur mit Build-Flag SEKHVET_TESTHAKEN=1
 #include <CoreFoundation/CoreFoundation.h>
 #include <ApplicationServices/ApplicationServices.h>
 
@@ -46,6 +47,17 @@
 
 #import "ToolbarPanel.h"
 #import "ThumbnailsListPanel.h"
+#import "SekhmetOrientation.h" // Sekhmet
+#import "SekhmetDisplayPanel.h" // Sekhmet
+#import "SekhmetSpine.h" // Sekhmet
+#import "SekhmetNorberg.h" // SekhVet Paket U
+#import "SekhmetUSKalibrierung.h" // SekhVet Paket BH
+#import "SekhmetDICOMweb.h" // Sekhmet
+#import "SekhmetImport.h" // SekhVet Paket G
+#import "SekhmetOrientationPanel.h"
+#import "SekhmetWindowing.h"
+#import "SekhmetOpening.h"
+#import "SekhmetRename.h" // SekhVet Paket BC // SekhVet Paket AE
 #import "AppController.h"
 #import "PreferencesWindowController.h"
 #import "BrowserController.h"
@@ -522,6 +534,7 @@ NSRect screenFrame()
 	{
 		case 0:		// use main screen only
 			screenRect    = [[[NSScreen screens] objectAtIndex:0] visibleFrame];
+			screenRect = [SekhmetDisplayPanel areaForScreen: [[NSScreen screens] objectAtIndex:0] frame: screenRect]; // Sekhmet
 		break;
 		
 		case 1:		// use second screen only
@@ -1369,7 +1382,7 @@ void exceptionHandler(NSException *exception)
         if( [defaults integerForKey: @"httpWebServer"] == 1 && [defaults integerForKey: @"httpWebServer"] != [[previousDefaults valueForKey: @"httpWebServer"] intValue])
         {
             if( [AppController hasMacOSXSnowLeopard] == NO)
-                NSRunCriticalAlertPanel( NSLocalizedString( @"Unsupported", nil), NSLocalizedString( @"It is highly recommend to upgrade to MacOS 10.6 or higher to use the Horos Web Server.", nil), NSLocalizedString( @"OK", nil) , nil, nil);
+                NSRunCriticalAlertPanel( NSLocalizedString( @"Unsupported", nil), NSLocalizedString( @"It is highly recommend to upgrade to MacOS 10.6 or higher to use the SekhVet Web Server.", nil), NSLocalizedString( @"OK", nil) , nil, nil);
         }
         
         previousDefaults = dictionaryRepresentation;
@@ -1395,7 +1408,7 @@ void exceptionHandler(NSException *exception)
             if( showRestartNeeded == YES)
             {
                 showRestartNeeded = NO;
-                NSRunAlertPanel( NSLocalizedString( @"DICOM Listener", nil), NSLocalizedString( @"Restart Horos to apply these changes.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+                NSRunAlertPanel( NSLocalizedString( @"DICOM Listener", nil), NSLocalizedString( @"Restart SekhVet to apply these changes.", nil), NSLocalizedString( @"OK", nil), nil, nil);
             }
         }
         
@@ -2166,7 +2179,7 @@ void exceptionHandler(NSException *exception)
 					
 					[STORESCP unlock];
 				}
-				else NSRunCriticalAlertPanel( NSLocalizedString( @"DICOM Listener Error", nil), NSLocalizedString( @"Cannot start DICOM Listener. Another thread is already running. Restart Horos.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+				else NSRunCriticalAlertPanel( NSLocalizedString( @"DICOM Listener Error", nil), NSLocalizedString( @"Cannot start DICOM Listener. Another thread is already running. Restart SekhVet.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 			}		
 		}
 		
@@ -2184,7 +2197,7 @@ void exceptionHandler(NSException *exception)
 				
 				[STORESCPTLS unlock];
 			}
-			else NSRunCriticalAlertPanel( NSLocalizedString( @"DICOM TLS Listener Error", nil), NSLocalizedString( @"Cannot start DICOM TLS Listener. Another thread is already running. Restart Horos.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+			else NSRunCriticalAlertPanel( NSLocalizedString( @"DICOM TLS Listener Error", nil), NSLocalizedString( @"Cannot start DICOM TLS Listener. Another thread is already running. Restart SekhVet.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 		}
 	
 	} @catch (NSException* e) {
@@ -2314,7 +2327,7 @@ void exceptionHandler(NSException *exception)
 	{
 		if( [[NSUserDefaults standardUserDefaults] boolForKey: @"httpXMLRPCServer"] == NO)
 		{
-			int result = NSRunInformationalAlertPanel(NSLocalizedString(@"URL scheme", nil), NSLocalizedString(@"Horos URL scheme [horos:// , osirix://] is currently not activated!\r\rShould I activate it now? Restart is necessary.", nil), NSLocalizedString(@"No",nil), NSLocalizedString(@"Activate & Restart",nil), nil);
+			int result = NSRunInformationalAlertPanel(NSLocalizedString(@"URL scheme", nil), NSLocalizedString(@"SekhVet URL scheme [horos:// , osirix://] is currently not activated!\r\rShould I activate it now? Restart is necessary.", nil), NSLocalizedString(@"No",nil), NSLocalizedString(@"Activate & Restart",nil), nil);
 			
 			if( result == NSAlertAlternateReturn)
 			{
@@ -2898,7 +2911,7 @@ static BOOL initialized = NO;
                 if( [BrowserController _currentModifierFlags] & NSCommandKeyMask &&
                    [BrowserController _currentModifierFlags] & NSAlternateKeyMask)
                 {
-                    NSInteger result = NSRunInformationalAlertPanel( NSLocalizedString(@"Reset Preferences", nil), NSLocalizedString(@"Are you sure you want to reset ALL preferences of Horos? All the preferences will be reseted to their default values.", nil), NSLocalizedString(@"Cancel",nil), NSLocalizedString(@"OK",nil),  nil);
+                    NSInteger result = NSRunInformationalAlertPanel( NSLocalizedString(@"Reset Preferences", nil), NSLocalizedString(@"Are you sure you want to reset ALL preferences of SekhVet? All the preferences will be reseted to their default values.", nil), NSLocalizedString(@"Cancel",nil), NSLocalizedString(@"OK",nil),  nil);
                     
                     if( result == NSAlertAlternateReturn)
                     {
@@ -2943,7 +2956,7 @@ static BOOL initialized = NO;
 				#ifdef MACAPPSTORE
 				[[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"MACAPPSTORE"]; // Also modify in DefaultsOsiriX.m
 				[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"AUTHENTICATION"];
-				[[NSUserDefaults standardUserDefaults] setObject: NSLocalizedString( @"(~/Library/Application Support/Horos App/)", nil) forKey:@"DefaultDatabasePath"];
+				[[NSUserDefaults standardUserDefaults] setObject: NSLocalizedString( @"(~/Library/Application Support/SekhVet App/)", nil) forKey:@"DefaultDatabasePath"];
 				#else
 				[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"MACAPPSTORE"]; // Also modify in DefaultsOsiriX.m
 				[[NSUserDefaults standardUserDefaults] setObject: NSLocalizedString( @"(Current User Documents folder)", nil) forKey:@"DefaultDatabasePath"];
@@ -2986,7 +2999,7 @@ static BOOL initialized = NO;
                     NSString* volumePath = [[[dataBasePath componentsSeparatedByString:@"/"] subarrayWithRange:NSMakeRange(0,3)] componentsJoinedByString:@"/"];
                     if (![[NSFileManager defaultManager] fileExistsAtPath:volumePath]) {
                         NSPanel* dialog = [NSPanel alertWithTitle:@"Horos Data"
-                                                          message:[NSString stringWithFormat:NSLocalizedString(@"Horos is configured to use the database located at %@. This volume is currently not available, most likely because it hasn't yet been mounted by the system, or because it is not plugged in or is turned off, or because you don't have write permissions for this location. Horos will wait for a few minutes, then give up and switch to a database in the current user's home directory.", nil), [[NSUserDefaults standardUserDefaults] stringForKey: @"DATABASELOCATIONURL"]]
+                                                          message:[NSString stringWithFormat:NSLocalizedString(@"SekhVet is configured to use the database located at %@. This volume is currently not available, most likely because it hasn't yet been mounted by the system, or because it is not plugged in or is turned off, or because you don't have write permissions for this location. SekhVet will wait for a few minutes, then give up and switch to a database in the current user's home directory.", nil), [[NSUserDefaults standardUserDefaults] stringForKey: @"DATABASELOCATIONURL"]]
                                                     defaultButton:@"Quit"
                                                   alternateButton:@"Continue"
                                                              icon:nil];
@@ -3028,7 +3041,7 @@ static BOOL initialized = NO;
                     NSString* volumePath = [[[dataBaseDataPath componentsSeparatedByString:@"/"] subarrayWithRange:NSMakeRange(0,3)] componentsJoinedByString:@"/"];
                     if (![[NSFileManager defaultManager] fileExistsAtPath:volumePath]) {
                         NSPanel* dialog = [NSPanel alertWithTitle:@"Horos Data"
-                                                          message:[NSString stringWithFormat:NSLocalizedString(@"Horos is configured to use the database with data located at %@. This volume is currently not available, most likely because it hasn't yet been mounted by the system, or because it is not plugged in or is turned off, or because you don't have write permissions for this location. Horos will wait for a few minutes, then give up and ignore this highly dangerous situation.", nil), dataBaseDataPath]
+                                                          message:[NSString stringWithFormat:NSLocalizedString(@"SekhVet is configured to use the database with data located at %@. This volume is currently not available, most likely because it hasn't yet been mounted by the system, or because it is not plugged in or is turned off, or because you don't have write permissions for this location. SekhVet will wait for a few minutes, then give up and ignore this highly dangerous situation.", nil), dataBaseDataPath]
                                                     defaultButton:@"Quit"
                                                   alternateButton:@"Continue"
                                                              icon:nil];
@@ -3176,7 +3189,7 @@ static BOOL initialized = NO;
                 {
                     if( [[NSFileManager defaultManager] fileExistsAtPath: path])
                     {
-                        int result = NSRunInformationalAlertPanel(NSLocalizedString(@"Horos crashed during last startup", nil), NSLocalizedString(@"Previous crash is maybe related to a corrupt database or corrupted images.\r\rShould I run Horos in Protected Mode (recommended) (no images displayed)? To allow you to delete the crashing/corrupted images/studies.\r\rOr Should I rebuild the local database? All albums, comments and status will be lost.", nil), NSLocalizedString(@"Continue normally",nil), NSLocalizedString(@"Protected Mode",nil), NSLocalizedString(@"Rebuild Database",nil));
+                        int result = NSRunInformationalAlertPanel(NSLocalizedString(@"SekhVet crashed during last startup", nil), NSLocalizedString(@"Previous crash is maybe related to a corrupt database or corrupted images.\r\rShould I run SekhVet in Protected Mode (recommended) (no images displayed)? To allow you to delete the crashing/corrupted images/studies.\r\rOr Should I rebuild the local database? All albums, comments and status will be lost.", nil), NSLocalizedString(@"Continue normally",nil), NSLocalizedString(@"Protected Mode",nil), NSLocalizedString(@"Rebuild Database",nil));
                         
                         if( result == NSAlertOtherReturn)
                         {
@@ -3359,9 +3372,141 @@ static BOOL initialized = NO;
 	return NO;
 }
 
+// Sekhmet
+- (IBAction) sekhmetShowOrientationPanel:(id) sender
+{
+    [[SekhmetOrientationPanel shared] showWindow: sender];
+    [[[SekhmetOrientationPanel shared] window] makeKeyAndOrderFront: sender];
+}
+
+- (IBAction) sekhmetShowSpine:(id) sender
+{
+    [[SekhmetSpine shared] showWindow: sender];
+}
+
+- (IBAction) sekhmetNorberg:(id) sender // SekhVet Paket U
+{
+    [[SekhmetNorberg shared] placeInFrontViewer: sender];
+}
+
+- (IBAction) sekhmetNorbergDelete:(id) sender // SekhVet Paket W
+{
+    [[SekhmetNorberg shared] deleteInFrontViewer: sender];
+}
+
+- (IBAction) sekhmetDI:(id) sender // SekhVet Paket BD
+{
+    [[SekhmetNorberg shared] placeDIInFrontViewer: sender];
+}
+
+- (IBAction) sekhmetDIDelete:(id) sender // SekhVet Paket BD
+{
+    [[SekhmetNorberg shared] deleteDIInFrontViewer: sender];
+}
+
+- (IBAction) sekhmetDIRiskToggle:(id) sender // SekhVet Paket BE: risk level in the DI label (option)
+{
+    BOOL on = ![SekhmetNorberg showsRisk];
+    [SekhmetNorberg setShowsRisk: on];
+    [sender setState: on ? NSControlStateValueOn : NSControlStateValueOff];
+}
+
+- (IBAction) sekhmetShowDICOMweb:(id) sender
+{
+    [[SekhmetDICOMweb shared] showWindow: sender];
+    [[[SekhmetDICOMweb shared] window] makeKeyAndOrderFront: sender];
+}
+
+- (IBAction) sekhmetStow:(id) sender
+{
+    [[SekhmetDICOMweb shared] showWindow: sender];
+    [[[SekhmetDICOMweb shared] window] makeKeyAndOrderFront: sender];
+    [[SekhmetDICOMweb shared] stow: sender];
+}
+
+- (IBAction) sekhmetShowImport:(id) sender
+{
+    [[SekhmetImport shared] chooseFiles: sender];
+}
+
+- (IBAction) sekhmetShowDisplayPanel:(id) sender
+{
+    [[SekhmetDisplayPanel shared] showWindow: sender];
+    [[[SekhmetDisplayPanel shared] window] makeKeyAndOrderFront: sender];
+}
+
+- (IBAction) sekhmetShowWindowingPanel:(id) sender // SekhVet Paket AE
+{
+    [[SekhmetWindowingPanel shared] showWindow: sender];
+    [[[SekhmetWindowingPanel shared] window] makeKeyAndOrderFront: sender];
+}
+
+- (IBAction) sekhmetShowOpeningPanel:(id) sender // SekhVet Paket AU
+{
+    [[SekhmetOpeningPanel shared] showWindow: sender];
+    [[[SekhmetOpeningPanel shared] window] makeKeyAndOrderFront: sender];
+}
+
+- (IBAction) sekhmetApplyOrientation:(id) sender
+{
+    [SekhmetOrientation applyToAllViewersOfStudyUID: nil];
+}
+
+- (void) sekhmetInstallMenu
+{
+    NSMenu *sek = [[NSMenu alloc] initWithTitle: NSLocalizedString( @"Vet Tools", nil)]; // Paket F: App-Menue heisst SekhVet, darum eigener Name
+    [[sek addItemWithTitle: NSLocalizedString( @"Hanging Protocol…", nil) action: @selector(sekhmetShowOrientationPanel:) keyEquivalent: @""] setTarget: self];
+    [[sek addItemWithTitle: NSLocalizedString( @"Window Presets (WL/WW on open)…", nil) action: @selector(sekhmetShowWindowingPanel:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket AE
+    [[sek addItemWithTitle: NSLocalizedString( @"Opening Protocols (which series open)…", nil) action: @selector(sekhmetShowOpeningPanel:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket AU
+    [[sek addItemWithTitle: NSLocalizedString( @"Apply Hanging Protocol to Open Viewers", nil) action: @selector(sekhmetApplyOrientation:) keyEquivalent: @""] setTarget: self];
+    [[sek addItemWithTitle: NSLocalizedString( @"Display (Screen Area, Annotations, MPR)…", nil) action: @selector(sekhmetShowDisplayPanel:) keyEquivalent: @""] setTarget: self];
+    [[sek addItemWithTitle: NSLocalizedString( @"Spine Labeling…", nil) action: @selector(sekhmetShowSpine:) keyEquivalent: @""] setTarget: self];
+    [[sek addItemWithTitle: NSLocalizedString( @"Norberg Angle (Hip Dysplasia) — Place / Reset", nil) action: @selector(sekhmetNorberg:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket U
+    [[sek addItemWithTitle: NSLocalizedString( @"Delete Norberg Measurement", nil) action: @selector(sekhmetNorbergDelete:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket W
+    [[sek addItemWithTitle: NSLocalizedString( @"Distraction Index (PennHIP) — Place / Reset", nil) action: @selector(sekhmetDI:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket BD
+    [[sek addItemWithTitle: NSLocalizedString( @"Delete Distraction Index", nil) action: @selector(sekhmetDIDelete:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket BD
+    NSMenuItem *diRisk = [sek addItemWithTitle: NSLocalizedString( @"Show DI Risk Level (< 0.30 low · 0.30–0.70 moderate · > 0.70 high)", nil) action: @selector(sekhmetDIRiskToggle:) keyEquivalent: @""]; // SekhVet Paket BE
+    [diRisk setTarget: self];
+    [diRisk setState: [SekhmetNorberg showsRisk] ? NSControlStateValueOn : NSControlStateValueOff];
+    [sek addItem: [NSMenuItem separatorItem]];
+    [[sek addItemWithTitle: NSLocalizedString( @"DICOMweb Query (QIDO-RS / WADO-RS)…", nil) action: @selector(sekhmetShowDICOMweb:) keyEquivalent: @""] setTarget: self];
+    [[sek addItemWithTitle: NSLocalizedString( @"Import Image / PDF as DICOM…", nil) action: @selector(sekhmetShowImport:) keyEquivalent: @""] setTarget: self];
+    [[sek addItemWithTitle: NSLocalizedString( @"Send Selected Studies via STOW-RS…", nil) action: @selector(sekhmetStow:) keyEquivalent: @""] setTarget: self];
+    [sek addItemWithTitle: NSLocalizedString( @"Rename Patient (DICOM)…", nil) action: @selector(sekhmetRenamePatient:) keyEquivalent: @""]; // SekhVet Paket BC: Ziel nil = Datenbankfenster ueber die Responder-Kette
+    [sek addItem: [NSMenuItem separatorItem]]; // SekhVet Paket F
+    [[sek addItemWithTitle: NSLocalizedString( @"Send Feedback…", nil) action: @selector(feedback:) keyEquivalent: @""] setTarget: [SekhmetAbout shared]]; // SekhVet Paket AZ
+    [[sek addItemWithTitle: NSLocalizedString( @"Contribute to SekhVet…", nil) action: @selector(donate:) keyEquivalent: @""] setTarget: [SekhmetAbout shared]];
+    [[sek addItemWithTitle: NSLocalizedString( @"Dictate with VoiceInk (partner link)…", nil) action: @selector(voiceInk:) keyEquivalent: @""] setTarget: [SekhmetAbout shared]];
+    [[sek addItemWithTitle: NSLocalizedString( @"About SekhVet…", nil) action: @selector(about:) keyEquivalent: @""] setTarget: self];
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle: NSLocalizedString( @"Vet Tools", nil) action: nil keyEquivalent: @""];
+    [item setSubmenu: sek];
+    NSMenu *main = [NSApp mainMenu];
+    [main insertItem: item atIndex: MAX( 0, [main numberOfItems] - 1)];
+    if( sekhvetTesthaken( "SEKHVET_IMPORT_TEST")) [SekhmetImport performSelector: @selector(debugImportFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test von Paket G
+    if( sekhvetTesthaken( "SEKHVET_RENAME_TEST")) [SekhmetRename performSelector: @selector(debugRenameFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket BC
+    if( sekhvetTesthaken( "SEKHVET_STOW_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugStowFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test STOW-RS
+    if( sekhvetTesthaken( "SEKHVET_WADO_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugWadoFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test WADO-RS-Stream
+    if( sekhvetTesthaken( "SEKHVET_SPINE_TEST")) NSLog( @"SekhVet Wirbel-Labels Selbsttest: %@", [SekhmetSpine debugSelfTest]);
+    if( sekhvetTesthaken( "SEKHVET_NORBERG_TEST")) NSLog( @"SekhVet Norberg self-test: %@", [SekhmetNorberg debugSelfTest]); // SekhVet Paket U
+    if( sekhvetTesthaken( "SEKHVET_USCAL_TEST")) NSLog( @"SekhVet US calibration self-test: %@", [SekhmetUSKalibrierung debugSelfTestWithDirectory: [NSString stringWithUTF8String: sekhvetTesthaken( "SEKHVET_USCAL_TEST")]]); // SekhVet Paket BH
+    [SekhmetNorberg shared]; // SekhVet Paket U: Beobachter fuer gespeicherte Messungen ab Start
+    [SekhmetOpening installObservers]; // SekhVet Paket AU: schwarze Kacheln aufraeumen
+    if( sekhvetTesthaken( "SEKHVET_FEEDBACK_TEST")) NSLog( @"SekhVet Feedback-Vorlage:\n%@", [SekhmetAbout feedbackBody]); // SekhVet Paket AZ
+    if( sekhvetTesthaken( "SEKHVET_OPENING_SELFTEST")) NSLog( @"SekhVet Oeffnungsprotokoll Selbsttest: %@", [SekhmetOpening debugSelfTest]); // SekhVet Paket AU
+    if( sekhvetTesthaken( "SEKHVET_OPENING_TEST")) [SekhmetOpening performSelector: @selector(debugOpeningFromEnvironment) withObject: nil afterDelay: 25]; // SekhVet Paket AU
+    if( sekhvetTesthaken( "SEKHVET_RESLICE_TEST")) [SekhmetOrientation performSelector: @selector(debugResliceFromEnvironment) withObject: nil afterDelay: 45];
+    if( sekhvetTesthaken( "SEKHVET_MPR_TEST")) [SekhmetOrientation performSelector: @selector(debugMPRFromEnvironment) withObject: nil afterDelay: 45];
+    if( sekhvetTesthaken( "SEKHVET_POINT_TEST")) [SekhmetOrientation performSelector: @selector(debugPointTest) withObject: nil afterDelay: 60]; // SekhVet Build 67
+    if( sekhvetTesthaken( "SEKHVET_POINT_LIFETIME_TEST")) [SekhmetOrientation performSelector: @selector(debugPointLifetimeTest) withObject: nil afterDelay: 60]; // SekhVet Paket AM
+    if( sekhvetTesthaken( "SEKHVET_DICOMWEB_LIST_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugLocalListFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket AM
+}
+
 - (void) applicationDidFinishLaunching:(NSNotification*) aNotification
 {
 	unlink( "/tmp/kill_all_storescu");
+    [self sekhmetInstallMenu]; // Sekhmet-Menue vor "Help"
+    [SekhmetAbout showDisclaimerIfNeeded]; // SekhVet Paket AA: Hinweis beim ersten Start
+    [SekhmetContribute showReminderIfNeeded]; // SekhVet Paket AR: zurueckhaltende Beitrags-Erinnerung
 	
     [[[NSWorkspace sharedWorkspace] notificationCenter]
             addObserver:self
@@ -3464,7 +3609,7 @@ static BOOL initialized = NO;
 #ifdef OSIRIX_LIGHT
 	@try
 	{
-		int button = NSRunAlertPanel( NSLocalizedString( @"Horos Lite", nil), NSLocalizedString( @"This is the Lite version of Horos: many functions are not available. You can download the full version of Horos on the Internet.", nil), NSLocalizedString( @"Continue", nil), NSLocalizedString( @"Download", nil), nil);
+		int button = NSRunAlertPanel( NSLocalizedString( @"SekhVet Lite", nil), NSLocalizedString( @"This is the Lite version of SekhVet: many functions are not available. You can download the full version of SekhVet on the Internet.", nil), NSLocalizedString( @"Continue", nil), NSLocalizedString( @"Download", nil), nil);
 	
 		if (NSCancelButton == button)
 			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_VIEWER]];
@@ -3583,7 +3728,7 @@ static BOOL initialized = NO;
         NSLog( @"SecStaticCodeCheckValidity: %d", (int) status);
         NSLog( @"%@", errors);
         
-        NSRunCriticalAlertPanel( NSLocalizedString( @"Code signing and Certificate", nil), NSLocalizedString( @"Invalid code signing or certificate. You should re-download Horos from the web site\r\rAre you using an utility such as CleanMyMac or CCleaner? Turn it off for Horos.", nil), NSLocalizedString( @"Continue", nil) , nil, nil);
+        NSRunCriticalAlertPanel( NSLocalizedString( @"Code signing and Certificate", nil), NSLocalizedString( @"Invalid code signing or certificate. You should re-download SekhVet from the web site\r\rAre you using an utility such as CleanMyMac or CCleaner? Turn it off for SekhVet.", nil), NSLocalizedString( @"Continue", nil) , nil, nil);
 
     }
     CFRelease( requirement);
@@ -3594,7 +3739,7 @@ static BOOL initialized = NO;
     
     if( [AppController hasMacOSXElCapitan] == NO)
     {
-        NSRunCriticalAlertPanel( NSLocalizedString( @"macOS Version", nil), NSLocalizedString( @"Horos requires macOS 10.11 or higher. Please update your OS: Apple Menu - Software Update...", nil), NSLocalizedString( @"Quit", nil) , nil, nil);
+        NSRunCriticalAlertPanel( NSLocalizedString( @"macOS Version", nil), NSLocalizedString( @"SekhVet requires macOS 10.11 or higher. Please update your OS: Apple Menu - Software Update...", nil), NSLocalizedString( @"Quit", nil) , nil, nil);
         exit( 0);
     }
     
@@ -3848,6 +3993,18 @@ static BOOL initialized = NO;
 
 - (void) applicationWillFinishLaunching: (NSNotification *) aNotification
 {
+    [SekhmetDisplayPanel applyAppearance]; // SekhVet Paket N: System/Hell/Dunkel vor dem ersten Fenster
+    if( ![[NSUserDefaults standardUserDefaults] boolForKey: @"SekhmetZoomSyncMigrated"]) // SekhVet Paket P: Horos-Zoom-Gleichlauf einmalig aus (08.09.)
+    {
+        [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"syncZoomLevelMPR"];
+        [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SekhmetZoomSyncMigrated"];
+    }
+    if( ![[NSUserDefaults standardUserDefaults] boolForKey: @"SekhmetPropagateMigrated"]) // SekhVet Paket AH: Propagate + Magnetic einmalig aus (11.09.)
+    {
+        [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"COPYSETTINGS"];
+        [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"MagneticWindows"];
+        [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SekhmetPropagateMigrated"];
+    }
     dispatch_async(dispatch_get_main_queue(), ^{
         [self setupCrashReporter];
     });
@@ -4020,7 +4177,7 @@ static BOOL initialized = NO;
 	
 	if (startCount == 0) // Replaces FIRSTTIME.
 	{
-		switch( NSRunInformationalAlertPanel( NSLocalizedString(@"Horos Updates", nil), NSLocalizedString( @"Would you like to activate automatic checking for updates?", nil), NSLocalizedString( @"Yes", nil), NSLocalizedString( @"No", nil), nil))
+		switch( NSRunInformationalAlertPanel( NSLocalizedString(@"SekhVet Updates", nil), NSLocalizedString( @"Would you like to activate automatic checking for updates?", nil), NSLocalizedString( @"Yes", nil), NSLocalizedString( @"No", nil), nil))
 		{
 			case 0:
 				[[NSUserDefaults standardUserDefaults] setObject: @"NO" forKey: @"CheckHorosUpdates"];
@@ -4238,12 +4395,12 @@ static BOOL initialized = NO;
 {
 	if( [msg isEqualToString:@"LISTENER"])
 	{
-		NSRunAlertPanel( NSLocalizedString( @"DICOM Listener Error", nil), NSLocalizedString( @"Horos listener cannot start. Is the Port valid? Is there another process using this Port?\r\rSee Listener - Preferences.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+		NSRunAlertPanel( NSLocalizedString( @"DICOM Listener Error", nil), NSLocalizedString( @"SekhVet listener cannot start. Is the Port valid? Is there another process using this Port?\r\rSee Listener - Preferences.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 	}
 	
 	if( [msg isEqualToString:@"UPTODATE"])
 	{
-		NSRunAlertPanel( NSLocalizedString( @"Horos is up-to-date", nil), NSLocalizedString( @"You have the most recent version of Horos.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+		NSRunAlertPanel( NSLocalizedString( @"SekhVet is up-to-date", nil), NSLocalizedString( @"You have the most recent version of SekhVet.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 	}
 	
 	if( [msg isEqualToString:@"ERROR"])
@@ -4253,14 +4410,19 @@ static BOOL initialized = NO;
 	
     if( [msg isEqualToString: @"UPDATECRASH"])
     {
-        NSRunInformationalAlertPanel(NSLocalizedString(@"Horos crashed", nil), NSLocalizedString(@"Horos crashed... You are running an outdated version of Horos ! This bug is probably corrected in the last version !", nil), NSLocalizedString(@"OK",nil), nil, nil);
+        NSRunInformationalAlertPanel(NSLocalizedString(@"SekhVet crashed", nil), NSLocalizedString(@"SekhVet crashed... You are running an outdated version of SekhVet ! This bug is probably corrected in the last version !", nil), NSLocalizedString(@"OK",nil), nil, nil);
         
         [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_UPDATE_CRASH]];
     }
     
+	if( [msg isEqualToString:@"SEKHVET"]) // SekhVet Paket T
+	{
+		NSRunInformationalAlertPanel( NSLocalizedString( @"SekhVet updates", nil), NSLocalizedString( @"SekhVet has no automatic update feed yet. New builds are handed out directly by Kappa1 GmbH; the source code is on GitHub (About SekhVet).", nil), NSLocalizedString( @"OK", nil), nil, nil);
+	}
+
 	if( [msg isEqualToString:@"UPDATE"])
 	{
-		int button = NSRunAlertPanel( NSLocalizedString( @"New Version Available", nil), NSLocalizedString( @"A new version of Horos is available. Would you like to download the new version now?", nil), NSLocalizedString( @"Download", nil), NSLocalizedString( @"Continue", nil), nil);
+		int button = NSRunAlertPanel( NSLocalizedString( @"New Version Available", nil), NSLocalizedString( @"A new version of SekhVet is available. Would you like to download the new version now?", nil), NSLocalizedString( @"Download", nil), NSLocalizedString( @"Continue", nil), nil);
 		
 		if (NSOKButton == button)
 			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_UPDATE]];
@@ -4272,12 +4434,12 @@ static BOOL initialized = NO;
 	WaitRendering *wait = nil;
 	
 	#ifdef OSIRIX_LIGHT
-	wait = [[[WaitRendering alloc] init: NSLocalizedString(@"Starting Horos Lite...", nil)] autorelease];
+	wait = [[[WaitRendering alloc] init: NSLocalizedString(@"Starting SekhVet Lite...", nil)] autorelease];
 	#else
 	if( sizeof( long) == 8)
-		wait = [[WaitRendering alloc] init: NSLocalizedString(@"Starting Horos 64-bit", nil)];
+		wait = [[WaitRendering alloc] init: NSLocalizedString(@"Starting SekhVet 64-bit", nil)];
 	else
-		wait = [[WaitRendering alloc] init: NSLocalizedString(@"Starting Horos 32-bit", nil)];
+		wait = [[WaitRendering alloc] init: NSLocalizedString(@"Starting SekhVet 32-bit", nil)];
 	#endif
 
 	return wait;
@@ -4310,6 +4472,11 @@ static BOOL initialized = NO;
 
 - (IBAction) checkForUpdates: (id) sender
 {
+	// SekhVet Paket T: kein Horos-Update-Feed (Build 53 < 20220801 = immer "neue Version"). Automatisch und nach Absturz: nichts; Menue: Hinweis.
+	if( sender == self || [sender isKindOfClass: [NSString class]]) return;
+	[self performSelectorOnMainThread: @selector(displayUpdateMessage:) withObject: @"SEKHVET" waitUntilDone: YES];
+	if( sender) return;
+
 	NSURL *url;
 	if( sender != self)
         verboseUpdateCheck = YES;
@@ -4398,9 +4565,9 @@ static BOOL initialized = NO;
 
 - (IBAction) about: (id) sender
 {
-    splashController = [[SplashScreen alloc] init];
-	[splashController showWindow:self];
-	[splashController affiche];
+    // SekhVet Paket F: eigenes About statt Horos-Splash
+    [[SekhmetAbout shared] showWindow: sender];
+    [[[SekhmetAbout shared] window] makeKeyAndOrderFront: sender];
 }
 
 -(IBAction)showPreferencePanel:(id)sender
@@ -4427,8 +4594,10 @@ static BOOL initialized = NO;
 	{
 		if( [[[loopItem windowController] windowNibName] isEqualToString: nib])
 		{
-			if( [[loopItem windowController] pixList] == pixList)
-				return [loopItem windowController];
+			id wc = [loopItem windowController];
+			if( [wc isKindOfClass: [Window3DController class]] && [(Window3DController*) wc windowWillClose]) continue; // SekhVet: schliessendes 3D-Fenster nie wiederverwenden
+			if( [wc pixList] == pixList)
+				return wc;
 		}
 	}
 	
@@ -4842,7 +5011,7 @@ static BOOL initialized = NO;
 
 + (NSRect) usefullRectForScreen: (NSScreen*) screen showFloatingWindows: (BOOL) showFloatingWindows
 {
-    NSRect screenFrame = screen.visibleFrame;
+    NSRect screenFrame = [SekhmetDisplayPanel areaForScreen: screen frame: screen.visibleFrame]; // Sekhmet: Viewer-Flaeche je Bildschirm
     
     if( showFloatingWindows)
     {
@@ -5661,7 +5830,7 @@ static NSMutableDictionary* _receivingDict = nil;
 -(void)_receivingIconUpdate {
 	if (!_receivingDict.count)
 		[NSApp setApplicationIconImage:[NSImage imageNamed:@"Horos.icns"]];
-	else [NSApp setApplicationIconImage:[NSImage imageNamed:@"OsirixDownload.icns"]];
+	else [NSApp setApplicationIconImage:[NSImage imageNamed:@"SekhVetDownload.icns"]];
 }
 
 -(void)_receivingIconSet:(BOOL)flag {

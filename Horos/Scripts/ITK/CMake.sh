@@ -37,6 +37,13 @@ args=("$PROJECT_DIR/$TARGET_NAME") # -G Xcode
 cxxfs=( -fvisibility=default )
 lfs=() # linker flags
 args+=(-DITK_USE_64BITS_IDS=ON)
+# Sachmet: itkzlib definiert fdopen als NULL wegen TARGET_OS_MAC (Xcode-26-SDK), _stdio.h bricht; itkpng sucht <fp.h>. System-zlib + statisches Homebrew-libpng
+args+=(-DITK_USE_SYSTEM_ZLIB=ON)
+args+=(-DITK_USE_SYSTEM_PNG=ON)
+args+=(-DPNG_LIBRARY=/opt/homebrew/lib/libpng16.a)
+# Sachmet: /opt/homebrew/include darf NICHT als Ganzes in den Suchpfad, sonst deckt Homebrews tiffconf.h die generierte
+# von vtktiff zu (unknown type name TIFF_INT8_T). libpng16/ enthaelt nur die drei png-Header.
+args+=(-DPNG_PNG_INCLUDE_DIR=/opt/homebrew/include/libpng16)
 args+=(-DBUILD_DOCUMENTATION=OFF)
 args+=(-DBUILD_EXAMPLES=OFF)
 args+=(-DBUILD_SHARED_LIBS=OFF)
