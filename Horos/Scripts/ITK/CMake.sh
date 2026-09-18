@@ -34,7 +34,9 @@ rm -Rf "$cmake_dir.tmp" "$install_dir.tmp"
 mkdir -p "$cmake_dir"; cd "$cmake_dir"
 
 args=("$PROJECT_DIR/$TARGET_NAME") # -G Xcode
-cxxfs=( -fvisibility=default )
+# SekhVet Paket BN: keep the build machine path out of __FILE__ strings (vtkErrorMacro etc.)
+cxxfs=( -fvisibility=default "-ffile-prefix-map=$PROJECT_DIR=." )
+args+=(-DCMAKE_C_FLAGS="-ffile-prefix-map=$PROJECT_DIR=.")
 lfs=() # linker flags
 args+=(-DITK_USE_64BITS_IDS=ON)
 # Sachmet: itkzlib definiert fdopen als NULL wegen TARGET_OS_MAC (Xcode-26-SDK), _stdio.h bricht; itkpng sucht <fp.h>. System-zlib + statisches Homebrew-libpng

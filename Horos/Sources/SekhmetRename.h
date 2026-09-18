@@ -16,6 +16,7 @@
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>
+#include "SekhmetTesthaken.h"
 
 @class DicomStudy;
 
@@ -28,6 +29,8 @@
 // Motor ohne Dialog. dob/sex nil = unveraendert. Liefert NO, wenn eine Studie nicht geschrieben werden konnte.
 + (BOOL) applyName:(NSString*) name patientID:(NSString*) pid birthDate:(NSDate*) dob sex:(NSString*) sex toStudies:(NSArray*) studies error:(NSString**) error;
 
+#if SEKHVET_TESTHAKEN
 + (void) debugRenameFromEnvironment;                // Testhaken SEKHVET_RENAME_TEST="<PatientID>|<Name>|<ID>[|<YYYYMMDD>]"
+#endif // SEKHVET_TESTHAKEN
 
 @end

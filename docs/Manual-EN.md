@@ -1,6 +1,6 @@
 # SekhVet — User Guide (English)
 
-Version 1.0 beta, build 105 · 17 September 2026
+Version 1.0 beta, build 107 · 18 September 2026
 
 > **SekhVet is a veterinary DICOM viewer and is not a certified medical device.**
 > It is not cleared by the FDA, not CE-marked and has not undergone any formal validation.
@@ -39,7 +39,7 @@ an independent maintenance fork, not an upstream contribution.
 
 ## 3. Installation
 
-1. Download `SekhVet-1.0-beta-build105-macOS.dmg` from the releases page,
+1. Download `SekhVet-1.0-beta-build107-macOS.dmg` from the releases page,
    https://github.com/3v3nFloW/sekhvet/releases, and open it. The zip file on the same page
    contains the same app, for those who prefer it.
 2. In the window that opens, drag SekhVet onto the Applications folder, then eject the disk
@@ -57,7 +57,7 @@ an independent maintenance fork, not an upstream contribution.
 5. **On first launch** SekhVet shows a one-time notice that it is not a certified medical
    device. "I understand" confirms it, "Quit" leaves the program. The notice returns only if
    its wording changes.
-6. Checksum (optional): `shasum -a 256 SekhVet-1.0-beta-build105-macOS.dmg` (or the zip) must
+6. Checksum (optional): `shasum -a 256 SekhVet-1.0-beta-build107-macOS.dmg` (or the zip) must
    match the value shown on the releases page.
 
 **SekhVet next to Horos or OsiriX:** SekhVet has its own database (`~/Documents/SekhVet Data`),
@@ -353,7 +353,7 @@ All SekhVet windows open inside the viewer area. All SekhVet toolbar buttons can
 removed via **Customize Toolbar**; new buttons appear once automatically, and stay away if you
 remove them.
 
-## 7. Beta status, limitations and known restrictions (build 105)
+## 7. Beta status, limitations and known restrictions (build 107)
 
 **Experimental in this beta.** These functions work, but have been tested on few devices or
 are still being adjusted. Use them with a critical eye and report what you see:
@@ -392,7 +392,7 @@ and contribution windows.
 - **Rename patient:** non-ASCII characters depend on the character set of the files; a PACS
   that already holds the study keeps the old name.
 - **Spine labeling** is meant for CT and MR, not for radiographs.
-- **Language:** English UI, no localisation.
+- **Language:** English UI under every system language. The outdated Japanese resources inherited from Horos were removed in build 107; they shadowed the maintained English files on Japanese systems (broken toolbars).
 - **No automatic updates**; new builds are announced on GitHub.
 
 ## 8. Licence, source code, contribution

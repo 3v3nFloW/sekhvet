@@ -43,12 +43,15 @@
     [self.curDCM convertPixX: x pixY: y toDICOMCoords: loc pixelCenter: YES];
     [self.curDCM convertDICOMCoords: loc toSliceCoords: sekhmetOwnPoint pixelCenter: YES];
     sekhmetOwnPointImage = curImage; sekhmetOwnPointSet = YES;
+#if SEKHVET_TESTHAKEN
     if( sekhvetTesthaken( "SEKHVET_POINT_TEST"))
         NSLog( @"SekhVet Point-Test Quelle %@: pix (%.1f, %.1f) img %d -> DICOM (%.2f %.2f %.2f) eigener Punkt (%.2f %.2f)", [[self seriesObj] valueForKey: @"name"], x, y, curImage, loc[ 0], loc[ 1], loc[ 2], sekhmetOwnPoint[ 0], sekhmetOwnPoint[ 1]);
+#endif // SEKHVET_TESTHAKEN
     [self sync3DPosition];
     [self setNeedsDisplay: YES];
 }
 
+#if SEKHVET_TESTHAKEN
 - (void) sekhmetDebugLogPoint // SekhVet Build 67: Testhaken — Lage des empfangenen 3D-Punkts dieses Viewers
 {
     NSString *name = [[self seriesObj] valueForKey: @"name"];
@@ -57,5 +60,6 @@
     [self.curDCM convertPixX: px pixY: py toDICOMCoords: d pixelCenter: YES];
     NSLog( @"SekhVet Point-Test Lage %@: img %d von %d, slicePt (%.2f %.2f) = pix (%.1f %.1f) -> DICOM (%.2f %.2f %.2f), eigener Punkt %@", name, curImage, (int) [dcmPixList count], slicePoint3D[ 0], slicePoint3D[ 1], px, py, d[ 0], d[ 1], d[ 2], sekhmetOwnPointSet ? @"JA" : @"nein");
 }
+#endif // SEKHVET_TESTHAKEN
 
 @end

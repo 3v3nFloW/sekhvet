@@ -10,7 +10,7 @@
 PRODUCT_BUNDLE_IDENTIFIER_PREFIX = vet.kappa1.sekhvet
 
 /// Current version of the project
-CURRENT_PROJECT_VERSION = 105
+CURRENT_PROJECT_VERSION = 107
 
 /// User-visible version of the project
 MARKETING_VERSION = 4.0.0
@@ -20,3 +20,6 @@ HUMAN_READABLE_VERSION = Horos v4.0.0 RC5
 
 /// Copyright notice for the bundle
 HUMAN_READABLE_COPYRIGHT = © 2020 The Horos Project & OsiriX Team
+
+/// SekhVet Paket BN: keep the build machine path out of __FILE__ strings
+OTHER_CFLAGS = $(inherited) -ffile-prefix-map=$(SRCROOT)=.

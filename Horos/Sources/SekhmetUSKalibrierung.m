@@ -15,7 +15,7 @@ static const int kMinMaskPixels = 100;
 
 @synthesize sourceLabel;
 
-+ (SekhmetBorrowedUSRegion*) copyOfRegion:(DCMUSRegion*) r label:(NSString*) label
++ (SekhmetBorrowedUSRegion*) borrowedRegionFrom:(DCMUSRegion*) r label:(NSString*) label
 {
     SekhmetBorrowedUSRegion *c = [[[SekhmetBorrowedUSRegion alloc] init] autorelease];
     c.regionSpatialFormat = r.regionSpatialFormat;
@@ -195,7 +195,7 @@ static int rulerMask( double *lum, int n, BOOL *mask)
                     NSString *label = [labels objectAtIndex: k];
                     NSMutableArray *copies = [NSMutableArray array];
                     for( DCMUSRegion *dr in [c usRegions])
-                        [copies addObject: [SekhmetBorrowedUSRegion copyOfRegion: dr label: label]];
+                        [copies addObject: [SekhmetBorrowedUSRegion borrowedRegionFrom: dr label: label]];
                     [p sekhmetSetBorrowedUSRegions: copies spacingX: fabs( r.physicalDeltaX) * 10. spacingY: fabs( r.physicalDeltaY) * 10.];
                     NSLog( @"SekhVet US calibration: %@ takes calibration of %@ (depth scale IoU %.3f, %.4f mm/px)", [labels objectAtIndex: i], label, iou, [p pixelSpacingX]);
                     done++;
@@ -207,6 +207,7 @@ static int rulerMask( double *lum, int n, BOOL *mask)
     return done;
 }
 
+#if SEKHVET_TESTHAKEN
 + (NSString*) debugSelfTestWithDirectory:(NSString*) dir
 {
     NSMutableString *log = [NSMutableString stringWithString: @"\n"];
@@ -240,5 +241,6 @@ static int rulerMask( double *lum, int n, BOOL *mask)
         [log appendFormat: @"  after %@: regions=%d spacing=%.4f source=%@\n", labels[i], [pixs[i] hasUSRegions], [pixs[i] pixelSpacingX], [self borrowedSourceForPix: pixs[i]] ?: @"-"];
     return log;
 }
+#endif // SEKHVET_TESTHAKEN
 
 @end

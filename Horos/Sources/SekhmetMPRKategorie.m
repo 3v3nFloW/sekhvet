@@ -331,7 +331,7 @@ static BOOL sekhmetViewStateUsable( NSArray *views)
     BOOL was = SekhmetMPRSyncing;
     SekhmetMPRSyncing = YES;
     @try { [self delayedFullLODRendering: nil]; }
-    @catch (NSException *e) { NSLog( @"Sekhmet MPR-Sync LOD: %@", e); }
+    @catch (NSException *e) { NSLog( @"SekhVet MPR sync LOD: %@", e); }
     SekhmetMPRSyncing = was;
 }
 
@@ -396,7 +396,7 @@ static BOOL sekhmetViewStateUsable( NSArray *views)
             [dv updateViewMPR];
         }
     }
-    @catch (NSException *e) { NSLog( @"Sekhmet MPR-Sync: %@", e); }
+    @catch (NSException *e) { NSLog( @"SekhVet MPR sync: %@", e); }
     SekhmetMPRSyncing = NO;
     [sekhmetLastSyncFingerprint release]; sekhmetLastSyncFingerprint = [[self sekhmetCameraFingerprint] retain]; // Paket R
     [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetBroadcastSync) object: nil]; sekhmetSyncPending = NO; // Paket R: kein Echo aus der Warteschlange

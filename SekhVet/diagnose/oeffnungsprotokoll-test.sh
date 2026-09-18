@@ -45,7 +45,7 @@ sleep 10
 lldb -p $APID --batch -o 'expression (void)[NSApp stopModalWithCode: 1]' -o detach >/dev/null 2>&1
 sleep 60
 echo "=================== Protokoll ==================="
-grep -E "Oeffnungsprotokoll|Oeffnungstest" $LOG
+grep -E "Oeffnungsprotokoll|Oeffnungstest|opening protocol" $LOG
 echo "================================================="
 curl -s -m 5 -X POST http://127.0.0.1:8085/ -d '<?xml version="1.0"?><methodCall><methodName>KillOsiriX</methodName><params></params></methodCall>' >/dev/null 2>&1
 defaults delete $DOM SekhmetOpeningProtocols 2>/dev/null

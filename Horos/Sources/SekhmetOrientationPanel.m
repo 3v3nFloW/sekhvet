@@ -245,7 +245,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
     if( [a runModal] != NSAlertFirstButtonReturn) return;
     [SekhmetOrientation setMPRLayout: layout forPreset: preset];
     [self updateLayoutStatus];
-    NSLog( @"SekhVet MPR-Anordnung fuer Preset %d uebernommen: %@", (int) preset, [SekhmetOrientation describeMPRLayout: layout]);
+    NSLog( @"SekhVet MPR layout taken for preset %d: %@", (int) preset, [SekhmetOrientation describeMPRLayout: layout]);
 }
 
 - (IBAction) resetMPRLayout:(id) sender

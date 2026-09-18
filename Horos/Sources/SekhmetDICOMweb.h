@@ -8,6 +8,7 @@
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>
+#include "SekhmetTesthaken.h"
 
 extern NSString* const SekhmetDICOMwebNodesKey;   // Array von {name, url, user}
 
@@ -53,8 +54,10 @@ extern NSString* const SekhmetDICOMwebNodesKey;   // Array von {name, url, user}
 + (NSDictionary*) localStatusForStudyUID:(NSString*) studyUID;  // Paket AM: {series: {seriesUID -> Bildzahl lokal}, images: Gesamtzahl}
 - (IBAction) stow:(id) sender;                  // markierte Studien an den gewaehlten Knoten (STOW-RS)
 - (void) stowPaths:(NSArray*) paths;
+#if SEKHVET_TESTHAKEN
 - (void) debugStowFromEnvironment;              // SEKHVET_STOW_TEST="a.dcm:b.dcm" [+ SEKHVET_DICOMWEB_PW], Knoten 0 (muss im Fenster angelegt sein)
 - (void) debugWadoFromEnvironment;              // SEKHVET_WADO_TEST="<StudyInstanceUID>" [+ SEKHVET_DICOMWEB_PW], Knoten 0
 - (void) debugLocalListFromEnvironment;         // SekhVet Paket AM: SEKHVET_DICOMWEB_LIST_TEST="<Namensteil>" — Bestandsanzeige + Serien-Aufklappen
+#endif // SEKHVET_TESTHAKEN
 
 @end

@@ -9,6 +9,7 @@
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>
+#include "SekhmetTesthaken.h"
 
 @class ROI, DCMView;
 
@@ -38,7 +39,9 @@
 + (BOOL) parseLabel:(NSString*) label region:(NSInteger*) region number:(NSInteger*) number;   // "C1".."Cd12"
 + (BOOL) isDiscLabel:(NSString*) label;                                                          // "L1-L2"
 + (double) rankOfLabel:(NSString*) label;                                                        // Reihenfolge entlang der Wirbelsaeule, < 0 = kein Label
+#if SEKHVET_TESTHAKEN
 + (NSString*) debugSelfTest;
+#endif // SEKHVET_TESTHAKEN
 + (NSString*) levelLabelForMPRView:(id) view;            // naechstes Wirbel-Label entlang der Ebenennormalen, nil wenn keins
 + (void) updateLevelAnnotationForMPRView:(id) view;      // schreibt "Spine level: L3" in die TopLeft-Beschriftung des MPR-Pix                                                                     // SEKHVET_SPINE_TEST: Zaehl- und Umbenenn-Logik ohne GUI
 

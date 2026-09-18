@@ -3549,6 +3549,7 @@ static BOOL initialized = NO;
     [item setSubmenu: sek];
     NSMenu *main = [NSApp mainMenu];
     [main insertItem: item atIndex: MAX( 0, [main numberOfItems] - 1)];
+#if SEKHVET_TESTHAKEN
     if( sekhvetTesthaken( "SEKHVET_IMPORT_TEST")) [SekhmetImport performSelector: @selector(debugImportFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test von Paket G
     if( sekhvetTesthaken( "SEKHVET_RENAME_TEST")) [SekhmetRename performSelector: @selector(debugRenameFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket BC
     if( sekhvetTesthaken( "SEKHVET_STOW_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugStowFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test STOW-RS
@@ -3556,8 +3557,10 @@ static BOOL initialized = NO;
     if( sekhvetTesthaken( "SEKHVET_SPINE_TEST")) NSLog( @"SekhVet Wirbel-Labels Selbsttest: %@", [SekhmetSpine debugSelfTest]);
     if( sekhvetTesthaken( "SEKHVET_NORBERG_TEST")) NSLog( @"SekhVet Norberg self-test: %@", [SekhmetNorberg debugSelfTest]); // SekhVet Paket U
     if( sekhvetTesthaken( "SEKHVET_USCAL_TEST")) NSLog( @"SekhVet US calibration self-test: %@", [SekhmetUSKalibrierung debugSelfTestWithDirectory: [NSString stringWithUTF8String: sekhvetTesthaken( "SEKHVET_USCAL_TEST")]]); // SekhVet Paket BH
+#endif // SEKHVET_TESTHAKEN
     [SekhmetNorberg shared]; // SekhVet Paket U: Beobachter fuer gespeicherte Messungen ab Start
     [SekhmetOpening installObservers]; // SekhVet Paket AU: schwarze Kacheln aufraeumen
+#if SEKHVET_TESTHAKEN
     if( sekhvetTesthaken( "SEKHVET_FEEDBACK_TEST")) NSLog( @"SekhVet Feedback-Vorlage:\n%@", [SekhmetAbout feedbackBody]); // SekhVet Paket AZ
     if( sekhvetTesthaken( "SEKHVET_OPENING_SELFTEST")) NSLog( @"SekhVet Oeffnungsprotokoll Selbsttest: %@", [SekhmetOpening debugSelfTest]); // SekhVet Paket AU
     if( sekhvetTesthaken( "SEKHVET_OPENING_TEST")) [SekhmetOpening performSelector: @selector(debugOpeningFromEnvironment) withObject: nil afterDelay: 25]; // SekhVet Paket AU
@@ -3566,6 +3569,7 @@ static BOOL initialized = NO;
     if( sekhvetTesthaken( "SEKHVET_POINT_TEST")) [SekhmetOrientation performSelector: @selector(debugPointTest) withObject: nil afterDelay: 60]; // SekhVet Build 67
     if( sekhvetTesthaken( "SEKHVET_POINT_LIFETIME_TEST")) [SekhmetOrientation performSelector: @selector(debugPointLifetimeTest) withObject: nil afterDelay: 60]; // SekhVet Paket AM
     if( sekhvetTesthaken( "SEKHVET_DICOMWEB_LIST_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugLocalListFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket AM
+#endif // SEKHVET_TESTHAKEN
 }
 
 - (void) applicationDidFinishLaunching:(NSNotification*) aNotification
@@ -3647,17 +3651,8 @@ static BOOL initialized = NO;
     // If Horos crashed before...
     NSString *HorosCrashed = @"/tmp/HorosCrashed";
     
-    if( [[NSFileManager defaultManager] fileExistsAtPath: HorosCrashed]) // Activate check for update !
-    {
+    if( [[NSFileManager defaultManager] fileExistsAtPath: HorosCrashed]) // SekhVet Paket BN: marker only, no update check
         [[NSFileManager defaultManager] removeItemAtPath: HorosCrashed error: nil];
-        
-        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"CheckHorosUpdates"] == NO)
-        {
-            if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO)
-                [NSThread detachNewThreadSelector: @selector(checkForUpdates:) toTarget: self withObject: @"crash"];
-        }
-    }
-    else [NSThread detachNewThreadSelector: @selector(checkForUpdates:) toTarget:self withObject: self];
     
 	#endif
 	#endif
@@ -4515,108 +4510,11 @@ static BOOL initialized = NO;
 #ifndef OSIRIX_LIGHT
 #ifndef MACAPPSTORE
 
-- (IBAction) checkForUpdatesDisabled: (id) sender
-{
-    if ([[NSUserDefaults standardUserDefaults] boolForKey: @"CheckHorosUpdates"] != NO)
-    {
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [NSThread detachNewThreadSelector:@selector(checkForUpdates:) toTarget:self withObject:self];
-            });
-        });
-    }
-    else
-    {
-        double delayInSeconds = 60;
-        dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, delayInSeconds * NSEC_PER_SEC);
-        dispatch_after(popTime, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [NSThread detachNewThreadSelector:@selector(checkForUpdatesDisabled:) toTarget:self withObject:self];
-            });
-        });
-    }
-}
-
 - (IBAction) checkForUpdates: (id) sender
 {
-	// SekhVet Paket T: kein Horos-Update-Feed (Build 53 < 20220801 = immer "neue Version"). Automatisch und nach Absturz: nichts; Menue: Hinweis.
-	if( sender == self || [sender isKindOfClass: [NSString class]]) return;
+	// SekhVet Paket T/BN: there is no update feed. Only the menu item lands here and shows a note;
+	// nothing runs at launch or after a crash (the Horos feed would always report a newer version).
 	[self performSelectorOnMainThread: @selector(displayUpdateMessage:) withObject: @"SEKHVET" waitUntilDone: YES];
-	if( sender) return;
-
-	NSURL *url;
-	if( sender != self)
-        verboseUpdateCheck = YES;
-	else
-        verboseUpdateCheck = NO;
-	
-    BOOL verboseAfterCrash = NO;
-    
-    if( [sender isKindOfClass:[NSString class]] && [sender isEqualToString: @"crash"])
-        verboseAfterCrash = YES;
-    
-    url = [NSURL URLWithString:URL_HOROS_VERSION];
-	
-	if( url)
-	{
-		NSString *currVersionNumber = [[[NSBundle bundleForClass:[self class]] infoDictionary] objectForKey:@"CFBundleVersion"];
-		NSDictionary *productVersionDict = [NSDictionary dictionaryWithContentsOfURL: url];
-		NSString *latestVersionNumber = [productVersionDict valueForKey:@"Horos"];
-		
-		if (productVersionDict && currVersionNumber && latestVersionNumber)
-		{
-			if ([latestVersionNumber intValue] <= [currVersionNumber intValue])
-			{
-				if (verboseUpdateCheck && verboseAfterCrash == NO)
-				{
-					[self performSelectorOnMainThread:@selector(displayUpdateMessage:) withObject:@"UPTODATE" waitUntilDone: YES];
-				}
-			}
-			else
-			{
-				if( ([[NSUserDefaults standardUserDefaults] boolForKey: @"CheckHorosUpdates"] == YES && [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO) || verboseUpdateCheck == YES)
-				{
-                    if( verboseAfterCrash)
-                        [self performSelectorOnMainThread:@selector(displayUpdateMessage:) withObject:@"UPDATECRASH" waitUntilDone: YES];
-                    else
-                        [self performSelectorOnMainThread:@selector(displayUpdateMessage:) withObject:@"UPDATE" waitUntilDone: YES];
-				}
-			}
-		}
-		else
-		{
-			if (verboseUpdateCheck)
-			{
-				[self performSelectorOnMainThread:@selector(displayUpdateMessage:) withObject:@"ERROR" waitUntilDone: YES];
-			}
-		}
-	}
-	
-    if (verboseUpdateCheck)
-    {
-        return;
-    }
-
-    if ([[NSUserDefaults standardUserDefaults] boolForKey: @"CheckHorosUpdates"] != NO)
-    {
-        double delayInSeconds = 3600;
-        dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, delayInSeconds * NSEC_PER_SEC);
-        dispatch_after(popTime, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [NSThread detachNewThreadSelector:@selector(checkForUpdates:) toTarget:self withObject:self];
-            });
-        });
-    }
-    else
-    {
-        double delayInSeconds = 60;
-        dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, delayInSeconds * NSEC_PER_SEC);
-        dispatch_after(popTime, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [NSThread detachNewThreadSelector:@selector(checkForUpdatesDisabled:) toTarget:self withObject:self];
-            });
-        });
-    }
 }
 #endif
 #endif

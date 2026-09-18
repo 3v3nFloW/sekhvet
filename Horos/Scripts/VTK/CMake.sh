@@ -35,7 +35,9 @@ rm -Rf "$cmake_dir.tmp" "$install_dir.tmp"
 mkdir -p "$cmake_dir"; cd "$cmake_dir"
 
 args=("$PROJECT_DIR/$TARGET_NAME") # -G Xcode
-cxxfs=( -w -fvisibility=default )
+# SekhVet Paket BN: keep the build machine path out of __FILE__ strings (vtkErrorMacro etc.)
+cxxfs=( -w -fvisibility=default "-ffile-prefix-map=$PROJECT_DIR=." )
+args+=(-DCMAKE_C_FLAGS="-ffile-prefix-map=$PROJECT_DIR=.")
 args+=(-DVTK_USE_X:BOOL=OFF)
 args+=(-DVTK_USE_COCOA:BOOL=ON)
 #args+=(-DVTK_USE_64BITS_IDS=ON) 

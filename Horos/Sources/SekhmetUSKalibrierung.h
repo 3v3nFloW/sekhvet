@@ -20,6 +20,7 @@
  ============================================================================*/
 
 #import <Foundation/Foundation.h>
+#include "SekhmetTesthaken.h"
 #import "DCMUSRegion.h"
 
 @class DCMPix;
@@ -30,7 +31,7 @@
     NSString *sourceLabel;
 }
 @property (nonatomic, copy) NSString *sourceLabel;
-+ (SekhmetBorrowedUSRegion*) copyOfRegion:(DCMUSRegion*) r label:(NSString*) label;
++ (SekhmetBorrowedUSRegion*) borrowedRegionFrom:(DCMUSRegion*) r label:(NSString*) label;
 @end
 
 @interface SekhmetUSKalibrierung : NSObject
@@ -45,7 +46,9 @@
 // IoU der Skalenmasken (0..1), -1 wenn nicht vergleichbar. offsetB verschiebt b senkrecht (Selbsttest).
 + (double) rulerIoUBetween:(DCMPix*) a and:(DCMPix*) b region:(DCMUSRegion*) r offsetB:(int) offsetB;
 
+#if SEKHVET_TESTHAKEN
 // Selbsttest ueber einen Ordner mit DICOM-Dateien (nur Testbuild).
 + (NSString*) debugSelfTestWithDirectory:(NSString*) dir;
+#endif // SEKHVET_TESTHAKEN
 
 @end

@@ -355,7 +355,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
                                           lateralLeft: [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetTwoViewLateralLeftKey]];
     if( order == 0) return nil;
     NSArray *result = order == 1 ? two : [NSArray arrayWithObjects: [two objectAtIndex: 1], [two objectAtIndex: 0], nil];
-    NSLog( @"SekhVet Zwei-Ebenen: %@ %@ / %@ -> links \"%@\", rechts \"%@\"", [regions objectAtIndex: 0],
+    NSLog( @"SekhVet two-view: %@ %@ / %@ -> left \"%@\", right \"%@\"", [regions objectAtIndex: 0],
           [projections objectAtIndex: 0], [projections objectAtIndex: 1],
           [self nameForSeries: [result objectAtIndex: 0]], [self nameForSeries: [result objectAtIndex: 1]]);
     return result;
@@ -494,7 +494,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
         }
     }
 
-    NSLog( @"SekhVet Oeffnungsprotokoll \"%@\": %lu von %lu Positionen belegt, Raster %dx%d%@",
+    NSLog( @"SekhVet opening protocol \"%@\": %lu of %lu positions filled, grid %dx%d%@",
           [p objectForKey: @"name"], (unsigned long) open.count, (unsigned long) positions.count,
           useRows, useColumns, black ? @", Luecken schwarz" : @"");
     return YES;
@@ -597,7 +597,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
     }];
     if( viewers.count == 0)
     {
-        NSLog( @"SekhVet Oeffnungsprotokoll: \"Take from screen\" ohne offene Viewer — nichts zu uebernehmen");
+        NSLog( @"SekhVet opening protocol: \"Take from screen\" without open viewers — nothing to take");
         NSRunAlertPanel( NSLocalizedString( @"Take from screen", nil),
                         NSLocalizedString( @"No viewer is open. Open the study the way you want it first, then press Take from screen.", nil),
                         NSLocalizedString( @"OK", nil), nil, nil);
@@ -654,7 +654,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
         if( body.length) [protocol setObject: body forKey: @"region"];
     }
 
-    NSLog( @"SekhVet Oeffnungsprotokoll \"%@\" vom Bildschirm uebernommen: %lu Positionen, %@x%@, Modalitaet %@, Region \"%@\"%@",
+    NSLog( @"SekhVet opening protocol \"%@\" taken from screen: %lu positions, %@x%@, modality %@, region \"%@\"%@",
           [protocol objectForKey: @"name"], (unsigned long) positions.count,
           [protocol objectForKey: @"rows"], [protocol objectForKey: @"columns"], modality,
           [protocol objectForKey: @"region"], bericht);
@@ -662,6 +662,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
 
 #pragma mark - Testhaken
 
+#if SEKHVET_TESTHAKEN
 // Selbsttest ohne Datenbank: die Kontrasterkennung gegen echte Seriennamen aus dem Praxis-
 // Bestand (Erhebung 15.09.2026). Positivkontrolle UND Knockout in einem — "Topogramm" und
 // "CSPINE stitch" muessen UNENTSCHIEDEN bleiben, sonst zieht ein CT-Slot ein Topogramm.
@@ -835,6 +836,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
         NSLog( @"SekhVet Oeffnungstest:   schwarze Kachel bei x=%.0f y=%.0f %.0fx%.0f", f.origin.x, f.origin.y, f.size.width, f.size.height);
     }
 }
+#endif // SEKHVET_TESTHAKEN
 
 @end
 
@@ -884,7 +886,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
         [sekhmetBlackTiles addObject: w];
     }
     if( sekhmetBlackTiles.count)
-        NSLog( @"SekhVet Oeffnungsprotokoll: %lu schwarze Kachel(n) auf freien Zellen", (unsigned long) sekhmetBlackTiles.count);
+        NSLog( @"SekhVet opening protocol: %lu black tile(s) on empty cells", (unsigned long) sekhmetBlackTiles.count);
 }
 
 + (void) closeAll

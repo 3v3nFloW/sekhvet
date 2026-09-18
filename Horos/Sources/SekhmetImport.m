@@ -326,7 +326,7 @@ static SekhmetImport *sekhmetImport = nil;
     NSBitmapImageRep *rgba = [[[NSBitmapImageRep alloc] initWithBitmapDataPlanes: NULL pixelsWide: w pixelsHigh: h bitsPerSample: 8 samplesPerPixel: 4
                                                                          hasAlpha: YES isPlanar: NO colorSpaceName: NSCalibratedRGBColorSpace bitmapFormat: 0 bytesPerRow: w * 4 bitsPerPixel: 32] autorelease];
     NSGraphicsContext *ctx = rgba ? [NSGraphicsContext graphicsContextWithBitmapImageRep: rgba] : nil;
-    if( ctx == nil) { NSLog( @"SekhVet Import: kein Grafikkontext fuer %d x %d", (int) w, (int) h); return nil; }
+    if( ctx == nil) { NSLog( @"SekhVet Import: no graphics context for %d x %d", (int) w, (int) h); return nil; }
 
     [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext: ctx];
@@ -360,7 +360,7 @@ static SekhmetImport *sekhmetImport = nil;
         if( [r pixelsWide] > w) { w = [r pixelsWide]; h = [r pixelsHigh]; }
     }
     if( w <= 0 || h <= 0) { w = (NSInteger) [src size].width; h = (NSInteger) [src size].height; }
-    if( w <= 0 || h <= 0) { NSLog( @"SekhVet Import: Bild ohne Pixelmass"); return nil; }
+    if( w <= 0 || h <= 0) { NSLog( @"SekhVet Import: image without pixel dimensions"); return nil; }
     return [self rgbImageWidth: w height: h draw: ^{
         [src drawInRect: NSMakeRect( 0, 0, w, h) fromRect: NSZeroRect operation: NSCompositingOperationSourceOver fraction: 1.0];
     }];
@@ -400,11 +400,11 @@ static SekhmetImport *sekhmetImport = nil;
     NSBitmapImageRep *rep = (NSBitmapImageRep*) [[flat representations] objectAtIndex: 0];
     if( [*exporter setPixelData: [rep bitmapData] samplesPerPixel: 3 bitsPerSample: 8 width: [rep pixelsWide] height: [rep pixelsHigh]] != 0)
     {
-        NSLog( @"SekhVet Import: setPixelData scheiterte fuer %@", outPath);
+        NSLog( @"SekhVet Import: setPixelData failed for %@", outPath);
         return NO;
     }
     NSString *r = [*exporter writeDCMFile: outPath];
-    if( r == nil) NSLog( @"SekhVet Import: writeDCMFile scheiterte fuer %@", outPath);
+    if( r == nil) NSLog( @"SekhVet Import: writeDCMFile failed for %@", outPath);
     return r != nil;
 }
 
@@ -436,7 +436,7 @@ static SekhmetImport *sekhmetImport = nil;
     [o setAttributeValues: [NSMutableArray arrayWithObject: @"SekhVet"] forName: @"Manufacturer"];
 
     BOOL ok = [o writeToFile: outPath withTransferSyntax: [DCMTransferSyntax ExplicitVRLittleEndianTransferSyntax] quality: DCMLosslessQuality atomically: YES];
-    if( ok == NO) NSLog( @"SekhVet Import: Encapsulated PDF schreiben scheiterte fuer %@", outPath);
+    if( ok == NO) NSLog( @"SekhVet Import: writing encapsulated PDF failed for %@", outPath);
     return ok;
 }
 
@@ -458,7 +458,7 @@ static SekhmetImport *sekhmetImport = nil;
             if( [ext isEqualToString: @"pdf"])
             {
                 NSData *pdf = [NSData dataWithContentsOfFile: path];
-                if( pdf.length == 0) { NSLog( @"SekhVet Import: PDF unlesbar %@", path); }
+                if( pdf.length == 0) { NSLog( @"SekhVet Import: unreadable PDF %@", path); }
                 else if( pdfAsPages)
                 {
                     NSPDFImageRep *rep = [NSPDFImageRep imageRepWithData: pdf];
@@ -481,7 +481,7 @@ static SekhmetImport *sekhmetImport = nil;
             else
             {
                 NSImage *img = [[[NSImage alloc] initWithContentsOfFile: path] autorelease];
-                if( img == nil) NSLog( @"SekhVet Import: Bild unlesbar %@", path);
+                if( img == nil) NSLog( @"SekhVet Import: unreadable image %@", path);
                 else
                 {
                     NSString *out = [dir stringByAppendingPathComponent: [NSString stringWithFormat: @"SekhVet-%@-%d.dcm", stamp, index++]];
@@ -489,7 +489,7 @@ static SekhmetImport *sekhmetImport = nil;
                 }
             }
         }
-        @catch (NSException *e) { NSLog( @"SekhVet Import: Ausnahme bei %@: %@", path, e); }
+        @catch (NSException *e) { NSLog( @"SekhVet Import: exception at %@: %@", path, e); }
         [exporter retain];      // ueberlebt den Pool, damit die Instanznummern weiterzaehlen
         [pool release];
         [exporter autorelease];
@@ -497,6 +497,7 @@ static SekhmetImport *sekhmetImport = nil;
     return count;
 }
 
+#if SEKHVET_TESTHAKEN
 // Headless-Test ohne lldb: SEKHVET_IMPORT_TEST="/pfad/a.jpg:/pfad/b.pdf" in der Umgebung, AppController ruft dies 20 s nach dem Start
 + (void) debugImportFromEnvironment
 {
@@ -528,5 +529,6 @@ static SekhmetImport *sekhmetImport = nil;
     int n = [self writeFiles: [NSArray arrayWithObject: p] meta: meta studyUID: [DCMObject newStudyInstanceUID] seriesDescription: @"Test" pdfAsPages: NO toDirectory: dir];
     return [NSString stringWithFormat: @"%d Datei(en) nach %@", n, dir];
 }
+#endif // SEKHVET_TESTHAKEN
 
 @end

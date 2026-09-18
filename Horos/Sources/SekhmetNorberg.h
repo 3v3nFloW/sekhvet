@@ -23,6 +23,7 @@
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>
+#include "SekhmetTesthaken.h"
 
 @class ROI, DCMView, ViewerController;
 
@@ -67,6 +68,8 @@
 + (double) distractionIndexAtCenter:(NSPoint) c radius:(double) r cup:(NSPoint) cup spacingX:(double) sx spacingY:(double) sy;
 
 /** SEKHVET_NORBERG_TEST=1: geometry check without GUI. */
+#if SEKHVET_TESTHAKEN
 + (NSString*) debugSelfTest;
+#endif // SEKHVET_TESTHAKEN
 
 @end

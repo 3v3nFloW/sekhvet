@@ -95,6 +95,7 @@ enum { kPartHeads = 1, kPartRims = 2, kPartCups = 4, kPartAll = 7 };
         [[vc imageView] setNeedsDisplay: YES];
 }
 
+#if SEKHVET_TESTHAKEN
 + (NSString*) debugSelfTest
 {
     // Same construction as the ScrutPilot test: centres 200 px apart, rim 80 px from the centre at 105 degrees.
@@ -120,6 +121,7 @@ enum { kPartHeads = 1, kPartRims = 2, kPartCups = 4, kPartAll = 7 };
            && [[self riskTextForDI: 0.69] isEqualToString: @"moderate"] && [[self riskTextForDI: 0.7] isEqualToString: @"high"];
     return [NSString stringWithFormat: @"R=%.1f L=%.1f aniso=%.1f caudal=%.1f DI=%.3f DIaniso=%.3f DIdiag=%.3f DIzero=%.3f risk(0.29/0.3/0.69/0.7)=%@/%@/%@/%@ -> %@", wR, wL, wAniso, wCaudal, diR, diAniso, diDiag, diZero, [self riskTextForDI: 0.29], [self riskTextForDI: 0.3], [self riskTextForDI: 0.69], [self riskTextForDI: 0.7], ok ? @"OK" : @"FAIL"];
 }
+#endif // SEKHVET_TESTHAKEN
 
 #pragma mark - ROI lookup
 

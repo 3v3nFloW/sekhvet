@@ -1,6 +1,6 @@
 # SekhVet — Anleitung (Deutsch)
 
-Version 1.0 beta, Build 105 · Stand 17.09.2026
+Version 1.0 beta, Build 107 · Stand 18.09.2026
 
 > **SekhVet ist ein veterinärmedizinischer DICOM-Viewer und kein zertifiziertes Medizinprodukt.**
 > Es ist weder FDA-cleared noch CE-gekennzeichnet und hat keine formale Validierung durchlaufen.
@@ -40,7 +40,7 @@ kein Upstream-Beitrag.
 
 ## 3. Installation
 
-1. `SekhVet-1.0-beta-build105-macOS.dmg` von der Releases-Seite
+1. `SekhVet-1.0-beta-build107-macOS.dmg` von der Releases-Seite
    https://github.com/3v3nFloW/sekhvet/releases laden und öffnen. Die Zip-Datei auf derselben
    Seite enthält dieselbe App, für alle, die das lieber mögen.
 2. Im geöffneten Fenster SekhVet auf den Ordner „Programme“ ziehen, danach das Laufwerk
@@ -58,7 +58,7 @@ kein Upstream-Beitrag.
 5. **Beim ersten Start** zeigt SekhVet einmalig den Hinweis, dass es kein zertifiziertes
    Medizinprodukt ist. „I understand" bestätigt ihn, „Quit" beendet das Programm. Der Hinweis
    kommt erst wieder, wenn sich sein Wortlaut ändert.
-6. Prüfsumme (optional): `shasum -a 256 SekhVet-1.0-beta-build105-macOS.dmg` (oder die Zip)
+6. Prüfsumme (optional): `shasum -a 256 SekhVet-1.0-beta-build107-macOS.dmg` (oder die Zip)
    muss mit dem Wert auf der Releases-Seite übereinstimmen.
 
 **SekhVet neben Horos oder OsiriX:** SekhVet hat eine eigene Datenbank
@@ -358,7 +358,7 @@ Alle SekhVet-Fenster öffnen sich innerhalb der Viewer-Fläche. Alle Toolbar-Kn�
 lassen sich über **Customize Toolbar** verschieben oder entfernen; neue Knöpfe erscheinen einmal
 automatisch, entfernt man sie, bleiben sie weg.
 
-## 7. Beta-Stand, Grenzen und bekannte Einschränkungen (Build 105)
+## 7. Beta-Stand, Grenzen und bekannte Einschränkungen (Build 107)
 
 **Experimentell in dieser Beta.** Diese Funktionen laufen, sind aber erst an wenigen Geräten
 geprüft oder werden noch nachjustiert. Mit kritischem Blick benutzen und Auffälligkeiten melden:
@@ -397,7 +397,7 @@ Display-Einstellungen, Feedback- und Beitragsfenster.
 - **Patient umbenennen:** Umlaute hängen am Zeichensatz der Dateien; ein PACS, das die Studie
   schon hat, behält den alten Namen.
 - **Spine Labeling** ist für CT und MRT gedacht, nicht für Röntgen.
-- **Sprache:** Oberfläche Englisch, keine deutsche Lokalisierung.
+- **Sprache:** Oberfläche Englisch unter jeder Systemsprache, keine deutsche Lokalisierung. Die veralteten japanischen Ressourcen aus Horos sind seit Build 107 entfernt; sie überdeckten auf japanischen Systemen die gepflegten englischen Dateien (defekte Symbolleisten).
 - **Keine automatischen Updates**; neue Builds werden auf GitHub angekündigt.
 
 ## 8. Lizenz, Quellcode, Beitrag

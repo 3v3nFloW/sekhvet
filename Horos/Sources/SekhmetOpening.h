@@ -19,6 +19,7 @@
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>
+#include "SekhmetTesthaken.h"
 
 @class DicomStudy, DicomSeries, ViewerController;
 
@@ -103,9 +104,11 @@ enum {
 + (void) takeFromScreenIntoProtocol:(NSMutableDictionary*) protocol;
 
 /** Testhaken SEKHVET_OPENING_TEST="<PatientID-Teil>": Protokollwahl und Belegung protokollieren. */
+#if SEKHVET_TESTHAKEN
 + (void) debugOpeningFromEnvironment;
 + (void) debugTakeFromScreen;   // SEKHVET_OPENING_TAKE_TEST=1
 + (NSString*) debugSelfTest;   // SEKHVET_OPENING_SELFTEST: Zuordnung gegen eingebaute Beispielnamen
+#endif // SEKHVET_TESTHAKEN
 
 @end
 

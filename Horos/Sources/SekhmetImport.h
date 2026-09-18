@@ -11,6 +11,7 @@
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>
+#include "SekhmetTesthaken.h"
 
 @interface SekhmetImport : NSWindowController
 {
@@ -31,7 +32,9 @@
 // Kern ohne GUI: schreibt DICOM-Dateien nach dir, liefert die Anzahl. meta: Schluessel wie DICOMExport.metaDataDict
 // (patientsName, patientID, patientsBirthdate NSDate, patientsSex, studyDate NSDate, studyDescription, modality)
 + (int) writeFiles:(NSArray*) paths meta:(NSDictionary*) meta studyUID:(NSString*) studyUID seriesDescription:(NSString*) seriesDesc pdfAsPages:(BOOL) pdfAsPages toDirectory:(NSString*) dir;
+#if SEKHVET_TESTHAKEN
 + (NSString*) debugImportCPath:(const char*) path;   // lldb-Test ohne GUI: Testpatient, Datei nach INCOMING
 + (void) debugImportFromEnvironment;                 // SEKHVET_IMPORT_TEST="a.jpg:b.pdf" — Testlauf 20 s nach dem Start (AppController)
+#endif // SEKHVET_TESTHAKEN
 
 @end

@@ -11,6 +11,7 @@
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>
+#include "SekhmetTesthaken.h"
 
 @class ViewerController, DCMView, DCMPix, MPRController;
 
@@ -85,6 +86,7 @@ NSString* SekhmetVetLetter( NSString* letter);
 + (MPRController*) frontMPR;                                  // vorderstes offenes MPR-Fenster
 + (NSInteger) presetForMPR:(MPRController*) c;
 + (NSString*) describeMPRLayout:(NSArray*) layout;            // lesbar fuer Dialog und Panel
+#if SEKHVET_TESTHAKEN
 + (NSString*) debugLettersForView:(DCMView*) view;
 + (void) debugResliceFromEnvironment;    // SEKHVET_RESLICE_TEST=<0 axial|1 coronal|2 sagittal>: vorderster Viewer reslicen, Buchstaben loggen
 + (void) debugMPRFromEnvironment;
@@ -93,5 +95,6 @@ NSString* SekhmetVetLetter( NSString* letter);
 + (void) debugDoubleMPRZoom;               // SekhVet Paket AT: SEKHVET_DOUBLE_MPR_ZOOM_TEST="<1..3>" - Doppelklick-Zoom bei zwei MPR-Fenstern
 + (void) debugPointLifetimeTest;          // SekhVet Paket AM: SEKHVET_POINT_LIFETIME_TEST="tra:256,256" — Marker nach Scroll/Pfeiltaste/Werkzeugwechsel
 + (void) debugPointTest;                  // SEKHVET_POINT_TEST="tra:256,170;256,400": Quelle = Viewer, dessen Serienname den Text enthaelt; je Pixel Punkt senden, 1,5 s spaeter Lage aller Viewer loggen        // SEKHVET_MPR_TEST=1: MPR des vordersten Viewers oeffnen, 15 s spaeter Buchstaben je Ebene loggen
+#endif // SEKHVET_TESTHAKEN
 
 @end

@@ -7054,12 +7054,14 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                         float resultPoint[ 3];
                         
                         int newIndex = [self findPlaneAndPoint: destPoint3D :resultPoint];
+#if SEKHVET_TESTHAKEN
                         if( sekhvetTesthaken( "SEKHVET_POINT_TEST")) // SekhVet Build 67: Testhaken
                         {
                             float dist = 0; [self findPlaneForPoint: destPoint3D localPoint: nil distanceWithPlane: &dist];
                             NSLog( @"SekhVet Point-Test Empfaenger %@: Punkt (%.2f %.2f %.2f) -> newIndex %d (cur %d von %d) Abstand %.2f mm, Schicht %.1f mm, Ergebnis (%.2f %.2f %.2f)", [[self seriesObj] valueForKey: @"name"], destPoint3D[ 0], destPoint3D[ 1], destPoint3D[ 2], newIndex, curImage, (int) [dcmPixList count], dist, self.curDCM.sliceThickness, resultPoint[ 0], resultPoint[ 1], resultPoint[ 2]);
                             NSLog( @"SekhVet Point-Test Empfaenger %@: frontMost=%@ Absender=%@ keyWindow=%d", [[self seriesObj] valueForKey: @"name"], [[[[ViewerController frontMostDisplayed2DViewer] imageView] seriesObj] valueForKey: @"name"], [[otherView seriesObj] valueForKey: @"name"], (int) [[otherView window] isKeyWindow]);
                         }
+#endif // SEKHVET_TESTHAKEN
                         
                         if( newIndex != -1)
                         {

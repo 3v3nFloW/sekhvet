@@ -37,8 +37,9 @@ export CC=clang
 export CXX=clang
 
 args=( "$source_dir" )
-cfs=( $OTHER_CFLAGS )
-cxxfs=( $OTHER_CPLUSPLUSFLAGS )
+# SekhVet Paket BN: keep the build machine path out of __FILE__ strings (vtkErrorMacro etc.)
+cfs=( $OTHER_CFLAGS "-ffile-prefix-map=$PROJECT_DIR=." )
+cxxfs=( $OTHER_CPLUSPLUSFLAGS "-ffile-prefix-map=$PROJECT_DIR=." )
 
 args+=(-DGDCM_DOCUMENTATION=OFF)
 args+=(-DGDCM_BUILD_TESTING=OFF)

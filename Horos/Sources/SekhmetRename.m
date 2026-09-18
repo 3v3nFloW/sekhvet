@@ -140,7 +140,7 @@ static NSString* sekhmetRawName( DicomStudy *st)
 
         if( ok == NO)
         {
-            NSLog( @"SekhVet Rename: Dateien von %@ (%@) NICHT geschrieben, Datenbank bleibt", oldName, oldID);
+            NSLog( @"SekhVet Rename: files of %@ (%@) NOT written, database unchanged", oldName, oldID);
             [failed addObject: [NSString stringWithFormat: @"%@ (%@)", oldName, oldID]];
             continue;
         }
@@ -157,7 +157,7 @@ static NSString* sekhmetRawName( DicomStudy *st)
         study.patientUID = [DicomFile patientUID: src];
         if( dob) study.dateOfBirth = dob;
         if( sex.length) study.patientSex = sex;
-        NSLog( @"SekhVet Rename: %@ %@ -> %@ %@ (%lu Dateien)", oldName, oldID, name, pid, (unsigned long) files.count);
+        NSLog( @"SekhVet Rename: %@ %@ -> %@ %@ (%lu files)", oldName, oldID, name, pid, (unsigned long) files.count);
     }
 
     [[[BrowserController currentBrowser] database] save: nil];
@@ -288,7 +288,7 @@ static NSString* sekhmetRawName( DicomStudy *st)
             [byKey setObject: d forKey: key];
         }
     }
-    @catch (NSException *e) { NSLog( @"SekhVet Rename: Patientenliste: %@", e); }
+    @catch (NSException *e) { NSLog( @"SekhVet Rename: patient list: %@", e); }
 
     NSArray *sorted = [[byKey allValues] sortedArrayUsingComparator: ^NSComparisonResult( id a, id b) {
         return [[a objectForKey: @"name"] localizedCaseInsensitiveCompare: [b objectForKey: @"name"]];
@@ -405,6 +405,7 @@ static NSString* sekhmetRawName( DicomStudy *st)
 
 #pragma mark - Testhaken
 
+#if SEKHVET_TESTHAKEN
 + (void) debugRenameFromEnvironment
 {
     const char *env = sekhvetTesthaken( "SEKHVET_RENAME_TEST");
@@ -425,5 +426,6 @@ static NSString* sekhmetRawName( DicomStudy *st)
           [o attributeValueWithName: @"PatientsName"], [o attributeValueWithName: @"PatientID"], [o attributeValueWithName: @"PatientsBirthDate"],
           [o attributeValueWithName: @"OtherPatientNames"], [o attributeValueWithName: @"OtherPatientIDs"], error);
 }
+#endif // SEKHVET_TESTHAKEN
 
 @end

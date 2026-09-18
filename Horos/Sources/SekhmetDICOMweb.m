@@ -36,9 +36,11 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 - (NSString*) localTextForStudy:(NSDictionary*) r;                                  // Paket AM
 - (NSString*) localTextForSeries:(NSDictionary*) s inStudy:(NSDictionary*) r;       // Paket AM
 - (void) loadSeriesForStudy:(NSMutableDictionary*) study;                           // Paket AM
+#if SEKHVET_TESTHAKEN
 - (void) debugLocalListLog;              // Paket AM
 - (void) debugLocalSeriesLog;           // Paket AM
 - (void) debugPieLog;                   // Paket AO
+#endif // SEKHVET_TESTHAKEN
 - (NSNumber*) localFractionForStudy:(NSDictionary*) r;                            // Paket AO
 - (NSNumber*) localFractionForSeries:(NSDictionary*) s inStudy:(NSDictionary*) r; // Paket AO
 - (NSString*) localTipWithHave:(int) have want:(int) want;                        // Paket AO
@@ -125,7 +127,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     [a setObject: [pw dataUsingEncoding: NSUTF8StringEncoding] forKey: (id) kSecValueData];
     [a setObject: @"SekhVet DICOMweb Passwort" forKey: (id) kSecAttrLabel];
     OSStatus st = SecItemAdd( (CFDictionaryRef) a, NULL);
-    if( st != errSecSuccess) NSLog( @"Sekhmet DICOMweb: Schluesselbund-Fehler %d", (int) st);
+    if( st != errSecSuccess) NSLog( @"SekhVet DICOMweb: keychain error %d", (int) st);
 }
 
 #pragma mark - Init / UI
@@ -555,7 +557,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
                 }
             }
         }
-        @catch (NSException *e) { NSLog( @"SekhVet DICOMweb: lokalen Bestand lesen: %@", e); }
+        @catch (NSException *e) { NSLog( @"SekhVet DICOMweb: reading local studies: %@", e); }
     }
     return [NSDictionary dictionaryWithObjectsAndKeys: series, @"series", [NSNumber numberWithInt: images], @"images",
             [NSNumber numberWithInt: localizer], @"localizer", nil];
@@ -839,7 +841,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     if( error)
     {
         [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Retrieve error: %@", nil), error.localizedDescription]];
-        NSLog( @"SekhVet DICOMweb: WADO-RS Fehler %@", error);
+        NSLog( @"SekhVet DICOMweb: WADO-RS error %@", error);
         [retrieveStudyUID release]; retrieveStudyUID = nil;
         [receivedData release]; receivedData = nil;
         [progress stopAnimation: nil]; [progress setHidden: YES]; [retrieveButton setEnabled: YES];
@@ -854,7 +856,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
         if( incoming && [receivedData writeToFile: [incoming stringByAppendingPathComponent: [NSString stringWithFormat: @"SekhVetWADO-%@-0.dcm", retrieveStamp]] atomically: YES]) filesWritten++;
     }
     [receivedData release]; receivedData = nil;
-    NSLog( @"SekhVet DICOMweb: WADO-RS Studie %@ fertig, %d Dateien bisher", retrieveStudyUID, filesWritten);
+    NSLog( @"SekhVet DICOMweb: WADO-RS study %@ done, %d files so far", retrieveStudyUID, filesWritten);
     [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"%d files written…", nil), filesWritten]];
     [self retrieveNextStudy];
 }
@@ -919,7 +921,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
             NSData *part = [receivedData subdataWithRange: NSMakeRange( bodyStart, bodyEnd - bodyStart)];
             NSString *path = [incoming stringByAppendingPathComponent: [NSString stringWithFormat: @"SekhVetWADO-%@-%d.dcm", retrieveStamp, filesWritten + count]];
             if( [part writeToFile: path atomically: YES]) count++;
-            else NSLog( @"SekhVet DICOMweb: Schreiben scheiterte %@", path);
+            else NSLog( @"SekhVet DICOMweb: write failed %@", path);
         }
         [receivedData replaceBytesInRange: NSMakeRange( 0, next.location + next.length) withBytes: NULL length: 0];
         scanPos = 0;
@@ -954,7 +956,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
             }
         }
     }
-    @catch (NSException *e) { NSLog( @"SekhVet DICOMweb: Auswahl lesen: %@", e); }
+    @catch (NSException *e) { NSLog( @"SekhVet DICOMweb: reading selection: %@", e); }
     return paths;
 }
 
@@ -1010,7 +1012,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     [progress setIndeterminate: NO]; [progress setMinValue: 0]; [progress setMaxValue: (double) size]; [progress setDoubleValue: 0];
     [progress setHidden: NO]; [progress startAnimation: nil];
     [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Sending %d files (%.0f MB) to %@…", nil), n, size / 1048576., [node objectForKey: @"name"]]];
-    NSLog( @"SekhVet DICOMweb: STOW-RS %d Dateien, %llu Bytes an %@", n, size, [node objectForKey: @"url"]);
+    NSLog( @"SekhVet DICOMweb: STOW-RS %d files, %llu bytes to %@", n, size, [node objectForKey: @"url"]);
 
     NSURLSessionUploadTask *task = [[self session] uploadTaskWithRequest: req fromFile: [NSURL fileURLWithPath: tmp] completionHandler: ^(NSData *data, NSURLResponse *response, NSError *error) {
         [self stowFinishedWithData: data response: response error: error];
@@ -1037,7 +1039,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     if( error)
     {
         [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"STOW-RS error: %@", nil), error.localizedDescription]];
-        NSLog( @"SekhVet DICOMweb: STOW-RS Fehler %@", error);
+        NSLog( @"SekhVet DICOMweb: STOW-RS error %@", error);
         return;
     }
     NSInteger code = [(NSHTTPURLResponse*) response statusCode];
@@ -1059,6 +1061,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
 #pragma mark - Headless-Tests (Umgebungsvariablen)
 
+#if SEKHVET_TESTHAKEN
 + (void) debugApplyEnvPassword
 {
     const char *pw = sekhvetTesthaken( "SEKHVET_DICOMWEB_PW");
@@ -1168,6 +1171,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
               [s objectForKey: @"Name"], [s objectForKey: @"Modality"], [s objectForKey: @"Description"], [s objectForKey: @"Images"], [s objectForKey: @"Local"]);
     [self debugPieLog];   // Paket AO
 }
+#endif // SEKHVET_TESTHAKEN
 
 #pragma mark - Tabellen
 

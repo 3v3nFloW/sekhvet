@@ -364,7 +364,7 @@ static const int kCounts[ 3][ 5] = { { 7, 13, 7, 3, 99 }, { 7, 12, 7, 4, 99 }, {
             [sekhmetKnownNames setObject: label forKey: [NSValue valueWithPointer: x]];
         }
     }
-    @catch (NSException *e) { NSLog( @"SekhVet Wirbel-Labels: Neuzaehlung: %@", e); }
+    @catch (NSException *e) { NSLog( @"SekhVet spine labels: recount: %@", e); }
     sekhmetRenumbering = NO;
 
     if( active)   // Zaehlwerk laeuft ab dem letzten neuen Label weiter
@@ -374,7 +374,7 @@ static const int kCounts[ 3][ 5] = { { 7, 13, 7, 3, 99 }, { 7, 12, 7, 4, 99 }, {
         [self updateNextLabel];
     }
     [[target curView] setNeedsDisplay: YES];
-    NSLog( @"SekhVet Wirbel-Labels: %@ -> %@, %d Labels ab dort neu gezaehlt", old, [self labelFor: r number: num], (int) (sorted.count - idx));
+    NSLog( @"SekhVet spine labels: %@ -> %@, %d labels recounted from there", old, [self labelFor: r number: num], (int) (sorted.count - idx));
 }
 
 #pragma mark - Wirbelhoehe im MPR
@@ -459,6 +459,7 @@ static const int kCounts[ 3][ 5] = { { 7, 13, 7, 3, 99 }, { 7, 12, 7, 4, 99 }, {
     pix.annotationsDictionary = d;
 }
 
+#if SEKHVET_TESTHAKEN
 + (NSString*) debugSelfTest
 {
     // Zaehl- und Parselogik ohne ROIs: Hund, vorwaerts
@@ -480,6 +481,7 @@ static const int kCounts[ 3][ 5] = { { 7, 13, 7, 3, 99 }, { 7, 12, 7, 4, 99 }, {
     s->species = sr; s->region = sreg; s->number = snum; s->backwards = sb;
     return out;
 }
+#endif // SEKHVET_TESTHAKEN
 
 - (void) viewerClosed:(NSNotification*) n
 {

@@ -3348,72 +3348,6 @@
 		183C864708563F3A000E6A68 /* SRFlyThruAdapter.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = SRFlyThruAdapter.m; sourceTree = "<group>"; };
 		183C864808563F3A000E6A68 /* VRFlyThruAdapter.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = VRFlyThruAdapter.h; sourceTree = "<group>"; };
 		183C864908563F3A000E6A68 /* VRFlyThruAdapter.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = VRFlyThruAdapter.m; sourceTree = "<group>"; };
-		200BBAF320AA3BCA002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/O2HMigrationAssistant.xib"; sourceTree = "<group>"; };
-		200BBAF420AA3BCA002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIPACSOnDemand.xib"; sourceTree = "<group>"; };
-		200BBAF520AA3BCB002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIWebSharingPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAF620AA3BCB002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIViewerPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAF720AA3BCB002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIPETPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAF820AA3BCC002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSILocationsPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAF920AA3BCC002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIListenerPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAFA20AA3BCC002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIHotKeysPref.xib"; sourceTree = "<group>"; };
-		200BBAFB20AA3BCC002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIHangingPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAFC20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIGeneralPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAFD20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIDatabasePreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAFE20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSICustomImageAnnotations.xib"; sourceTree = "<group>"; };
-		200BBAFF20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSICDPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBB0020AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/DiscMountedAskTheUserDialog.xib"; sourceTree = "<group>"; };
-		200BBB0120AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIAutoroutingPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBB0220AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSI3DPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBB0320AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AYDicomPrintPref.xib"; sourceTree = "<group>"; };
-		200BBB0420AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/iChatHelper.xib"; sourceTree = "<group>"; };
-		200BBB0520AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/3DPosition.xib"; sourceTree = "<group>"; };
-		200BBB0620AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationCustomTagPanel.xib"; sourceTree = "<group>"; };
-		200BBB0720AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationPanel.xib"; sourceTree = "<group>"; };
-		200BBB0820AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationSavePanel.xib"; sourceTree = "<group>"; };
-		200BBB0920AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationTemplateNamePanel.xib"; sourceTree = "<group>"; };
-		200BBB0A20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationView.xib"; sourceTree = "<group>"; };
-		200BBB0B20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AYDicomPrint.xib"; sourceTree = "<group>"; };
-		200BBB0C20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/BurnViewer.xib"; sourceTree = "<group>"; };
-		200BBB0D20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/CalciumScoring.xib"; sourceTree = "<group>"; };
-		200BBB0E20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/CPR.xib"; sourceTree = "<group>"; };
-		200BBB0F20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/CustomIntervalPanel.xib"; sourceTree = "<group>"; };
-		200BBB1020AA3BD1002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Endoscopy.xib"; sourceTree = "<group>"; };
-		200BBB1120AA3BD1002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/FlyThru.xib"; sourceTree = "<group>"; };
-		200BBB1220AA3BD1002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Histogram.xib"; sourceTree = "<group>"; };
-		200BBB1320AA3BD1002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ICloudDriveDetector.xib"; sourceTree = "<group>"; };
-		200BBB1420AA3BD1002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ITKSegmentation.xib"; sourceTree = "<group>"; };
-		200BBB1520AA3BD2002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/LogWindow.xib"; sourceTree = "<group>"; };
-		200BBB1620AA3BD2002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Loupe.xib"; sourceTree = "<group>"; };
-		200BBB1720AA3BD2002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/MainMenu.xib"; sourceTree = "<group>"; };
-		200BBB1820AA3BD2002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/MPR.xib"; sourceTree = "<group>"; };
-		200BBB1920AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Navigator.xib"; sourceTree = "<group>"; };
-		200BBB1A20AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OrthogonalMPR.xib"; sourceTree = "<group>"; };
-		200BBB1B20AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/PaletteBrush.xib"; sourceTree = "<group>"; };
-		200BBB1C20AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/PETCT.xib"; sourceTree = "<group>"; };
-		200BBB1D20AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Plot.xib"; sourceTree = "<group>"; };
-		200BBB1E20AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/PluginManager.xib"; sourceTree = "<group>"; };
-		200BBB1F20AA3BD4002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/PreferencesWindow.xib"; sourceTree = "<group>"; };
-		200BBB2020AA3BD4002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Query.xib"; sourceTree = "<group>"; };
-		200BBB2120AA3BD4002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/QuicktimeExport.xib"; sourceTree = "<group>"; };
-		200BBB2220AA3BD4002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ROI.xib"; sourceTree = "<group>"; };
-		200BBB2320AA3BD4002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ROIDefaults.xib"; sourceTree = "<group>"; };
-		200BBB2420AA3BD5002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ROIManager.xib"; sourceTree = "<group>"; };
-		200BBB2520AA3BD5002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ROIVolume.xib"; sourceTree = "<group>"; };
-		200BBB2620AA3BD5002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ROIVolumeManager.xib"; sourceTree = "<group>"; };
-		200BBB2720AA3BD5002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Send.xib"; sourceTree = "<group>"; };
-		200BBB2820AA3BD5002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/SmartAlbum.xib"; sourceTree = "<group>"; };
-		200BBB2920AA3BD6002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Splash.xib"; sourceTree = "<group>"; };
-		200BBB2A20AA3BD6002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/SR.xib"; sourceTree = "<group>"; };
-		200BBB2B20AA3BD6002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ThickSlab.xib"; sourceTree = "<group>"; };
-		200BBB2C20AA3BD6002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ThreadModalForWindow.xib"; sourceTree = "<group>"; };
-		200BBB2D20AA3BD6002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ThumbnailsList.xib"; sourceTree = "<group>"; };
-		200BBB2E20AA3BD7002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ToolbarPanel.xib"; sourceTree = "<group>"; };
-		200BBB2F20AA3BD7002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Viewer.xib"; sourceTree = "<group>"; };
-		200BBB3020AA3BD7002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/VR.xib"; sourceTree = "<group>"; };
-		200BBB3120AA3BD7002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Wait.xib"; sourceTree = "<group>"; };
-		200BBB3220AA3BD7002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/WaitRendering.xib"; sourceTree = "<group>"; };
-		200BBB3320AA3BD8002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/XMLViewer.xib"; sourceTree = "<group>"; };
-		200BBB3420AA3BD8002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "ja-JP"; path = "ja-JP.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		29B97316FDCFA39411CA2CEA /* main.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		29B97324FDCFA39411CA2CEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
 		29B97325FDCFA39411CA2CEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = /System/Library/Frameworks/Foundation.framework; sourceTree = "<absolute>"; };
@@ -10139,7 +10073,6 @@
 				sv,
 				zh_TW,
 				en,
-				"ja-JP",
 				fr,
 				es,
 				Base,
@@ -12709,7 +12642,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				5926822211CF60BD00CFA81F /* English */,
-				200BBB2C20AA3BD6002914C4 /* ja-JP */,
 			);
 			name = ThreadModalForWindow.xib;
 			sourceTree = "<group>";
@@ -12718,7 +12650,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				5997897211B7B423002DB107 /* English */,
-				200BBB0620AA3BCF002914C4 /* ja-JP */,
 			);
 			name = AnonymizationCustomTagPanel.xib;
 			sourceTree = "<group>";
@@ -12727,7 +12658,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				5997897411B7B423002DB107 /* English */,
-				200BBB0720AA3BCF002914C4 /* ja-JP */,
 			);
 			name = AnonymizationPanel.xib;
 			sourceTree = "<group>";
@@ -12736,7 +12666,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				5997897611B7B423002DB107 /* English */,
-				200BBB0820AA3BCF002914C4 /* ja-JP */,
 			);
 			name = AnonymizationSavePanel.xib;
 			sourceTree = "<group>";
@@ -12745,7 +12674,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				5997897811B7B423002DB107 /* English */,
-				200BBB0920AA3BCF002914C4 /* ja-JP */,
 			);
 			name = AnonymizationTemplateNamePanel.xib;
 			sourceTree = "<group>";
@@ -12754,7 +12682,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				5997897A11B7B423002DB107 /* English */,
-				200BBB0A20AA3BD0002914C4 /* ja-JP */,
 			);
 			name = AnonymizationView.xib;
 			sourceTree = "<group>";
@@ -12763,7 +12690,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				59BDF105117EE61E007F1F2C /* English */,
-				200BBB1F20AA3BD4002914C4 /* ja-JP */,
 			);
 			name = PreferencesWindow.xib;
 			sourceTree = "<group>";
@@ -12771,7 +12697,6 @@
 		71512E97152349E500B87012 /* DiscMountedAskTheUserDialog.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBB0020AA3BCE002914C4 /* ja-JP */,
 				8CC299DF2F3158B600669578 /* Base */,
 			);
 			name = DiscMountedAskTheUserDialog.xib;
@@ -12781,7 +12706,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				71E6C0811FB5943B00FF75B6 /* en */,
-				200BBAF320AA3BCA002914C4 /* ja-JP */,
 			);
 			name = O2HMigrationAssistant.xib;
 			path = Horos/Resources;
@@ -12791,7 +12715,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				848327AA15ED08F3003BAEEB /* English */,
-				200BBB0F20AA3BD0002914C4 /* ja-JP */,
 			);
 			name = CustomIntervalPanel.xib;
 			sourceTree = "<group>";
@@ -12800,7 +12723,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				9952F26D2020C1010020CCD4 /* en */,
-				200BBB1320AA3BD1002914C4 /* ja-JP */,
 			);
 			name = ICloudDriveDetector.xib;
 			sourceTree = "<group>";
@@ -12809,7 +12731,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				A9333D390F56E9670097DAB7 /* English */,
-				200BBB1820AA3BD2002914C4 /* ja-JP */,
 			);
 			name = MPR.xib;
 			sourceTree = "<group>";
@@ -12818,7 +12739,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				A987B3E00D5A069200BF89C0 /* English */,
-				200BBB1920AA3BD3002914C4 /* ja-JP */,
 			);
 			name = Navigator.xib;
 			sourceTree = "<group>";
@@ -12827,7 +12747,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				A9C4D9460F72987900B5B9A1 /* English */,
-				200BBB1620AA3BD2002914C4 /* ja-JP */,
 			);
 			name = Loupe.xib;
 			sourceTree = "<group>";
@@ -12836,7 +12755,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				ABE0D6930CDB1A4400F0494B /* English */,
-				200BBB0420AA3BCE002914C4 /* ja-JP */,
 			);
 			name = iChatHelper.xib;
 			sourceTree = "<group>";
@@ -12845,7 +12763,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE286C110964196C001A4573 /* English */,
-				200BBB3420AA3BD8002914C4 /* ja-JP */,
 			);
 			name = Localizable.strings;
 			sourceTree = "<group>";
@@ -12854,7 +12771,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE2AC2671830BEFB00C2B67B /* English */,
-				200BBB2B20AA3BD6002914C4 /* ja-JP */,
 			);
 			name = ThickSlab.xib;
 			sourceTree = "<group>";
@@ -12863,7 +12779,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F98E50C84724B00CB38F1 /* English */,
-				200BBB2820AA3BD5002914C4 /* ja-JP */,
 			);
 			name = SmartAlbum.xib;
 			sourceTree = "<group>";
@@ -12872,7 +12787,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F98E70C84724B00CB38F1 /* English */,
-				200BBB2620AA3BD5002914C4 /* ja-JP */,
 			);
 			name = ROIVolumeManager.xib;
 			sourceTree = "<group>";
@@ -12881,7 +12795,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F98E90C84724B00CB38F1 /* English */,
-				200BBB1C20AA3BD3002914C4 /* ja-JP */,
 			);
 			name = PETCT.xib;
 			sourceTree = "<group>";
@@ -12890,7 +12803,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F98EB0C84724B00CB38F1 /* English */,
-				200BBB1520AA3BD2002914C4 /* ja-JP */,
 			);
 			name = LogWindow.xib;
 			sourceTree = "<group>";
@@ -12899,7 +12811,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F98ED0C84724B00CB38F1 /* English */,
-				200BBB1120AA3BD1002914C4 /* ja-JP */,
 			);
 			name = FlyThru.xib;
 			sourceTree = "<group>";
@@ -12908,7 +12819,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F98F10C84724B00CB38F1 /* English */,
-				200BBB2E20AA3BD7002914C4 /* ja-JP */,
 			);
 			name = ToolbarPanel.xib;
 			sourceTree = "<group>";
@@ -12917,7 +12827,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F98FD0C84724B00CB38F1 /* English */,
-				200BBB2920AA3BD6002914C4 /* ja-JP */,
 			);
 			name = Splash.xib;
 			sourceTree = "<group>";
@@ -12926,7 +12835,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F98FF0C84724B00CB38F1 /* English */,
-				200BBB2220AA3BD4002914C4 /* ja-JP */,
 			);
 			name = ROI.xib;
 			sourceTree = "<group>";
@@ -12935,7 +12843,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99010C84724B00CB38F1 /* English */,
-				200BBB0D20AA3BD0002914C4 /* ja-JP */,
 			);
 			name = CalciumScoring.xib;
 			sourceTree = "<group>";
@@ -12944,7 +12851,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99030C84724B00CB38F1 /* English */,
-				200BBB2420AA3BD5002914C4 /* ja-JP */,
 			);
 			name = ROIManager.xib;
 			sourceTree = "<group>";
@@ -12953,7 +12859,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99050C84724B00CB38F1 /* English */,
-				200BBB2720AA3BD5002914C4 /* ja-JP */,
 			);
 			name = Send.xib;
 			sourceTree = "<group>";
@@ -12962,7 +12867,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99070C84724B00CB38F1 /* English */,
-				200BBB1A20AA3BD3002914C4 /* ja-JP */,
 			);
 			name = OrthogonalMPR.xib;
 			sourceTree = "<group>";
@@ -12971,7 +12875,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F990B0C84724B00CB38F1 /* English */,
-				200BBB1020AA3BD1002914C4 /* ja-JP */,
 			);
 			name = Endoscopy.xib;
 			sourceTree = "<group>";
@@ -12980,7 +12883,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99110C84724B00CB38F1 /* English */,
-				200BBB1420AA3BD1002914C4 /* ja-JP */,
 			);
 			name = ITKSegmentation.xib;
 			sourceTree = "<group>";
@@ -12989,7 +12891,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99130C84724B00CB38F1 /* English */,
-				200BBB2020AA3BD4002914C4 /* ja-JP */,
 			);
 			name = Query.xib;
 			sourceTree = "<group>";
@@ -12998,7 +12899,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99150C84724B00CB38F1 /* English */,
-				200BBB1220AA3BD1002914C4 /* ja-JP */,
 			);
 			name = Histogram.xib;
 			sourceTree = "<group>";
@@ -13007,7 +12907,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99170C84724B00CB38F1 /* English */,
-				200BBB1E20AA3BD3002914C4 /* ja-JP */,
 			);
 			name = PluginManager.xib;
 			sourceTree = "<group>";
@@ -13016,7 +12915,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F991B0C84724B00CB38F1 /* English */,
-				200BBB3220AA3BD7002914C4 /* ja-JP */,
 			);
 			name = WaitRendering.xib;
 			sourceTree = "<group>";
@@ -13025,7 +12923,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F991D0C84724B00CB38F1 /* English */,
-				200BBB1D20AA3BD3002914C4 /* ja-JP */,
 			);
 			name = Plot.xib;
 			sourceTree = "<group>";
@@ -13034,7 +12931,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F991F0C84724B00CB38F1 /* English */,
-				200BBB2520AA3BD5002914C4 /* ja-JP */,
 			);
 			name = ROIVolume.xib;
 			sourceTree = "<group>";
@@ -13043,7 +12939,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99270C84724B00CB38F1 /* English */,
-				200BBB1B20AA3BD3002914C4 /* ja-JP */,
 			);
 			name = PaletteBrush.xib;
 			sourceTree = "<group>";
@@ -13052,7 +12947,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F992D0C84724B00CB38F1 /* English */,
-				200BBB0C20AA3BD0002914C4 /* ja-JP */,
 			);
 			name = BurnViewer.xib;
 			sourceTree = "<group>";
@@ -13061,7 +12955,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F992F0C84724B00CB38F1 /* English */,
-				200BBB2320AA3BD4002914C4 /* ja-JP */,
 			);
 			name = ROIDefaults.xib;
 			sourceTree = "<group>";
@@ -13070,7 +12963,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99310C84724B00CB38F1 /* English */,
-				200BBB3020AA3BD7002914C4 /* ja-JP */,
 			);
 			name = VR.xib;
 			sourceTree = "<group>";
@@ -13079,7 +12971,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99330C84724B00CB38F1 /* English */,
-				200BBB2120AA3BD4002914C4 /* ja-JP */,
 			);
 			name = QuicktimeExport.xib;
 			sourceTree = "<group>";
@@ -13088,7 +12979,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99350C84724B00CB38F1 /* English */,
-				200BBB2A20AA3BD6002914C4 /* ja-JP */,
 			);
 			name = SR.xib;
 			sourceTree = "<group>";
@@ -13097,7 +12987,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99370C84724B00CB38F1 /* English */,
-				200BBB2F20AA3BD7002914C4 /* ja-JP */,
 			);
 			name = Viewer.xib;
 			sourceTree = "<group>";
@@ -13106,7 +12995,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99390C84724B00CB38F1 /* English */,
-				200BBB1720AA3BD2002914C4 /* ja-JP */,
 			);
 			name = MainMenu.xib;
 			sourceTree = "<group>";
@@ -13115,7 +13003,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F993B0C84724B00CB38F1 /* English */,
-				200BBB3120AA3BD7002914C4 /* ja-JP */,
 			);
 			name = Wait.xib;
 			sourceTree = "<group>";
@@ -13124,7 +13011,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F993F0C84724B00CB38F1 /* English */,
-				200BBB3320AA3BD8002914C4 /* ja-JP */,
 			);
 			name = XMLViewer.xib;
 			sourceTree = "<group>";
@@ -13133,7 +13019,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE3F99410C84724B00CB38F1 /* English */,
-				200BBB0B20AA3BD0002914C4 /* ja-JP */,
 			);
 			name = AYDicomPrint.xib;
 			sourceTree = "<group>";
@@ -13142,7 +13027,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE40ED580D86D634007C6D49 /* English */,
-				200BBB0520AA3BCF002914C4 /* ja-JP */,
 			);
 			name = 3DPosition.xib;
 			sourceTree = "<group>";
@@ -13151,7 +13035,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE90551712F5B68100263AB6 /* English */,
-				200BBB0E20AA3BD0002914C4 /* ja-JP */,
 			);
 			name = CPR.xib;
 			sourceTree = "<group>";
@@ -13159,7 +13042,6 @@
 		CEA4F07B15AEA606009584C7 /* OSIPACSOnDemand.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF420AA3BCA002914C4 /* ja-JP */,
 				8CC299D32F3158B400669578 /* Base */,
 			);
 			name = OSIPACSOnDemand.xib;
@@ -13168,7 +13050,6 @@
 		CEB9898A133500D30083F3FD /* OSIWebSharingPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF520AA3BCB002914C4 /* ja-JP */,
 				8CC299D42F3158B400669578 /* Base */,
 			);
 			name = OSIWebSharingPreferencePanePref.xib;
@@ -13177,7 +13058,6 @@
 		CEB989FE133507AC0083F3FD /* OSIViewerPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF620AA3BCB002914C4 /* ja-JP */,
 				8CC299D52F3158B500669578 /* Base */,
 			);
 			name = OSIViewerPreferencePanePref.xib;
@@ -13186,7 +13066,6 @@
 		CEB98A08133507BA0083F3FD /* OSIPETPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF720AA3BCB002914C4 /* ja-JP */,
 				8CC299D62F3158B500669578 /* Base */,
 			);
 			name = OSIPETPreferencePanePref.xib;
@@ -13195,7 +13074,6 @@
 		CEB98A12133507C80083F3FD /* OSILocationsPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF820AA3BCC002914C4 /* ja-JP */,
 				8CC299D72F3158B500669578 /* Base */,
 			);
 			name = OSILocationsPreferencePanePref.xib;
@@ -13204,7 +13082,6 @@
 		CEB98BAB133507F50083F3FD /* OSIListenerPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF920AA3BCC002914C4 /* ja-JP */,
 				8CC299D82F3158B500669578 /* Base */,
 			);
 			name = OSIListenerPreferencePanePref.xib;
@@ -13213,7 +13090,6 @@
 		CEB98BB7133508040083F3FD /* OSIHotKeysPref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFA20AA3BCC002914C4 /* ja-JP */,
 				8CC299D92F3158B500669578 /* Base */,
 			);
 			name = OSIHotKeysPref.xib;
@@ -13222,7 +13098,6 @@
 		CEB98BDB133508180083F3FD /* OSIHangingPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFB20AA3BCC002914C4 /* ja-JP */,
 				8CC299DA2F3158B500669578 /* Base */,
 			);
 			name = OSIHangingPreferencePanePref.xib;
@@ -13231,7 +13106,6 @@
 		CEB98C01133508280083F3FD /* OSIGeneralPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFC20AA3BCD002914C4 /* ja-JP */,
 				8CC299DB2F3158B500669578 /* Base */,
 			);
 			name = OSIGeneralPreferencePanePref.xib;
@@ -13240,7 +13114,6 @@
 		CEB98C0B133508350083F3FD /* OSIDatabasePreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFD20AA3BCD002914C4 /* ja-JP */,
 				8CC299DC2F3158B600669578 /* Base */,
 			);
 			name = OSIDatabasePreferencePanePref.xib;
@@ -13249,7 +13122,6 @@
 		CEB98C201335084F0083F3FD /* OSICustomImageAnnotations.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFE20AA3BCD002914C4 /* ja-JP */,
 				8CC299DD2F3158B600669578 /* Base */,
 			);
 			name = OSICustomImageAnnotations.xib;
@@ -13258,7 +13130,6 @@
 		CEB98C5B1335085D0083F3FD /* OSICDPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFF20AA3BCD002914C4 /* ja-JP */,
 				8CC299DE2F3158B600669578 /* Base */,
 			);
 			name = OSICDPreferencePanePref.xib;
@@ -13267,7 +13138,6 @@
 		CEB98C651335086B0083F3FD /* OSIAutoroutingPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBB0120AA3BCE002914C4 /* ja-JP */,
 				8CC299E02F3158B600669578 /* Base */,
 			);
 			name = OSIAutoroutingPreferencePanePref.xib;
@@ -13276,7 +13146,6 @@
 		CEB98C751335087D0083F3FD /* OSI3DPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBB0220AA3BCE002914C4 /* ja-JP */,
 				8CC299E12F3158B600669578 /* Base */,
 			);
 			name = OSI3DPreferencePanePref.xib;
@@ -13285,7 +13154,6 @@
 		CEB98C811335088C0083F3FD /* AYDicomPrintPref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBB0320AA3BCE002914C4 /* ja-JP */,
 				8CC299E22F3158B600669578 /* Base */,
 			);
 			name = AYDicomPrintPref.xib;
@@ -13295,7 +13163,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CEF09316182D23B20020C70A /* English */,
-				200BBB2D20AA3BD6002914C4 /* ja-JP */,
 			);
 			name = ThumbnailsList.xib;
 			sourceTree = "<group>";
@@ -13351,7 +13218,7 @@
 				GCC_WARN_INITIALIZER_NOT_FULLY_BRACKETED = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				IBC_FLATTEN_NIBS = YES;
-				OTHER_CFLAGS = "-fvisibility=default";
+				OTHER_CFLAGS = "-fvisibility=default -ffile-prefix-map=$(SRCROOT)=.";
 				OTHER_CPLUSPLUSFLAGS = "$(OTHER_CFLAGS)";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
@@ -13402,7 +13269,7 @@
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
 					"$(PROJECT_DIR)/DICOMPrint",
 				);
-				OTHER_CFLAGS = "-fvisibility=default";
+				OTHER_CFLAGS = "-fvisibility=default -ffile-prefix-map=$(SRCROOT)=.";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-sectcreate",
@@ -13559,7 +13426,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = "$(SRCROOT)/API/Info.plist";
 				INSTALL_PATH = "@executable_path/../Frameworks";
-				OTHER_CFLAGS = "-fvisibility=default";
+				OTHER_CFLAGS = "-fvisibility=default -ffile-prefix-map=$(SRCROOT)=.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).api";
 				PRODUCT_NAME = Horos;
 			};
@@ -13807,7 +13674,7 @@
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
 					"$(PROJECT_DIR)/DICOMPrint",
 				);
-				OTHER_CFLAGS = "-fvisibility=default";
+				OTHER_CFLAGS = "-fvisibility=default -ffile-prefix-map=$(SRCROOT)=.";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-sectcreate",
@@ -13909,7 +13776,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IBC_FLATTEN_NIBS = NO;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_CFLAGS = "-fvisibility=default";
+				OTHER_CFLAGS = "-fvisibility=default -ffile-prefix-map=$(SRCROOT)=.";
 				OTHER_CPLUSPLUSFLAGS = "$(OTHER_CFLAGS)";
 				OTHER_LDFLAGS = "-Wno-deprecated";
 				SDKROOT = macosx;
@@ -13952,7 +13819,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = "$(SRCROOT)/API/Info.plist";
 				INSTALL_PATH = "@executable_path/../Frameworks";
-				OTHER_CFLAGS = "-fvisibility=default";
+				OTHER_CFLAGS = "-fvisibility=default -ffile-prefix-map=$(SRCROOT)=.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).api";
 				PRODUCT_NAME = Horos;
 				PROVISIONING_PROFILE_SPECIFIER = "";

@@ -5,6 +5,9 @@
 #import "SekhmetMPRKategorie.h" // SekhVet Stufe 6c
 #import "SekhmetOrientation.h"
 #import "SekhmetTesthaken.h" // SekhVet: Testhaken nur mit Build-Flag SEKHVET_TESTHAKEN=1
+#if SEKHVET_TESTHAKEN
+#import "SekhmetDCMViewKategorie.h" // only the point tests call into this category
+#endif // SEKHVET_TESTHAKEN
 #import "ViewerController.h"
 #import "DCMView.h"
 #import "DCMPix.h"
@@ -298,12 +301,14 @@ NSString* SekhmetVetLetter( NSString* letter)
     *top = [NSString stringWithUTF8String: s];
 }
 
+#if SEKHVET_TESTHAKEN
 + (NSString*) debugLettersForView:(DCMView*) view
 {
     NSString *l = nil, *t = nil;
     [self lettersForView: view left: &l top: &t];
     return [NSString stringWithFormat: @"links=%@ oben=%@ rot=%.0f x=%d y=%d", l, t, view.rotation, view.xFlipped, view.yFlipped];
 }
+#endif // SEKHVET_TESTHAKEN
 
 // Rodrigues: v um die Einheitsachse axis um deg Grad drehen
 static void sekhmetRotate( float *v, const float *axis, float deg)
@@ -430,7 +435,7 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     {
         // Aus einem kaputten Stand laesst sich nichts ableiten: Horos' eigener Reset (Werkzeugleiste "Reset").
         // showWindow: plant danach das Hanging Protocol selbst wieder ein.
-        NSLog( @"SekhVet HP MPR: Kamerastand unbrauchbar - Horos-Reset");
+        NSLog( @"SekhVet HP MPR: unusable camera state - Horos reset");
         [c showWindow: nil];
         return;
     }
@@ -476,7 +481,7 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     [v3 updateViewMPR];
 
     if( before) [w makeFirstResponder: before];
-    NSLog( @"SekhVet HP MPR zurueckgesetzt: Achsen %d/%d/%d, Kreuzungspunkt (%.1f %.1f %.1f)", ax[0], ax[1], ax[2], K[0], K[1], K[2]);
+    NSLog( @"SekhVet HP MPR reset: axes %d/%d/%d, crossing point (%.1f %.1f %.1f)", ax[0], ax[1], ax[2], K[0], K[1], K[2]);
 }
 
 + (NSString*) applyToMPR:(MPRController*) c
@@ -509,7 +514,7 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     {
         MPRDCMView *v = [c sekhmetView: i];
         Camera *cam = v.camera;
-        if( cam == nil || cam.position == nil || cam.focalPoint == nil) { NSLog( @"SekhVet Hanging Protocol MPR: Ansicht %d ohne Kamera - uebersprungen", i); continue; }
+        if( cam == nil || cam.position == nil || cam.focalPoint == nil) { NSLog( @"SekhVet Hanging Protocol MPR: view %d without camera - skipped", i); continue; }
 
         float n[3] = { cam.position.x - cam.focalPoint.x, cam.position.y - cam.focalPoint.y, cam.position.z - cam.focalPoint.z };
         float len = sqrtf( n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
@@ -530,11 +535,11 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
             NSDictionary *lv = [layout objectAtIndex: i];
             int want = [[lv objectForKey: @"axis"] intValue];
             int have = plane == SekhmetPlaneSagittal ? 0 : plane == SekhmetPlaneDorsal ? 1 : 2;
-            if( want != have) { NSLog( @"SekhVet Hanging Protocol MPR: Ansicht %d zeigt Achse %d, die Anordnung will Achse %d - uebersprungen", i, have, want); continue; }
+            if( want != have) { NSLog( @"SekhVet Hanging Protocol MPR: view %d shows axis %d, the layout wants axis %d - skipped", i, have, want); continue; }
             top = [self L: [lv objectForKey: @"top"]];
             left = [self L: [lv objectForKey: @"left"]];
         }
-        else if( [self targetTop: &top left: &left forPlane: plane preset: preset] == NO) { NSLog( @"SekhVet Hanging Protocol MPR: Ansicht %d Ebene %d ohne Ziel im Preset %d", i, (int) plane, (int) preset); continue; }
+        else if( [self targetTop: &top left: &left forPlane: plane preset: preset] == NO) { NSLog( @"SekhVet Hanging Protocol MPR: view %d plane %d without target in preset %d", i, (int) plane, (int) preset); continue; }
 
         // Acht Moeglichkeiten (4 Kameradrehungen x Spiegelung) decken jede Kombination von oben/links ab.
         // Drehung 0 und xFlipped zuerst: das ist Horos' Grundzustand, bei Gleichstand bleibt es dabei.
@@ -578,7 +583,7 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
                 v.angleMPR -= delta;
             }
             done++;
-            NSLog( @"SekhVet Hanging Protocol MPR: Ansicht %d Ebene %d -> oben %@ links %@ (Kamera %d x 90 Grad, Fadenkreuz %+.0f, gespiegelt %d)",
+            NSLog( @"SekhVet Hanging Protocol MPR: view %d plane %d -> top %@ left %@ (camera %d x 90 deg, crosshair %+.0f, flipped %d)",
                   i, (int) plane, st, sl, turn, -delta, v.xFlipped);
         }
         else
@@ -588,7 +593,7 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
             [v restoreCamera];
             [v updateViewMPR: NO];
             v.xFlipped = xf0; v.yFlipped = yf0;
-            NSLog( @"SekhVet Hanging Protocol MPR: Ansicht %d Ebene %d - keine Drehung/Spiegelung zeigt oben %@ links %@", i, (int) plane, top, left);
+            NSLog( @"SekhVet Hanging Protocol MPR: view %d plane %d - no rotation/flip shows top %@ left %@", i, (int) plane, top, left);
         }
         [v setNeedsDisplay: YES];
     }
@@ -604,11 +609,11 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
             if( len > 0.01 && len < 50)   // groessere Spruenge kommen nicht vom Versatz -> nicht anfassen
             {
                 [self shiftMPR: c by: delta];
-                NSLog( @"SekhVet HP MPR: Kreuzungspunkt um (%.2f %.2f %.2f) zurueckgeschoben", delta[0], delta[1], delta[2]);
+                NSLog( @"SekhVet HP MPR: crossing point moved back by (%.2f %.2f %.2f)", delta[0], delta[1], delta[2]);
             }
         }
     }
-    NSLog( @"SekhVet Hanging Protocol MPR: %d Ebenen gesetzt, %d schraeg uebersprungen (Preset %@%@)", done, skipped, [[self presetNames] objectAtIndex: preset],
+    NSLog( @"SekhVet Hanging Protocol MPR: %d planes set, %d oblique skipped (preset %@%@)", done, skipped, [[self presetNames] objectAtIndex: preset],
           layout ? @", eigene Anordnung" : @"");
     return [NSString stringWithFormat: @"HP: %@", [[self presetNames] objectAtIndex: preset]];
 }
@@ -720,6 +725,7 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
 
 #pragma mark - Headless-Tests (Umgebungsvariablen, AppController ruft 45 s nach dem Start)
 
+#if SEKHVET_TESTHAKEN
 + (void) debugResliceFromEnvironment
 {
     const char *env = sekhvetTesthaken( "SEKHVET_RESLICE_TEST");
@@ -751,6 +757,7 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     if( sekhvetTesthaken( "SEKHVET_HP_SWITCH_TEST")) [self performSelector: @selector(debugHPSwitch) withObject: nil afterDelay: 20 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
     if( sekhvetTesthaken( "SEKHVET_DOUBLE_MPR_ZOOM_TEST")) [self performSelector: @selector(debugDoubleMPRZoom) withObject: nil afterDelay: 25 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]]; // SekhVet Paket AT
 }
+#endif // SEKHVET_TESTHAKEN
 
 // SekhVet Paket AT: Doppelklick-Zoom bei zwei MPR-Fenstern (Double MPR).
 // SEKHVET_DOUBLE_MPR_ZOOM_TEST="<Ansicht 1..3>" - klickt doppelt in die genannte Ansicht des
@@ -760,6 +767,7 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
 // Braucht zwei Fenster, also zusammen mit SEKHVET_MPR_TEST=all.
 static MPRDCMView *sekhmetZoomTestView = nil;
 
+#if SEKHVET_TESTHAKEN
 + (void) debugDoubleMPRZoomLog:(NSString*) phase
 {
     for( NSWindow *w in [NSApp windows])
@@ -1084,6 +1092,7 @@ static MPRDCMView *sekhmetZoomTestView = nil;
         }
     }
 }
+#endif // SEKHVET_TESTHAKEN
 
 #pragma mark - Anwenden
 
@@ -1213,7 +1222,7 @@ static MPRDCMView *sekhmetZoomTestView = nil;
     {
         [self setView: view rotation: origRot xFlipped: origX yFlipped: origY];
         [view setNeedsDisplay: YES];
-        NSLog( @"Sekhmet Vet-HP: keine Drehung erreicht Ziel oben=%@ links=%@ (Serie %@)", top, left, [self descriptionForViewer: v]);
+        NSLog( @"SekhVet Vet HP: no rotation reaches target top=%@ left=%@ (series %@)", top, left, [self descriptionForViewer: v]);
         return NSLocalizedString( @"HP: no matching rotation", nil);
     }
 
@@ -1222,7 +1231,7 @@ static MPRDCMView *sekhmetZoomTestView = nil;
     {
         [self setView: view rotation: origRot xFlipped: origX yFlipped: origY];
         [view setNeedsDisplay: YES];
-        NSLog( @"Sekhmet Vet-HP ABGESCHALTET: Drehung greift nicht (rot %f x %d y %d)", view.rotation, view.xFlipped, view.yFlipped);
+        NSLog( @"SekhVet Vet HP DISABLED: rotation has no effect (rot %f x %d y %d)", view.rotation, view.xFlipped, view.yFlipped);
         return NSLocalizedString( @"HP DISABLED: rotation did not take effect", nil);
     }
 

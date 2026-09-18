@@ -11,11 +11,14 @@
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>
+#include "SekhmetTesthaken.h"
 #import "DCMView.h"
 
 @interface DCMView (SekhVet)
 + (void) sekhmetClearPointMarkers;
 - (void) sekhmetClearPointMarker;
 - (void) sekhmetSync3DPointAtPixX:(float) x pixY:(float) y;
+#if SEKHVET_TESTHAKEN
 - (void) sekhmetDebugLogPoint;  // SekhVet Build 67: Testhaken — Lage des empfangenen 3D-Punkts dieses Viewers
+#endif // SEKHVET_TESTHAKEN
 @end
