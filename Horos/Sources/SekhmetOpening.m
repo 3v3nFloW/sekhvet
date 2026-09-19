@@ -500,6 +500,25 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
     return YES;
 }
 
+// SekhVet Paket BS: nur wenn noch das Datenbankfenster Schluesselfenster ist und die Studie wirklich Viewer hat
++ (void) bringViewersToFrontForStudyUID:(NSString*) uid
+{
+    NSWindow *db = [[BrowserController currentBrowser] window];
+    if( uid.length == 0 || [NSApp keyWindow] != db) return;
+    ViewerController *first = nil;
+    for( ViewerController *v in [ViewerController getDisplayed2DViewers])
+    {
+        if( [v windowWillClose] || [uid isEqualToString: [v studyInstanceUID]] == NO) continue;
+        [[v window] orderFront: nil];
+        if( first == nil) first = v;
+    }
+    if( first)
+    {
+        [[first window] makeKeyAndOrderFront: nil];
+        NSLog( @"SekhVet opening: database window was still in front, viewers brought forward");
+    }
+}
+
 + (NSRect) cellRect:(int) index rows:(int) rows columns:(int) columns screen:(NSScreen*) screen
 {
     NSRect base = [AppController usefullRectForScreen: screen];

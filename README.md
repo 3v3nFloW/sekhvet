@@ -42,7 +42,7 @@ or not yet on a real device; they are marked **experimental** here and in the ma
 | Image and PDF import, rename patient, display settings | in daily use |
 | Hanging protocol in the 3D MPR | **experimental**, rebuilt in September 2026, device verification running |
 | Opening protocols, two-view radiograph hanging | **experimental**, device verification running |
-| Spine labeling | **experimental**, counting logic still being adjusted |
+| Spine labeling | **experimental**, rebuilt in build 108–110; counting and level logic verified headless, on-screen drawing checked on one Mac |
 | Ultrasound calibration from a neighbouring image | **experimental**, one device tested (Mindray Vetus 9) |
 | macOS 27 | tested in a test installation (double MPR with a large CT, double-click zoom); daily use is on macOS 26 |
 
@@ -72,10 +72,10 @@ Everything below lives in the **Vet Tools** menu unless stated otherwise.
 | | |
 |---|---|
 | **Orientation letters** | Cr/Cd and D/V instead of A/P and S/I, in 2D, MPR and on the 3D orientation cube |
-| **Hanging protocol** | Presets Head/Spine, Limbs, Custom; orientation rules per preset; keyword rules per study description; rotation and flip rules per radiography device; works in the 3D MPR too |
+| **Hanging protocol** | Any number of protocols (add, rename, reorder); orientation rules per protocol; keyword rules per study description; rotation and flip rules per radiography device; works in the 3D MPR too |
 | **Opening protocols** | Which series open on double-click, in which layout and with which window; templates for MR head, spine and stifle; two-view radiographs hang VD left, lateral right |
 | **Window presets** | Modality and description rules for window level and width on opening; editable global WL/WW presets ("CT - Bone", "CT - Abdomen" …) |
-| **Spine labeling** | Click counter for dog/cat, rabbit and horse; disc labels; rename with recount; labels stored as ROIs and shown in all planes, with the vertebral level in the transverse view |
+| **Spine labeling** | Click counter for dog/cat, rabbit and horse with an editable vertebral formula per study; direction from the first two clicks; disc labels by clicking between two vertebrae; rename with recount; the vertebral level (e.g. L3, L3-L4) is shown in every transverse series of the study and in the MPR |
 | **Norberg angle** | Hip dysplasia measurement on the VD pelvis: draggable femoral head circles, radius grip and mouse wheel, live angle, value stored with the study |
 | **Distraction index** | PennHIP-style laxity measurement on the distraction view, sharing the femoral head circles with the Norberg angle; optional risk level |
 | **Point tool** | One click shows the same location in all other open series of the study |

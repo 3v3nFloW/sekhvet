@@ -10,12 +10,16 @@
 @interface SekhmetOrientationPanel : NSWindowController <NSTableViewDataSource, NSTableViewDelegate>
 {
     NSPopUpButton *presetPopup;
-    NSMutableArray *ruleButtons;        // NSButton, tag = preset*10 + regelindex
+    NSMutableArray *ruleButtons;        // NSButton, tag = Regelindex; gelten fuer das markierte Protokoll (SekhVet Paket BP)
+    NSTableView *protocolTable;         // SekhVet Paket BP: Protokoll-Liste (umbenennen, ziehen, +/-)
+    NSMutableArray *protocols;          // veraenderliche Kopie von +protocolList
+    NSTextField *ruleHeading, *layoutHeading;
+    NSButton *removeProtocolButton;
+    NSPopUpButtonCell *keywordPresetCell;
     NSTableView *keywordTable;
     NSTableView *dxTable;
     NSMutableArray *keywords;           // veraenderliche Kopie der Defaults
     NSMutableArray *dxRules;
-    NSPopUpButton *layoutPresetPopup;   // SekhVet Paket AX: MPR-Anordnung je Preset
     NSTextField *layoutStatus;
 }
 

@@ -45,7 +45,11 @@ NSString* const SekhmetScreenAreaToolbarItemIdentifier = @"SekhmetScreenArea";
     for( NSToolbarItem *item in [toolbar items])
     {
         if( [[item itemIdentifier] isEqualToString: SekhmetVetPresetToolbarItemIdentifier])
-            [(NSPopUpButton*) [item view] selectItemAtIndex: [SekhmetOrientation presetForStudyUID: [self studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: self]]];
+            {
+                NSPopUpButton *pb = (NSPopUpButton*) [item view];   // SekhVet Paket BP: Liste kann sich geaendert haben
+                [pb setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
+                [pb selectItemWithTag: [SekhmetOrientation presetForStudyUID: [self studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: self]]];
+            }
     }
 }
 
@@ -137,7 +141,7 @@ NSString* const SekhmetScreenAreaToolbarItemIdentifier = @"SekhmetScreenArea";
 
 - (IBAction) sekhmetPresetChanged:(id) sender
 {
-    [SekhmetOrientation setPresetOverride: [sender indexOfSelectedItem] forStudyUID: [self studyInstanceUID]];
+    [SekhmetOrientation setPresetOverride: [[sender selectedItem] tag] forStudyUID: [self studyInstanceUID]];
     [SekhmetOrientation applyToAllViewersOfStudyUID: [self studyInstanceUID]];
 }
 

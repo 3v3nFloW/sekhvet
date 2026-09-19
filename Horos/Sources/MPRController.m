@@ -3039,10 +3039,10 @@ static float deg2rad = M_PI/180.0;
     else if ([itemIdent isEqualToString: @"SekhmetVetPreset"]) // SekhVet: Hanging Protocol je Studie, auch im MPR
     {
         NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 0, 0, 150, 22) pullsDown: NO] autorelease];
-        [pb addItemsWithTitles: [SekhmetOrientation presetNames]];
+        [pb setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]]; // SekhVet Paket BP: tag = Protokoll-id
         [[pb cell] setControlSize: NSControlSizeSmall];
         [pb setFont: [NSFont systemFontOfSize: 11]];
-        [pb selectItemAtIndex: [SekhmetOrientation presetForStudyUID: [[self viewer] studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: [self viewer]]]];
+        [pb selectItemWithTag: [SekhmetOrientation presetForStudyUID: [[self viewer] studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: [self viewer]]]];
         [pb setTarget: self];
         [pb setAction: @selector(sekhmetPresetChanged:)];
         [toolbarItem setLabel: NSLocalizedString( @"Hanging Protocol", nil)];

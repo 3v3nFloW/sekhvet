@@ -23,6 +23,7 @@ extern NSString* const SekhmetVetPresetKey;                 // NSNumber 0..3, Vo
 extern NSString* const SekhmetVetKeywordsKey;               // Array von {keyword, preset}
 extern NSString* const SekhmetDXRulesKey;                   // Array von {match, rotation, xFlipped, yFlipped}
 extern NSString* const SekhmetVetPresetDidChangeNotification;
+extern NSString* const SekhmetVetProtocolListKey;           // SekhVet Paket BP: Array von {id, name} in Anzeige-Reihenfolge (ohne "Off")
 
 extern NSString* const SekhmetRuleTransversalDorsalUp;      // BOOL: transversal dorsal oben (sonst ventral oben)
 extern NSString* const SekhmetRuleSagittalCranialLeft;      // BOOL: sagittal kranial links (sonst kranial/proximal oben)
@@ -59,7 +60,16 @@ NSString* SekhmetVetLetter( NSString* letter);
 @interface SekhmetOrientation : NSObject
 
 + (void) registerDefaults:(NSMutableDictionary*) defaultValues;
-+ (NSArray*) presetNames;                                     // Index = Preset
+// SekhVet Paket BP: die Protokolle sind eine Liste {id, name}; die id ist stabil (1-5 = die frueheren festen Presets, neue ab 6),
+// Stichworte, Regeln, MPR-Anordnung und die Wahl je Studie haengen an der id -- Umbenennen und Umsortieren beruehrt sie nicht.
++ (NSArray*) protocolList;                                    // {id, name}, Anzeige-Reihenfolge, ohne "Off"
++ (void) setProtocolList:(NSArray*) list;                     // speichert und meldet SekhmetVetPresetDidChangeNotification
++ (NSString*) nameForPreset:(NSInteger) preset;
++ (BOOL) presetExists:(NSInteger) preset;                     // 0 (Off) gilt als vorhanden
++ (NSInteger) addProtocolNamed:(NSString*) name;              // neue id; Regeln wie Head / Spine
++ (BOOL) canRemovePreset:(NSInteger) preset;                  // die drei eingebauten (1-3) bleiben
++ (void) removeProtocol:(NSInteger) preset;
++ (NSMenu*) presetMenuIncludingOff:(BOOL) off;                // Eintraege tragen die id als tag
 + (NSString*) rulesKeyForPreset:(NSInteger) preset;
 + (NSDictionary*) rulesForPreset:(NSInteger) preset;
 + (void) setRules:(NSDictionary*) rules forPreset:(NSInteger) preset;

@@ -740,7 +740,6 @@ unsigned int minimumStep;
         dontReenterCrossReferenceLines = NO;
     }
     
-    [SekhmetSpine updateLevelAnnotationForMPRView: self]; // SekhVet: Wirbelhoehe oben links
     if( isLoading == NO) [windowController sekhmetScheduleSyncBroadcast]; // Sekhmet: Double MPR
     
     [self setNeedsDisplay: YES];
@@ -1358,6 +1357,7 @@ unsigned int minimumStep;
 			}
 		}
 		
+		[SekhmetSpine filterPointCopiesInMPRView: self]; // SekhVet Paket BT: Wirbelpunkte nur in der sagittalen Ansicht (Schalter im Spine-Panel)
 		[self setNeedsDisplay: YES];
 	}
 }

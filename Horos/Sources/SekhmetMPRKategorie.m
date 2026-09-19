@@ -109,7 +109,11 @@ BOOL SekhmetMPRSyncing = NO;
 {
     for( NSToolbarItem *item in [[[self window] toolbar] items])
         if( [[item itemIdentifier] isEqualToString: @"SekhmetVetPreset"])
-            [(NSPopUpButton*) [item view] selectItemAtIndex: [SekhmetOrientation presetForStudyUID: [[self viewer] studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: [self viewer]]]];
+            {
+                NSPopUpButton *pb = (NSPopUpButton*) [item view];   // SekhVet Paket BP: Liste kann sich geaendert haben
+                [pb setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
+                [pb selectItemWithTag: [SekhmetOrientation presetForStudyUID: [[self viewer] studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: [self viewer]]]];
+            }
 }
 
 - (void) sekhmetPresetDidChange:(NSNotification*) n
@@ -120,7 +124,7 @@ BOOL SekhmetMPRSyncing = NO;
 - (IBAction) sekhmetPresetChanged:(id) sender
 {
     NSString *uid = [[self viewer] studyInstanceUID];
-    [SekhmetOrientation setPresetOverride: [sender indexOfSelectedItem] forStudyUID: uid];
+    [SekhmetOrientation setPresetOverride: [[sender selectedItem] tag] forStudyUID: uid];
     [SekhmetOrientation applyToAllViewersOfStudyUID: uid];   // 2D-Viewer und alle MPR-Fenster der Studie, inkl. diesem
 }
 

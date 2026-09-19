@@ -1,6 +1,6 @@
 # SekhVet — Anleitung (Deutsch)
 
-Version 1.0 beta, Build 107 · Stand 18.09.2026
+Version 1.0 beta, Build 110 · Stand 19.09.2026
 
 > **SekhVet ist ein veterinärmedizinischer DICOM-Viewer und kein zertifiziertes Medizinprodukt.**
 > Es ist weder FDA-cleared noch CE-gekennzeichnet und hat keine formale Validierung durchlaufen.
@@ -99,28 +99,65 @@ und startet SekhVet neu.
 
 ### 5.2 Hanging Protocol (Vet Tools › Hanging Protocol…)
 
-Hängt Serien veterinär richtig auf: Drehung und Spiegelung nach Regeln je Preset. Es ist eine
-reine Anzeigetransformation; die Bilddaten werden nicht verändert.
+Ein Hanging-Protokoll legt fest, **wie eine Serie auf dem Bildschirm gedreht wird**: welche
+anatomische Richtung oben und welche links steht — in 2D-Fenstern und in den drei Ebenen des
+3D-MPR. Es ist eine reine Anzeigetransformation (Drehung und Spiegelung), die Bilddaten werden
+nie verändert. Welche Serien aufgehen und in welchem Raster, regeln dagegen die
+Öffnungsprotokolle (5.3).
 
-- **Presets:** Off · Head / Spine · Limbs · Custom. Vorgabe im Panel, Umschalten je Studie über
-  das Popup in der Viewer-Toolbar.
-- **Regeln je Preset** (einzeln schaltbar):
-  „Sagittal: cranial left", „Transverse: dorsal up", „Dorsal plane: cranial up",
-  „Patient left on the right side of the image".
-- **Keywords:** Tabelle „study/series description contains … → preset". Ein Treffer überstimmt
-  die Vorgabe. Beispiel: „Ellbogen", „Schulter", „Karpus" → Limbs.
-- **Röntgen (DX/CR):** Regel je Quelle (Station/Modalität → Drehung, Flip). Damit hängen Aufnahmen
-  eines Geräts, das „immer falsch" liefert, ab dem ersten Öffnen richtig.
-- **Apply Hanging Protocol to Open Viewers** wendet das Preset auf alle offenen Fenster an.
-- **Take from screen** übernimmt die Lage der offenen Fenster in das gewählte Protokoll.
-- Gilt auch im **3D-MPR**: die drei Ebenen werden so gedreht, dass die Buchstaben stimmen
-  (sagittal Cr links, transversal D oben, dorsal Cr oben), auch wenn die Ebenen vorher schräg
-  standen. Popup in der MPR-Toolbar. Die zuletzt gerade gerichtete Lage einer Serie wird je
-  Preset gemerkt und beim nächsten Öffnen wiederhergestellt.
-- Localizer und schräge Serien werden markiert, nicht gedreht.
-- Fensterung wird hier nicht angefasst (dafür 5.4).
+**Die Protokolle.** Mitgeliefert sind *Head / Spine*, *Hindlimbs*, *Forelimbs*, *Custom 1* und
+*Custom 2*, dazu **Off**. Mit Off verhält sich SekhVet wie Horos und stellt die zuletzt
+gespeicherte Ausrichtung wieder her. Die Liste links im Fenster gehört Ihnen:
 
-Bei Preset **Off** verhält sich SekhVet wie Horos und nimmt die zuletzt gespeicherte Lage.
+| Sie möchten … | So geht es |
+|---|---|
+| ein Protokoll anlegen | **+** unter der Liste, Namen eintippen. Es beginnt mit den Regeln von Head / Spine. |
+| ein Protokoll umbenennen | Doppelklick auf den Namen. |
+| die Reihenfolge ändern | Zeile ziehen. Die Popups in den Werkzeugleisten von Viewer und MPR folgen dieser Reihenfolge. |
+| ein Protokoll löschen | markieren, **−**. Seine Regeln, MPR-Anordnung und Stichwörter gehen mit; Studien, die es benutzt haben, fallen auf Stichwort oder Vorgabe zurück. Die drei eingebauten (Head / Spine, Hindlimbs, Forelimbs) lassen sich umbenennen und verschieben, aber nicht löschen. |
+
+Umbenennen und Umsortieren macht nichts kaputt: Stichwörter, Regeln, MPR-Anordnung und die je
+Studie gemerkte Wahl hängen am Protokoll selbst, nicht an seinem Namen oder Platz. Das Fenster
+ist in der Grösse veränderbar und merkt sich seine Grösse.
+
+**Regeln des markierten Protokolls** (rechte Seite; zuerst ein Protokoll markieren):
+
+| Regel | an | aus |
+|---|---|---|
+| Transverse: dorsal up | dorsal oben | ventral oben |
+| Sagittal: cranial left | kranial links, dorsal oben | kranial/proximal oben (Gliedmassen) |
+| Dorsal plane: cranial up | kranial oben | kranial links |
+| Patient left on the right side of the image | radiologische Konvention | links ist links |
+| Limb: proximal = caudal (forelimb) | nach vorn gestreckte Vordergliedmasse: kaudal (= proximal) oben | — |
+
+**Welches Protokoll eine Studie bekommt**, in dieser Reihenfolge:
+
+1. was Sie für diese Studie im **Popup „Hanging Protocol“** der Viewer- oder MPR-Werkzeugleiste
+   gewählt haben (bleibt je Studie gemerkt, auch nach einem Neustart);
+2. das erste **Stichwort**, das in Studien- oder Serienbeschreibung vorkommt (Tabelle
+   „Keywords“: Text → Protokoll; z. B. „Ellbogen“, „Schulter“, „Karpus“ → Forelimbs);
+3. das **Vorgabe-Protokoll** oben im Fenster.
+
+**3D-MPR.** Die drei Ebenen werden so gedreht, dass die Randbuchstaben stimmen (bei Head /
+Spine: sagittal Cr links, transversal D oben, dorsal Cr oben), auch wenn die Ebenen vorher
+schräg standen. Um festzulegen, *welche Ebene in welcher der drei Ansichten liegt*: ein
+MPR-Fenster so anordnen wie gewünscht, das Protokoll in der Liste markieren, **Take from
+screen** drücken. Jedes MPR-Fenster, das mit diesem Protokoll aufgeht oder darauf umgeschaltet
+wird, ordnet sich danach so an. **Standard layout** nimmt die Anordnung wieder weg. Die zuletzt
+geradegestellte Lage einer Serie wird je Protokoll gemerkt.
+
+**Röntgen (DX/CR)** hat keine Ebenen und bekommt stattdessen eine Regel je Quelle: Text im
+StationName oder in der Modalität → Drehung und Spiegelung. Bilder eines Geräts, das „immer
+falsch ankommt“, hängen damit vom ersten Öffnen an richtig.
+
+**Apply to open viewers** (Knopf, und Vet Tools › Apply Hanging Protocol to Open Viewers)
+wendet die aktuellen Einstellungen auf alle offenen Fenster an. Localizer und schräge Serien
+werden gekennzeichnet, nicht gedreht. Die Fensterung bleibt unberührt (siehe 5.4).
+
+**Zwei MPR-Fenster nebeneinander.** Mit „Tile 3D windows automatically when opened“ (Vet Tools ›
+Display) stehen die MPR-Fenster in der Reihenfolge ihrer 2D-Quellserien: das MPR der linken
+Serie steht links, auch wenn Sie ein Fenster vorher verschoben haben. Ohne die Option
+platzieren Sie MPR-Fenster selbst; ein MPR öffnet dann über seinem eigenen 2D-Fenster.
 
 ### 5.3 Öffnungsprotokolle (Vet Tools › Opening Protocols (which series open)…)
 
@@ -155,20 +192,67 @@ die Presets in der alphabetischen Reihenfolge der Tabelle an.
 
 ### 5.5 Spine Labeling (Vet Tools › Spine Labeling…)
 
-Wirbel per Klick zählen, in CT-MPR und MRT-Stapeln.
+Wirbel per Klick zählen, im CT (2D oder MPR) und im MRT. Nicht für Röntgenbilder gedacht.
 
-1. Panel öffnen: Tierart wählen (**Dog / Cat 7-13-7-3**, **Rabbit 7-12-7-4**,
-   **Horse 7-18-6-5** = C-T-L-S), Startlabel (z. B. L1) und Zählrichtung.
-2. Mit dem Point-Werkzeug klicken: jeder Klick setzt das nächste Label, Übergänge
-   C7→T1→…→L7→S1→…→Cd1 laufen automatisch.
-3. **Alt-Klick** setzt eine Bandscheibe („L1-L2").
-4. **⌫** nimmt das letzte Label zurück, **Esc** beendet.
-5. **Umbenennen mit Neuzählung:** Doppelklick auf einen Punkt, Name ändern (z. B. L1 → T13);
-   alle folgenden Labels der Serie werden neu gezählt.
+**Wohin klicken — das ist wichtig.** Setzen Sie jeden Punkt **in die Mitte des Wirbelkörpers**,
+auf einem sagittalen Bild nahe der Medianen. Aus diesen Punkten leitet SekhVet die Höhe jeder
+anderen Schicht ab: auf der Strecke von einer Wirbelkörpermitte zur nächsten gehören die ersten
+40 % zum ersten Wirbel, die letzten 40 % zum nächsten, und die **mittleren 20 % werden als
+Zwischenwirbelspalt angezeigt** („L3-L4“). Gleichmässig mittig gesetzte Punkte ergeben
+Bandscheiben-Labels, die auf der Bandscheibe liegen; ein Punkt an der Endplatte verschiebt die
+Bandscheibenzone um genau diesen Betrag. Vor dem ersten und nach dem letzten beschrifteten
+Wirbel wird die Höhe noch einen halben Wirbelabstand weit angezeigt, danach nichts.
+Sonderfälle: C1 — Mitte des Atlasrings auf Höhe des Dens; Kreuzbein — ein Punkt je Segment oder
+nur S1; Blockwirbel oder Übergangswirbel — siehe „Formula“ unten.
 
-Labels sind normale Punkt-ROIs, in der Datenbank gespeichert und in allen Ebenen des MPR
-sichtbar. Im Transversalbild steht oben links „▶ Spine level: L3" für den nächstliegenden
-Wirbel. Toolbar-Knopf „Spine Labeling" in 2D- und MPR-Fenstern.
+**Schritt für Schritt**
+
+1. **Spine Labeling** in der Werkzeugleiste des 2D- oder MPR-Fensters drücken (oder das Menü).
+   Das Fenster öffnet sich, das Beschriften läuft, das Punkt-Werkzeug ist gewählt.
+2. **Species** setzt die Wirbelformel (**Dog / Cat 7-13-7-3**, **Rabbit 7-12-7-4**,
+   **Horse 7-18-6-5** = C-T-L-S). **Formula:** eine Zahl ändern, wenn dieses Tier abweicht — z. B.
+   L = 6 oder 8, T = 12 oder 14 bei einem Übergangswirbel. Die geänderte Formel wird mit der
+   Studie gespeichert; Zählen und Neuzählen folgen ihr (bei L = 6 folgt S1 auf L6).
+3. **Start at:** der Wirbel, den Sie zuerst anklicken, z. B. L1 — einen wählen, den Sie sicher
+   bestimmen können (letzte Rippe → T13, Kreuzbein → L7, C2).
+4. Den ersten Wirbel anklicken, dann den Nachbarn. Mit **Direction: Automatic** nimmt SekhVet
+   die Zählrichtung aus diesen ersten zwei Klicks (Richtung Schwanz = aufwärts zählen, Richtung
+   Kopf = abwärts). Bei ungewöhnlicher Lagerung die Richtung von Hand wählen. Das nächste Label
+   steht im Fenster und oben im aktiven Bild („Spine ▸ next: L3“).
+5. Weiterklicken; die Übergänge C7→T1, T13→L1, L7→S1, S3→Cd1 kommen von selbst.
+6. **Bandscheiben:** ein Klick **zwischen** zwei beschriftete Nachbarn wird zu „L3-L4“, ohne dass
+   das Zählwerk weiterläuft. **Alt-Klick** erzwingt während des Zählens eine Bandscheibe
+   zwischen dem letzten und dem nächsten Wirbel.
+7. **⌫** nimmt das letzte Label zurück, **Esc** beendet das Beschriften.
+
+**Was Sie danach sehen**
+
+- **Transversale Bilder** — jede Serie der Studie mit demselben Frame of Reference und die
+  transversale MPR-Ansicht — zeigen die Höhe gross und grün oben im Bild: „L3“, zwischen zwei
+  Wirbeln „L3-L4“. Das läuft beim Scrollen mit und braucht keine Punkte in dieser Serie.
+- Die **dorsale MPR-Ansicht** zeigt genauso die Höhe an der Stelle des Fadenkreuzes.
+- Die **sagittale Ansicht** zeigt die Punkte mit Namen; in anderen sagittalen Serien der Studie
+  erscheinen sie als kleine Kreise mit Hilfslinie.
+- **Show the label points** (Haken im Fenster) blendet alle Punkte auf einmal aus und ein; die
+  Höhenanzeige bleibt. Beim Start des Beschriftens werden die Punkte wieder eingeblendet.
+- **… also in the transverse and dorsal views** ist in der Vorgabe aus, damit die Punkte diese
+  Ansichten nicht stören. Einschalten, wenn Sie einen Punkt dort sehen oder **verschieben**
+  möchten, z. B. um ihn links–rechts zu zentrieren.
+
+**Korrigieren**
+
+- Punkt **ziehen** = verschieben; die Höhenanzeige folgt.
+- **Umbenennen mit Neuzählung:** Doppelklick auf ein Label in der Liste des Fensters (oder auf
+  den Punkt selbst) und den richtigen Namen eintippen, z. B. L1 → T13. Alle Labels kaudal davon
+  werden neu gezählt, Bandscheiben eingeschlossen. So korrigiert man einen Zählfehler am Anfang.
+- Die **Liste** im Fenster zeigt alle Labels der Studie. Ein Klick springt in allen 2D-Fenstern
+  der Studie auf diese Schicht. **Delete label** löscht eines, **Delete all** alle Labels der
+  Studie. Umbenennen und Löschen setzen voraus, dass die Serie offen ist, in der das Label
+  gesetzt wurde.
+
+Labels sind gewöhnliche Punkt-ROIs, die die Datenbank wie in Horos mit der Serie speichert.
+Zusätzlich hält SekhVet die 3D-Lagen je Studie im Ordner `SPINE` des Datenordners; daraus
+zeigen die anderen Serien die Höhe.
 
 ### 5.6 Norberg-Winkel (Vet Tools › Norberg Angle (Hip Dysplasia) — Place / Reset)
 
@@ -274,8 +358,15 @@ DICOMweb, das gegen Orthanc, dcm4chee und andere Server läuft.
    Yesterday, Last 3 days, Last 4 days, Last week, Last month). Ergebnis mit Serien, Bildzahl,
    Uhrzeit und Institution. Eine Kugel vor dem Namen zeigt, ob die Studie schon ganz (grün) oder
    teilweise (orange) in der lokalen Datenbank liegt, wie beim Horos-Q/R.
-3. **Abrufen:** markierte Studien per WADO-RS laden; Bilder landen in der Datenbank.
-   Grosse Studien werden gestreamt, nicht komplett im Speicher gehalten.
+3. **Retrieve:** markierte Studien oder einzelne Serien per WADO-RS laden; die Bilder gehen in
+   die Datenbank. Grosse Studien werden gestreamt, nicht ganz im Speicher gehalten. Liegt von
+   der Auswahl schon etwas hier (grüne oder orange Kugel), fragt SekhVet: **Only missing parts**
+   (überspringt alles Grüne, holt nur unvollständige Serien), **Download everything again** oder
+   Abbrechen. Alt-Klick auf Retrieve lädt alles ohne Frage.
+   Strukturierte Berichte (Dosisbericht, Untersuchungsbericht) werden als eigene Serie
+   importiert und öffnen als gesetzte Seite. Berichtsarten, die die Datenbank nicht aufnimmt
+   (z. B. Key Object Selection), tragen „report — not in the database“ und halten eine Studie
+   nicht davon ab, grün zu werden.
 4. **Senden:** **Vet Tools › Send Selected Studies via STOW-RS…** oder der Knopf im Fenster
    schickt die in der Datenbank markierten Studien an den Knoten.
 
@@ -358,12 +449,12 @@ Alle SekhVet-Fenster öffnen sich innerhalb der Viewer-Fläche. Alle Toolbar-Kn�
 lassen sich über **Customize Toolbar** verschieben oder entfernen; neue Knöpfe erscheinen einmal
 automatisch, entfernt man sie, bleiben sie weg.
 
-## 7. Beta-Stand, Grenzen und bekannte Einschränkungen (Build 107)
+## 7. Beta-Stand, Grenzen und bekannte Einschränkungen (Build 110)
 
 **Experimentell in dieser Beta.** Diese Funktionen laufen, sind aber erst an wenigen Geräten
 geprüft oder werden noch nachjustiert. Mit kritischem Blick benutzen und Auffälligkeiten melden:
 
-- **Spine Labeling** (5.5): die Zähllogik wird noch angepasst.
+- **Spine Labeling** (5.5): in Build 108–110 neu gebaut (Höhenanzeige in allen Serien, Bandscheiben-Labels, Formel je Studie); Zähl- und Höhenlogik headless geprüft, erste Gerätetests 19.09.2026; die Darstellung am Bildschirm ist erst auf einem Mac geprüft.
 - **Hanging Protocol im 3D-MPR** (5.2, MPR-Teil) und **Öffnungsprotokolle** (5.3) samt
   Röntgen-Zweiebenen-Hängung: im September 2026 neu gebaut, headless geprüft, Prüfung am Gerät
   läuft noch.

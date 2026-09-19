@@ -11,6 +11,7 @@
 #import "DicomSeries.h"
 #import "DicomImage.h"
 #import "DicomFile.h"
+#import "DCMObject.h"             // SekhVet Paket BQ: SeriesInstanceUID aus dem Dateikopf
 #import "PieChartImage.h"     // Paket AO: dieselbe Kugel wie Horos' Q/R-Fenster
 #import "ImageAndTextCell.h"  // Paket AO: Kugel links vom Namen
 #import <Security/Security.h>
@@ -36,6 +37,8 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 - (NSString*) localTextForStudy:(NSDictionary*) r;                                  // Paket AM
 - (NSString*) localTextForSeries:(NSDictionary*) s inStudy:(NSDictionary*) r;       // Paket AM
 - (void) loadSeriesForStudy:(NSMutableDictionary*) study;                           // Paket AM
+- (NSArray*) missingSeriesJobsForStudy:(NSDictionary*) study;                      // Paket BS
+- (void) retrieveMissingAfterLoad:(NSDictionary*) study;                            // Paket BS
 #if SEKHVET_TESTHAKEN
 - (void) debugLocalListLog;              // Paket AM
 - (void) debugLocalSeriesLog;           // Paket AM
@@ -526,6 +529,26 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 // Horos teilt eine PACS-Serie beim Import mitunter auf mehrere Serien auf (Doppelpositionen, 4D) — die Bildzahlen
 // gleicher UID werden darum summiert. In Horos traegt seriesDICOMUID die echte SeriesInstanceUID
 // (seriesInstanceUID bekommt bei der Trennung Zusaetze), siehe BrowserController.m:7675.
+// SekhVet Paket BQ: Horos' Localizer-Sammelserie verliert die SeriesInstanceUID ihrer Bilder; im Dateikopf steht sie noch.
+// Wenige Bilder je Studie, Ergebnis je Pfad gemerkt -- so bekommen Topogramme eine echte Kugel statt "? localizer".
++ (NSString*) seriesUIDOfFile:(NSString*) path
+{
+    static NSMutableDictionary *cache = nil;
+    if( cache == nil) cache = [[NSMutableDictionary alloc] init];
+    if( path.length == 0) return nil;
+    NSString *uid = [cache objectForKey: path];
+    if( uid) return uid.length ? uid : nil;
+    @try
+    {
+        DCMObject *o = [DCMObject objectWithContentsOfFile: path decodingPixelData: NO];
+        uid = [o attributeValueWithName: @"SeriesInstanceUID"];
+    }
+    @catch (NSException *e) { uid = nil; }
+    if( cache.count > 5000) [cache removeAllObjects];
+    [cache setObject: uid.length ? uid : @"" forKey: path];
+    return uid.length ? uid : nil;
+}
+
 + (NSDictionary*) localStatusForStudyUID:(NSString*) studyUID
 {
     NSMutableDictionary *series = [NSMutableDictionary dictionary];
@@ -552,7 +575,19 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
                     // Horos fasst Localizer/Topogramme mehrerer Serien beim Import zu EINER Serie zusammen und gibt ihr
                     // eine eigene UID ("LOCALIZER" + StudyInstanceUID). Deren Bilder lassen sich keiner PACS-Serie mehr
                     // zuordnen -- solche Serien zeigen darum "?" statt "fehlt" (13.09.2026 an einer CT-Studie gesehen).
-                    if( [uid hasPrefix: @"LOCALIZER"]) { localizer += n; continue; }
+                    if( [uid hasPrefix: @"LOCALIZER"])
+                    {
+                        int resolved = 0;   // SekhVet Paket BQ: je Bild die echte Serie aus dem Dateikopf
+                        for( DicomImage *im in [[se valueForKey: @"images"] allObjects])
+                        {
+                            NSString *real = [self seriesUIDOfFile: [im valueForKey: @"completePath"]];
+                            if( real.length == 0) continue;
+                            [series setObject: [NSNumber numberWithInt: 1 + [[series objectForKey: real] intValue]] forKey: real];
+                            resolved++;
+                        }
+                        localizer += MAX( 0, n - resolved);   // nur der nicht lesbare Rest bleibt "?"
+                        continue;
+                    }
                     [series setObject: [NSNumber numberWithInt: n + [[series objectForKey: uid] intValue]] forKey: uid];
                 }
             }
@@ -563,11 +598,38 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
             [NSNumber numberWithInt: localizer], @"localizer", nil];
 }
 
-- (NSString*) localTextForStudy:(NSDictionary*) r
++ (BOOL) isReportModality:(NSString*) mod
+{
+    // exakter Vergleich, kein Teilstring: "RTSTRUCT" enthaelt "CT"
+    return mod.length && [[NSArray arrayWithObjects: @"SR", @"PR", @"KO", @"DOC", @"SEG", @"RTSTRUCT", nil] containsObject: mod];
+}
+
+// SekhVet Paket BS: Soll und Ist einer Studie. Ist die Serienliste geladen, zaehlen nur Bildserien -- Berichte (SR, PR, KO ...)
+// legt Horos nicht als Serie an; mit ihnen im Soll blieb eine vollstaendig geholte Studie fuer immer orange (gesehen 19.09.2026: 3391 von 3393).
+- (void) countsForStudy:(NSDictionary*) r have:(int*) have want:(int*) want
 {
     NSDictionary *local = [r objectForKey: @"local"];
-    int limages = [[local objectForKey: @"images"] intValue];
-    int rimages = [[r objectForKey: @"Images"] intValue];
+    *have = [[local objectForKey: @"images"] intValue];
+    *want = [[r objectForKey: @"Images"] intValue];
+    NSArray *kids = [r objectForKey: @"children"];
+    if( [[r objectForKey: @"loaded"] boolValue] == NO || kids.count == 0) return;
+    int h = 0, w = 0;
+    for( NSDictionary *s in kids)
+    {
+        NSNumber *n = [[local objectForKey: @"series"] objectForKey: [s objectForKey: @"seriesUID"]];
+        if( n == nil && [SekhmetDICOMweb isReportModality: [s objectForKey: @"Modality"]]) continue;
+        int sw = [[s objectForKey: @"Images"] intValue];
+        w += sw;
+        h += sw > 0 ? MIN( [n intValue], sw) : [n intValue];
+    }
+    h += [[local objectForKey: @"localizer"] intValue];   // nicht zuordenbarer Rest der Sammelserie
+    *have = MIN( h, w); *want = w;
+}
+
+- (NSString*) localTextForStudy:(NSDictionary*) r
+{
+    int limages, rimages;
+    [self countsForStudy: r have: &limages want: &rimages];
     if( limages == 0) return @"";
     if( rimages == 0 || limages >= rimages) return NSLocalizedString( @"✓ complete", nil);
     // Serienzahlen sind nicht vergleichbar (Horos buendelt Localizer, trennt Doppelpositionen) -- Bilder sind das Mass
@@ -584,7 +646,8 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
         int bundle = [[[r objectForKey: @"local"] objectForKey: @"localizer"] intValue];
         NSString *mod = [s objectForKey: @"Modality"];
         // exakter Vergleich, kein Teilstring: "RTSTRUCT" enthaelt "CT"
-        BOOL report = mod.length && [[NSArray arrayWithObjects: @"SR", @"PR", @"KO", @"DOC", @"SEG", @"RTSTRUCT", nil] containsObject: mod];
+        BOOL report = [SekhmetDICOMweb isReportModality: mod];
+        if( report) return NSLocalizedString( @"report — not in the database", nil);   // SekhVet Paket BS
         if( bundle > 0 && report == NO && [[s objectForKey: @"Images"] intValue] <= bundle) return NSLocalizedString( @"? localizer", nil);
         return @"";
     }
@@ -597,8 +660,8 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 // dazwischen = orange teilgefuellt, 0.0 = leerer Kreis, nil = nicht beurteilbar (keine Kugel).
 - (NSNumber*) localFractionForStudy:(NSDictionary*) r
 {
-    int limages = [[[r objectForKey: @"local"] objectForKey: @"images"] intValue];
-    int rimages = [[r objectForKey: @"Images"] intValue];
+    int limages, rimages;
+    [self countsForStudy: r have: &limages want: &rimages];
     if( limages <= 0) return [NSNumber numberWithFloat: 0.0];
     if( rimages <= 0) return [NSNumber numberWithFloat: 1.0];   // PACS nennt keine Bildzahl -> was hier liegt, gilt als alles
     float f = (float) limages / (float) rimages;
@@ -612,6 +675,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     {
         // "? localizer": die Bilder stecken in Horos' Sammelserie, eine Zuordnung ist unmoeglich -> keine Kugel
         if( [[self localTextForSeries: s inStudy: r] isEqualToString: NSLocalizedString( @"? localizer", nil)]) return nil;
+        if( [SekhmetDICOMweb isReportModality: [s objectForKey: @"Modality"]]) return nil;   // SekhVet Paket BS: Bericht, keine Kugel
         return [NSNumber numberWithFloat: 0.0];
     }
     int want = [[s objectForKey: @"Images"] intValue];
@@ -651,15 +715,25 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
 - (void) annotateLocalStatus
 {
+    int quiet = 0;
     for( NSMutableDictionary *r in results)
     {
         [r setObject: [SekhmetDICOMweb localStatusForStudyUID: [r objectForKey: @"uid"]] forKey: @"local"];
         [r setObject: [self localTextForStudy: r] forKey: @"Local"];
         [r setObject: [self localFractionForStudy: r] forKey: @"localFraction"];   // Paket AO
-        [r setObject: [self localTipWithHave: [[[r objectForKey: @"local"] objectForKey: @"images"] intValue]
-                                        want: [[r objectForKey: @"Images"] intValue]] forKey: @"localTip"];
+        int have, want;
+        [self countsForStudy: r have: &have want: &want];
+        [r setObject: [self localTipWithHave: have want: want] forKey: @"localTip"];
         for( NSMutableDictionary *s in [r objectForKey: @"children"])
             [self annotateSeries: s inStudy: r];
+        // SekhVet Paket BS: fast vollstaendig, Serienliste unbekannt -> still nachladen; vielleicht fehlen nur Berichte
+        if( have > 0 && have < want && [[r objectForKey: @"loaded"] boolValue] == NO && [[r objectForKey: @"loading"] boolValue] == NO && quiet < 10)
+        {
+            if( quietLoads == nil) quietLoads = [[NSMutableSet alloc] init];
+            [quietLoads addObject: [r objectForKey: @"uid"]];
+            [self loadSeriesForStudy: r];
+            quiet++;
+        }
     }
 }
 
@@ -715,9 +789,17 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
         }];
         [study setObject: kids forKey: @"children"];        // Schluessel besteht bereits, nur der Wert wechselt
         [study setObject: [NSNumber numberWithBool: YES] forKey: @"loaded"];
+        // SekhVet Paket BS: mit der Serienliste aendert sich das Soll der Studienzeile (Berichte fallen heraus)
+        [study setObject: [self localTextForStudy: study] forKey: @"Local"];
+        [study setObject: [self localFractionForStudy: study] forKey: @"localFraction"];
+        int have, want; [self countsForStudy: study have: &have want: &want];
+        [study setObject: [self localTipWithHave: have want: want] forKey: @"localTip"];
+        BOOL wasQuiet = [quietLoads containsObject: [study objectForKey: @"uid"]];
+        [quietLoads removeObject: [study objectForKey: @"uid"]];
         [resultTable reloadItem: study reloadChildren: YES];
-        [resultTable expandItem: study];
+        if( wasQuiet == NO) [resultTable expandItem: study];
         [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"%d series", nil), (int) kids.count]];
+        [self retrieveMissingAfterLoad: study];   // SekhVet Paket BS
     }];
     [task resume];
 }
@@ -732,25 +814,105 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
     // Paket AM: markiert sein koennen Studien- und Serienzeilen. Auftrag ist "<StudyUID>" oder "<StudyUID>|<SeriesUID>";
     // ist die ganze Studie markiert, fallen ihre einzeln markierten Serien weg.
-    NSMutableArray *queue = [NSMutableArray array];
+    // SekhVet Paket BS: liegt von der Auswahl schon etwas hier (gruene oder orange Kugel), fragt ein Dialog:
+    // nur das Fehlende holen (Vorgabe), alles noch einmal, oder abbrechen. Alt-Klick auf Retrieve = alles, ohne Frage.
+    [self annotateLocalStatus];
+    NSMutableArray *items = [NSMutableArray array];
     NSMutableSet *wholeStudies = [NSMutableSet set];
     [sel enumerateIndexesUsingBlock: ^(NSUInteger idx, BOOL *stop) {
         id item = [resultTable itemAtRow: idx];
+        if( item == nil) return;
+        [items addObject: item];
         if( [item objectForKey: @"seriesUID"] == nil && [item objectForKey: @"uid"]) [wholeStudies addObject: [item objectForKey: @"uid"]];
     }];
-    [sel enumerateIndexesUsingBlock: ^(NSUInteger idx, BOOL *stop) {
-        id item = [resultTable itemAtRow: idx];
+    int here = 0;
+    for( NSDictionary *item in items)
+    {
+        id f = [item objectForKey: @"localFraction"];
+        if( [f isKindOfClass: [NSNumber class]] && [f floatValue] > 0) here++;
+    }
+    BOOL onlyMissing = NO;
+    if( here > 0 && ([[NSApp currentEvent] modifierFlags] & NSEventModifierFlagOption) == 0)
+    {
+        NSAlert *a = [[[NSAlert alloc] init] autorelease];
+        [a setMessageText: here == 1 && items.count == 1 ? NSLocalizedString( @"This selection is already in the local database, completely or in part.", nil)
+                                                         : [NSString stringWithFormat: NSLocalizedString( @"%d of the %d selected items are already in the local database, completely or in part.", nil), here, (int) items.count]];
+        [a setInformativeText: NSLocalizedString( @"“Only missing parts” skips everything marked green and retrieves only the series that are not complete here.", nil)];
+        [a addButtonWithTitle: NSLocalizedString( @"Only missing parts", nil)];
+        [a addButtonWithTitle: NSLocalizedString( @"Download everything again", nil)];
+        [a addButtonWithTitle: NSLocalizedString( @"Cancel", nil)];
+        NSModalResponse r = [a runModal];
+        if( r == NSAlertThirdButtonReturn) return;
+        onlyMissing = (r == NSAlertFirstButtonReturn);
+    }
+
+    NSMutableArray *queue = [NSMutableArray array];
+    int waiting = 0;
+    for( NSMutableDictionary *item in items)
+    {
         NSString *seriesUID = [item objectForKey: @"seriesUID"];
-        NSString *job = nil;
-        if( seriesUID == nil) job = [item objectForKey: @"uid"];
-        else if( [wholeStudies containsObject: [item objectForKey: @"studyUID"]] == NO)
-            job = [NSString stringWithFormat: @"%@|%@", [item objectForKey: @"studyUID"], seriesUID];
-        if( job.length && [queue containsObject: job] == NO) [queue addObject: job];
-    }];
-    if( queue.count == 0) { [self setStatus: NSLocalizedString( @"No study selected", nil)]; return; }
+        id f = [item objectForKey: @"localFraction"];
+        float frac = [f isKindOfClass: [NSNumber class]] ? [f floatValue] : 0;
+        NSMutableArray *jobs = [NSMutableArray array];
+        if( seriesUID)
+        {
+            if( [wholeStudies containsObject: [item objectForKey: @"studyUID"]]) continue;
+            if( onlyMissing && frac >= 1.0f) continue;
+            [jobs addObject: [NSString stringWithFormat: @"%@|%@", [item objectForKey: @"studyUID"], seriesUID]];
+        }
+        else if( [item objectForKey: @"uid"])
+        {
+            if( onlyMissing && frac >= 1.0f) continue;
+            if( onlyMissing && frac > 0)
+            {
+                if( [[item objectForKey: @"loaded"] boolValue]) [jobs addObjectsFromArray: [self missingSeriesJobsForStudy: item]];
+                else
+                {
+                    // Serienliste fehlt noch: erst holen, die fehlenden Serien reiht loadSeriesForStudy: danach ein
+                    if( retrieveAfterLoad == nil) retrieveAfterLoad = [[NSMutableSet alloc] init];
+                    [retrieveAfterLoad addObject: [item objectForKey: @"uid"]];
+                    [self loadSeriesForStudy: item];
+                    waiting++;
+                }
+            }
+            else [jobs addObject: [item objectForKey: @"uid"]];
+        }
+        for( NSString *job in jobs) if( [queue containsObject: job] == NO) [queue addObject: job];
+    }
+    if( queue.count == 0)
+    {
+        if( waiting == 0) [self setStatus: NSLocalizedString( @"Everything selected is already here — nothing to retrieve", nil)];
+        return;
+    }
     [[NSUserDefaults standardUserDefaults] setObject: queue forKey: @"SekhmetDICOMwebRetrieveQueue"];
     filesWritten = 0;
     [self retrieveNextStudy];
+}
+
+// SekhVet Paket BS: Auftraege "<StudyUID>|<SeriesUID>" fuer alle Serien einer aufgeklappten Studie, die hier nicht vollstaendig liegen
+- (NSArray*) missingSeriesJobsForStudy:(NSDictionary*) study
+{
+    NSMutableArray *jobs = [NSMutableArray array];
+    for( NSDictionary *k in [study objectForKey: @"children"])
+    {
+        id kf = [k objectForKey: @"localFraction"];
+        if( [kf isKindOfClass: [NSNumber class]] && [kf floatValue] >= 1.0f) continue;
+        if( [k objectForKey: @"seriesUID"]) [jobs addObject: [NSString stringWithFormat: @"%@|%@", [study objectForKey: @"uid"], [k objectForKey: @"seriesUID"]]];
+    }
+    return jobs;
+}
+
+- (void) retrieveMissingAfterLoad:(NSDictionary*) study
+{
+    NSString *uid = [study objectForKey: @"uid"];
+    if( uid == nil || [retrieveAfterLoad containsObject: uid] == NO) return;
+    [retrieveAfterLoad removeObject: uid];
+    NSArray *jobs = [self missingSeriesJobsForStudy: study];
+    if( jobs.count == 0) { [self setStatus: NSLocalizedString( @"Everything selected is already here — nothing to retrieve", nil)]; return; }
+    NSMutableArray *queue = [NSMutableArray arrayWithArray: [[NSUserDefaults standardUserDefaults] arrayForKey: @"SekhmetDICOMwebRetrieveQueue"]];
+    for( NSString *job in jobs) if( [queue containsObject: job] == NO) [queue addObject: job];
+    [[NSUserDefaults standardUserDefaults] setObject: queue forKey: @"SekhmetDICOMwebRetrieveQueue"];
+    if( retrieveStudyUID == nil) { filesWritten = 0; [self retrieveNextStudy]; }   // laeuft schon ein Abruf, nimmt er die Auftraege am Ende mit
 }
 
 - (void) retrieveNextStudy

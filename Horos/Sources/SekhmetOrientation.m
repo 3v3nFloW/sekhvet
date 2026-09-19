@@ -25,6 +25,7 @@ NSString* const SekhmetVetPresetKey = @"SekhmetVetOrientationPreset";
 NSString* const SekhmetVetKeywordsKey = @"SekhmetVetOrientationKeywords";
 NSString* const SekhmetDXRulesKey = @"SekhmetDXRules";
 NSString* const SekhmetVetPresetDidChangeNotification = @"SekhmetVetPresetDidChangeNotification";
+NSString* const SekhmetVetProtocolListKey = @"SekhmetVetProtocolList";
 
 NSString* const SekhmetRuleTransversalDorsalUp = @"transversalDorsalUp";
 NSString* const SekhmetRuleSagittalCranialLeft = @"sagittalCranialLeft";
@@ -132,16 +133,109 @@ NSString* SekhmetVetLetter( NSString* letter)
     [defaultValues setObject: [NSArray array] forKey: SekhmetDXRulesKey];
 }
 
-+ (NSArray*) presetNames
+#pragma mark - SekhVet Paket BP: Protokoll-Liste
+
++ (NSArray*) defaultProtocolList
 {
-    // Index = Preset (SekhmetPreset…); SekhVet Paket AF: Forelimbs/Hindlimbs getrennt, zwei programmierbare Protokolle
-    return [NSArray arrayWithObjects:
-            NSLocalizedString( @"Off", nil),
-            NSLocalizedString( @"Head / Spine", nil),
-            NSLocalizedString( @"Hindlimbs", nil),
-            NSLocalizedString( @"Forelimbs", nil),
-            NSLocalizedString( @"Custom 1", nil),
-            NSLocalizedString( @"Custom 2", nil), nil];
+    NSArray *names = [NSArray arrayWithObjects: NSLocalizedString( @"Head / Spine", nil), NSLocalizedString( @"Hindlimbs", nil), NSLocalizedString( @"Forelimbs", nil),
+                      NSLocalizedString( @"Custom 1", nil), NSLocalizedString( @"Custom 2", nil), nil];
+    NSMutableArray *a = [NSMutableArray array];
+    for( NSInteger p = SekhmetPresetHeadSpine; p <= SekhmetPresetLast; p++)
+        [a addObject: [NSDictionary dictionaryWithObjectsAndKeys: [NSNumber numberWithInteger: p], @"id", [names objectAtIndex: p - 1], @"name", nil]];
+    return a;
+}
+
++ (NSArray*) protocolList
+{
+    NSArray *saved = [[NSUserDefaults standardUserDefaults] arrayForKey: SekhmetVetProtocolListKey];
+    if( saved.count == 0) return [self defaultProtocolList];
+
+    NSMutableArray *out = [NSMutableArray array];
+    NSMutableSet *seen = [NSMutableSet set];
+    for( NSDictionary *d in saved)
+    {
+        if( ![d isKindOfClass: [NSDictionary class]]) continue;
+        NSNumber *pid = [d objectForKey: @"id"];
+        NSString *name = [d objectForKey: @"name"];
+        if( ![pid isKindOfClass: [NSNumber class]] || [pid integerValue] < 1 || [seen containsObject: pid]) continue;
+        if( ![name isKindOfClass: [NSString class]] || name.length == 0) name = [NSString stringWithFormat: @"Protocol %d", [pid intValue]];
+        [seen addObject: pid];
+        [out addObject: [NSDictionary dictionaryWithObjectsAndKeys: pid, @"id", name, @"name", nil]];
+    }
+    for( NSDictionary *d in [self defaultProtocolList])   // die eingebauten duerfen nicht verloren gehen
+        if( [[d objectForKey: @"id"] integerValue] <= SekhmetPresetForelimb && ![seen containsObject: [d objectForKey: @"id"]]) [out addObject: d];
+    return out;
+}
+
++ (void) setProtocolList:(NSArray*) list
+{
+    [[NSUserDefaults standardUserDefaults] setObject: list forKey: SekhmetVetProtocolListKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName: SekhmetVetPresetDidChangeNotification object: nil];
+}
+
++ (NSString*) nameForPreset:(NSInteger) preset
+{
+    if( preset == SekhmetPresetOff) return NSLocalizedString( @"Off", nil);
+    for( NSDictionary *d in [self protocolList])
+        if( [[d objectForKey: @"id"] integerValue] == preset) return [d objectForKey: @"name"];
+    return [NSString stringWithFormat: @"Protocol %d", (int) preset];
+}
+
++ (BOOL) presetExists:(NSInteger) preset
+{
+    if( preset == SekhmetPresetOff) return YES;
+    for( NSDictionary *d in [self protocolList])
+        if( [[d objectForKey: @"id"] integerValue] == preset) return YES;
+    return NO;
+}
+
++ (NSInteger) addProtocolNamed:(NSString*) name
+{
+    NSMutableArray *list = [NSMutableArray arrayWithArray: [self protocolList]];
+    NSInteger next = SekhmetPresetLast + 1;   // ids werden nie wiederverwendet, solange ein groesseres existiert
+    for( NSDictionary *d in list) next = MAX( next, [[d objectForKey: @"id"] integerValue] + 1);
+    NSInteger stored = [[NSUserDefaults standardUserDefaults] integerForKey: @"SekhmetVetProtocolNextID"];
+    next = MAX( next, stored);
+    [[NSUserDefaults standardUserDefaults] setInteger: next + 1 forKey: @"SekhmetVetProtocolNextID"];
+    if( name.length == 0) name = [NSString stringWithFormat: NSLocalizedString( @"Custom %d", nil), (int) (next - SekhmetPresetForelimb)];
+    [list addObject: [NSDictionary dictionaryWithObjectsAndKeys: [NSNumber numberWithInteger: next], @"id", name, @"name", nil]];
+    [self setRules: [self rulesForPreset: SekhmetPresetHeadSpine] forPreset: next];
+    [self setProtocolList: list];
+    return next;
+}
+
++ (BOOL) canRemovePreset:(NSInteger) preset
+{
+    return preset > SekhmetPresetForelimb;
+}
+
++ (void) removeProtocol:(NSInteger) preset
+{
+    if( [self canRemovePreset: preset] == NO) return;
+    NSMutableArray *list = [NSMutableArray array];
+    for( NSDictionary *d in [self protocolList])
+        if( [[d objectForKey: @"id"] integerValue] != preset) [list addObject: d];
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    [ud removeObjectForKey: [self rulesKeyForPreset: preset]];
+    [self setMPRLayout: nil forPreset: preset];
+    NSMutableArray *kw = [NSMutableArray array];   // Stichworte des geloeschten Protokolls gehen mit
+    for( NSDictionary *k in [ud arrayForKey: SekhmetVetKeywordsKey])
+        if( [[k objectForKey: @"preset"] integerValue] != preset) [kw addObject: k];
+    [ud setObject: kw forKey: SekhmetVetKeywordsKey];
+    if( [ud integerForKey: SekhmetVetPresetKey] == preset) [ud setInteger: SekhmetPresetHeadSpine forKey: SekhmetVetPresetKey];
+    for( NSString *uid in [sekhmetOverrides allKeys])
+        if( [[sekhmetOverrides objectForKey: uid] integerValue] == preset) [sekhmetOverrides removeObjectForKey: uid];
+    [ud setObject: sekhmetOverrides forKey: @"SekhmetVetPresetOverrides"];
+    [self setProtocolList: list];
+}
+
++ (NSMenu*) presetMenuIncludingOff:(BOOL) off
+{
+    NSMenu *m = [[[NSMenu alloc] initWithTitle: @""] autorelease];
+    if( off) [[m addItemWithTitle: NSLocalizedString( @"Off", nil) action: nil keyEquivalent: @""] setTag: SekhmetPresetOff];
+    for( NSDictionary *d in [self protocolList])
+        [[m addItemWithTitle: [d objectForKey: @"name"] action: nil keyEquivalent: @""] setTag: [[d objectForKey: @"id"] integerValue]];
+    return m;
 }
 
 + (NSString*) rulesKeyForPreset:(NSInteger) preset
@@ -179,7 +273,7 @@ NSString* SekhmetVetLetter( NSString* letter)
 
 + (NSInteger) presetForStudyUID:(NSString*) uid description:(NSString*) description
 {
-    if( uid && [sekhmetOverrides objectForKey: uid])
+    if( uid && [sekhmetOverrides objectForKey: uid] && [self presetExists: [[sekhmetOverrides objectForKey: uid] integerValue]]) // SekhVet Paket BP
         return [[sekhmetOverrides objectForKey: uid] integerValue];
 
     if( description.length)
@@ -187,11 +281,13 @@ NSString* SekhmetVetLetter( NSString* letter)
         for( NSDictionary *k in [[NSUserDefaults standardUserDefaults] arrayForKey: SekhmetVetKeywordsKey])
         {
             NSString *keyword = [k objectForKey: @"keyword"];
-            if( keyword.length && [description rangeOfString: keyword options: NSCaseInsensitiveSearch].location != NSNotFound)
+            if( keyword.length && [description rangeOfString: keyword options: NSCaseInsensitiveSearch].location != NSNotFound
+               && [self presetExists: [[k objectForKey: @"preset"] integerValue]])
                 return [[k objectForKey: @"preset"] integerValue];
         }
     }
-    return [[NSUserDefaults standardUserDefaults] integerForKey: SekhmetVetPresetKey];
+    NSInteger def = [[NSUserDefaults standardUserDefaults] integerForKey: SekhmetVetPresetKey];
+    return [self presetExists: def] ? def : SekhmetPresetHeadSpine;
 }
 
 + (void) setPresetOverride:(NSInteger) preset forStudyUID:(NSString*) uid
@@ -613,9 +709,9 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
             }
         }
     }
-    NSLog( @"SekhVet Hanging Protocol MPR: %d planes set, %d oblique skipped (preset %@%@)", done, skipped, [[self presetNames] objectAtIndex: preset],
+    NSLog( @"SekhVet Hanging Protocol MPR: %d planes set, %d oblique skipped (preset %@%@)", done, skipped, [self nameForPreset: preset],
           layout ? @", eigene Anordnung" : @"");
-    return [NSString stringWithFormat: @"HP: %@", [[self presetNames] objectAtIndex: preset]];
+    return [NSString stringWithFormat: @"HP: %@", [self nameForPreset: preset]];
 }
 
 #pragma mark - SekhVet Paket AX: MPR-Anordnung je Preset ("Take from screen")
@@ -1236,7 +1332,7 @@ static MPRDCMView *sekhmetZoomTestView = nil;
     }
 
     [view setNeedsDisplay: YES];
-    return [NSString stringWithFormat: @"HP: %@", [[self presetNames] objectAtIndex: preset]];
+    return [NSString stringWithFormat: @"HP: %@", [self nameForPreset: preset]];
 }
 
 + (void) applyToAllViewersOfStudyUID:(NSString*) uid

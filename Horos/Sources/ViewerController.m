@@ -6259,10 +6259,10 @@ static ViewerController *draggedController = nil;
     }
     else if ([itemIdent isEqualToString: SekhmetVetPresetToolbarItemIdentifier]) { // Sekhmet
         NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 0, 0, 150, 22) pullsDown: NO] autorelease];
-        [pb addItemsWithTitles: [SekhmetOrientation presetNames]];
+        [pb setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]]; // SekhVet Paket BP: tag = Protokoll-id
         [[pb cell] setControlSize: NSControlSizeSmall];
         [pb setFont: [NSFont systemFontOfSize: 11]];
-        [pb selectItemAtIndex: [SekhmetOrientation presetForStudyUID: [self studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: self]]];
+        [pb selectItemWithTag: [SekhmetOrientation presetForStudyUID: [self studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: self]]];
         [pb setTarget: self];
         [pb setAction: @selector(sekhmetPresetChanged:)];
         [toolbarItem setLabel: NSLocalizedString( @"Hanging Protocol", nil)];

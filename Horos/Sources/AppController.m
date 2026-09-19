@@ -3555,6 +3555,7 @@ static BOOL initialized = NO;
     if( sekhvetTesthaken( "SEKHVET_STOW_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugStowFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test STOW-RS
     if( sekhvetTesthaken( "SEKHVET_WADO_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugWadoFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test WADO-RS-Stream
     if( sekhvetTesthaken( "SEKHVET_SPINE_TEST")) NSLog( @"SekhVet Wirbel-Labels Selbsttest: %@", [SekhmetSpine debugSelfTest]);
+    if( sekhvetTesthaken( "SEKHVET_SPINE_E2E_TEST")) [SekhmetSpine performSelector: @selector(debugE2E) withObject: nil afterDelay: 60]; // SekhVet Paket BR
     if( sekhvetTesthaken( "SEKHVET_NORBERG_TEST")) NSLog( @"SekhVet Norberg self-test: %@", [SekhmetNorberg debugSelfTest]); // SekhVet Paket U
     if( sekhvetTesthaken( "SEKHVET_USCAL_TEST")) NSLog( @"SekhVet US calibration self-test: %@", [SekhmetUSKalibrierung debugSelfTestWithDirectory: [NSString stringWithUTF8String: sekhvetTesthaken( "SEKHVET_USCAL_TEST")]]); // SekhVet Paket BH
 #endif // SEKHVET_TESTHAKEN
@@ -5046,6 +5047,18 @@ static BOOL initialized = NO;
                 return;
 		}
 	}
+    
+    // SekhVet Paket BO: die Kachelung sortiert nach der aktuellen Fensterlage -- ein von Hand verschobenes MPR tauschte deshalb den Platz,
+    // sobald ein zweites aufging. Jedes 3D-Fenster vorher ueber seine 2D-Quellserie legen: die Reihenfolge folgt dann den Serien.
+    if( viewersList.count > 1)
+    {
+        for( Window3DController *wc in viewersList)
+        {
+            ViewerController *src = [wc respondsToSelector: @selector(viewer)] ? [wc viewer] : nil;
+            if( src && [[src window] isVisible] && [[src window] screen] == [[wc window] screen])
+                [[wc window] setFrame: [[src window] frame] display: NO];
+        }
+    }
     
     [self tileWindows: sender windows: viewersList display2DViewerToolbar: NO displayThumbnailsList: NO];
     

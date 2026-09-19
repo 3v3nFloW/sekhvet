@@ -9,6 +9,7 @@
 
 static SekhmetOrientationPanel *sekhmetPanel = nil;
 
+static NSString* const kRowType = @"vet.kappa1.sekhvet.protocolrow";   // SekhVet Paket BP: Zeile ziehen = Reihenfolge
 static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCranialLeft", @"dorsalCranialUp", @"leftOnRight", @"proximalCaudal" }; // SekhVet Paket AF: fuenfte Regel
 
 @implementation SekhmetOrientationPanel
@@ -22,8 +23,8 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (id) init
 {
-    NSWindow *w = [[[NSWindow alloc] initWithContentRect: NSMakeRect( 0, 0, 640, 640)
-                                               styleMask: NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+    NSWindow *w = [[[NSWindow alloc] initWithContentRect: NSMakeRect( 0, 0, 640, 700)
+                                               styleMask: NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable   // SekhVet Paket BS: groesser und skalierbar
                                                  backing: NSBackingStoreBuffered defer: NO] autorelease];
     [w setTitle: NSLocalizedString( @"SekhVet — Hanging Protocol", nil)];
     [w setReleasedWhenClosed: NO];
@@ -34,9 +35,13 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
         ruleButtons = [[NSMutableArray alloc] init];
         keywords = [[NSMutableArray alloc] init];
         dxRules = [[NSMutableArray alloc] init];
+        protocols = [[NSMutableArray alloc] init];
         [self buildUI];
         [self loadFromDefaults];
+        [w setContentMinSize: NSMakeSize( 640, 700)];
+        [w setContentSize: NSMakeSize( 760, 820)];   // die Masken aus buildUI verteilen den Zuwachs
         [w center];
+        [w setFrameAutosaveName: @"SekhmetHangingProtocolPanel"];
     }
     return self;
 }
@@ -46,6 +51,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
     [ruleButtons release];
     [keywords release];
     [dxRules release];
+    [protocols release];
     [super dealloc];
 }
 
@@ -53,7 +59,8 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 {
     MPRController *c = [SekhmetOrientation frontMPR];   // SekhVet Paket AX: das Preset, unter dem man gerade anordnet
     NSInteger p = c ? [SekhmetOrientation presetForMPR: c] : SekhmetPresetOff;
-    if( p >= SekhmetPresetHeadSpine && p <= SekhmetPresetLast) [layoutPresetPopup selectItemAtIndex: p - SekhmetPresetHeadSpine];
+    [self loadFromDefaults];
+    if( p != SekhmetPresetOff) [self selectProtocol: p];
     [self updateLayoutStatus];
     [SekhmetDisplayPanel placeWindow: [self window] nearWindow: [NSApp keyWindow] centered: YES]; // SekhVet: innerhalb der Viewer-Flaeche
     [super showWindow: sender];
@@ -94,8 +101,9 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
         if( [[columns objectAtIndex: i] isEqualToString: @"Preset"])
         {
             NSPopUpButtonCell *pc = [[[NSPopUpButtonCell alloc] initTextCell: @"" pullsDown: NO] autorelease];
-            [pc addItemsWithTitles: [SekhmetOrientation presetNames]];
+            [pc setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
             [pc setBordered: NO];
+            keywordPresetCell = pc;
             [c setDataCell: pc];
         }
         else if( [[columns objectAtIndex: i] hasPrefix: @"Flip"])
@@ -117,52 +125,54 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 - (void) buildUI
 {
     NSView *cv = [[self window] contentView];
-    float y = 640 - 40;   // SekhVet Paket AX: 80 pt mehr fuer die MPR-Anordnung unten
+    float y = 700 - 40;   // SekhVet Paket AX: 80 pt mehr fuer die MPR-Anordnung unten
 
     [cv addSubview: [self label: NSLocalizedString( @"Default preset (used when no keyword matches):", nil) frame: NSMakeRect( 20, y, 360, 20) bold: YES]];
     presetPopup = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 380, y - 4, 240, 26) pullsDown: NO] autorelease];
-    [presetPopup addItemsWithTitles: [SekhmetOrientation presetNames]];
+    [presetPopup setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
     [presetPopup setTarget: self]; [presetPopup setAction: @selector(presetChanged:)];
     [cv addSubview: presetPopup];
 
-    // SekhVet Paket AF: Regeln als Raster (Zeile = Regel, Spalte = Preset), fuenf Regeln, fuenf Presets
+    // SekhVet Paket BP: links die Protokoll-Liste (umbenennen per Doppelklick, Reihenfolge per Ziehen, +/-),
+    // rechts die fuenf Regeln des markierten Protokolls. Vorher: festes Raster Regel x fuenf Presets.
     NSArray *ruleTitles = [NSArray arrayWithObjects:
                            NSLocalizedString( @"Transverse: dorsal up (else ventral up)", nil),
                            NSLocalizedString( @"Sagittal: cranial left (else cranial/proximal up)", nil),
                            NSLocalizedString( @"Dorsal plane: cranial up (else cranial left)", nil),
                            NSLocalizedString( @"Patient left on the right side of the image", nil),
                            NSLocalizedString( @"Limb: proximal = caudal (forelimb) → caudal up", nil), nil];
-    NSArray *names = [SekhmetOrientation presetNames];
-    float colX = 320, colW = 62;
 
     y -= 32;
-    [cv addSubview: [self label: NSLocalizedString( @"Rules per preset", nil) frame: NSMakeRect( 20, y, 290, 20) bold: YES]];
-    for( NSInteger p = SekhmetPresetHeadSpine; p <= SekhmetPresetLast; p++)
-    {
-        NSTextField *h = [self label: [names objectAtIndex: p] frame: NSMakeRect( colX + (p - 1) * colW - 4, y, colW + 8, 20) bold: NO];
-        [h setAlignment: NSTextAlignmentCenter];
-        [h setFont: [NSFont systemFontOfSize: 10]];
-        [cv addSubview: h];
-    }
-    y -= 22;
+    [cv addSubview: [self label: NSLocalizedString( @"Protocols (double-click = rename, drag = reorder)", nil) frame: NSMakeRect( 20, y, 300, 20) bold: YES]];
+    ruleHeading = [self label: @"" frame: NSMakeRect( 330, y, 290, 20) bold: YES];
+    [cv addSubview: ruleHeading];
+
+    NSScrollView *psv = [self tableWithFrame: NSMakeRect( 20, y - 186, 250, 182) identifier: @"protocols"
+                                     columns: [NSArray arrayWithObjects: @"Name", nil]
+                                      widths: [NSArray arrayWithObjects: @"225", nil]];
+    protocolTable = (NSTableView*) [psv documentView];
+    [protocolTable setHeaderView: nil];
+    [protocolTable registerForDraggedTypes: [NSArray arrayWithObject: kRowType]];
+    [protocolTable setDraggingSourceOperationMask: NSDragOperationMove forLocal: YES];
+    [cv addSubview: psv];
+    [cv addSubview: [self button: @"+" frame: NSMakeRect( 274, y - 32, 40, 26) action: @selector(addProtocol:) tag: 0]];
+    removeProtocolButton = [self button: @"−" frame: NSMakeRect( 274, y - 60, 40, 26) action: @selector(removeProtocol:) tag: 0];
+    [cv addSubview: removeProtocolButton];
+
+    float ry = y - 24;
     for( int r = 0; r < 5; r++)
     {
-        NSTextField *t = [self label: [ruleTitles objectAtIndex: r] frame: NSMakeRect( 36, y, 284, 18) bold: NO];
-        [t setFont: [NSFont systemFontOfSize: 11]];
-        [cv addSubview: t];
-        for( NSInteger p = SekhmetPresetHeadSpine; p <= SekhmetPresetLast; p++)
-        {
-            NSButton *b = [[[NSButton alloc] initWithFrame: NSMakeRect( colX + (p - 1) * colW + colW / 2 - 9, y, 18, 18)] autorelease];
-            [b setButtonType: NSButtonTypeSwitch];
-            [b setTitle: @""];
-            [b setTag: p * 10 + r];
-            [b setTarget: self]; [b setAction: @selector(ruleChanged:)];
-            [cv addSubview: b];
-            [ruleButtons addObject: b];
-        }
-        y -= 20;
+        NSButton *b = [[[NSButton alloc] initWithFrame: NSMakeRect( 330, ry, 300, 18)] autorelease];
+        [b setButtonType: NSButtonTypeSwitch];
+        [b setTitle: [ruleTitles objectAtIndex: r]];
+        [b setFont: [NSFont systemFontOfSize: 11]];
+        [b setTag: r];
+        [b setTarget: self]; [b setAction: @selector(ruleChanged:)];
+        [cv addSubview: b];
+        [ruleButtons addObject: b];
+        ry -= 21;
     }
-    y -= 8;
+    y -= 190;
 
     // Stichworte
     [cv addSubview: [self label: NSLocalizedString( @"Keywords (study/series description contains …) → preset", nil) frame: NSMakeRect( 20, y, 600, 20) bold: YES]];
@@ -193,29 +203,118 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
     // SekhVet Paket AX: MPR-Anordnung je Preset aus dem Bildschirm uebernehmen
     y -= 34;
-    [cv addSubview: [self label: NSLocalizedString( @"MPR layout — arrange an MPR window as you want it, then take it for a preset:", nil) frame: NSMakeRect( 20, y, 600, 20) bold: YES]];
+    [cv addSubview: [self label: NSLocalizedString( @"MPR layout — arrange an MPR window as you want it, then take it for the protocol selected above:", nil) frame: NSMakeRect( 20, y, 600, 20) bold: YES]];
     y -= 30;
-    layoutPresetPopup = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 20, y - 2, 150, 26) pullsDown: NO] autorelease];
-    for( NSInteger p = SekhmetPresetHeadSpine; p <= SekhmetPresetLast; p++) [layoutPresetPopup addItemWithTitle: [names objectAtIndex: p]];   // names: oben, Presetnamen
-    [layoutPresetPopup setTarget: self]; [layoutPresetPopup setAction: @selector(layoutPresetChanged:)];
-    [cv addSubview: layoutPresetPopup];
+    layoutHeading = [self label: @"" frame: NSMakeRect( 20, y + 2, 155, 20) bold: NO];
+    [cv addSubview: layoutHeading];
     [cv addSubview: [self button: NSLocalizedString( @"Take from screen", nil) frame: NSMakeRect( 180, y - 3, 150, 30) action: @selector(takeMPRLayout:) tag: 0]];
     [cv addSubview: [self button: NSLocalizedString( @"Standard layout", nil) frame: NSMakeRect( 335, y - 3, 140, 30) action: @selector(resetMPRLayout:) tag: 0]];
     layoutStatus = [self label: @"" frame: NSMakeRect( 20, y - 26, 600, 18) bold: NO];
     [layoutStatus setFont: [NSFont systemFontOfSize: 11]];
     [cv addSubview: layoutStatus];
+
+    // SekhVet Paket BS: Fenster skalierbar. Die Stichwort-Tabelle nimmt die Hoehe auf; was darueber liegt, haengt oben,
+    // was darunter liegt, unten. In der Breite wachsen die drei Tabellen, alles rechts davon haengt am rechten Rand.
+    for( NSView *s in [cv subviews])
+    {
+        NSUInteger m = 0;
+        if( s == ksv) m = NSViewWidthSizable | NSViewHeightSizable;
+        else
+        {
+            m = NSMinY( [s frame]) >= NSMinY( [ksv frame]) + 60 ? NSViewMinYMargin : NSViewMaxYMargin;   // +60: die +/- Knoepfe neben der Tabelle haengen oben
+            if( s == psv || s == dsv) m |= NSViewWidthSizable;
+            else if( NSMinX( [s frame]) >= 270) m |= NSViewMinXMargin;
+        }
+        [s setAutoresizingMask: m];
+    }
 }
 
 #pragma mark - SekhVet Paket AX: MPR-Anordnung
 
+- (NSInteger) selectedProtocol   // SekhVet Paket BP: id des markierten Protokolls
+{
+    NSInteger r = [protocolTable selectedRow];
+    if( r < 0 || r >= (NSInteger) protocols.count) return SekhmetPresetOff;
+    return [[[protocols objectAtIndex: r] objectForKey: @"id"] integerValue];
+}
+
+- (void) selectProtocol:(NSInteger) preset
+{
+    for( NSUInteger i = 0; i < protocols.count; i++)
+        if( [[[protocols objectAtIndex: i] objectForKey: @"id"] integerValue] == preset)
+            [protocolTable selectRowIndexes: [NSIndexSet indexSetWithIndex: i] byExtendingSelection: NO];
+    [self protocolSelectionChanged];
+}
+
 - (NSInteger) layoutPreset
 {
-    return [layoutPresetPopup indexOfSelectedItem] + SekhmetPresetHeadSpine;
+    return [self selectedProtocol];
 }
 
 - (void) updateLayoutStatus
 {
-    [layoutStatus setStringValue: [SekhmetOrientation describeMPRLayout: [SekhmetOrientation mprLayoutForPreset: [self layoutPreset]]]];
+    NSInteger p = [self layoutPreset];
+    [layoutHeading setStringValue: p == SekhmetPresetOff ? @"" : [SekhmetOrientation nameForPreset: p]];
+    [layoutStatus setStringValue: p == SekhmetPresetOff ? @"" : [SekhmetOrientation describeMPRLayout: [SekhmetOrientation mprLayoutForPreset: p]]];
+}
+
+- (void) protocolSelectionChanged
+{
+    NSInteger p = [self selectedProtocol];
+    NSDictionary *rules = p == SekhmetPresetOff ? nil : [SekhmetOrientation rulesForPreset: p];
+    for( NSButton *b in ruleButtons)
+    {
+        [b setEnabled: rules != nil];
+        [b setState: [[rules objectForKey: kRuleKeys[ [b tag]]] boolValue] ? NSControlStateValueOn : NSControlStateValueOff];
+    }
+    [ruleHeading setStringValue: p == SekhmetPresetOff ? @"" : [NSString stringWithFormat: NSLocalizedString( @"Rules for \"%@\"", nil), [SekhmetOrientation nameForPreset: p]]];
+    [removeProtocolButton setEnabled: [SekhmetOrientation canRemovePreset: p]];
+    [self updateLayoutStatus];
+}
+
+- (void) tableViewSelectionDidChange:(NSNotification*) n
+{
+    if( [n object] == protocolTable) [self protocolSelectionChanged];
+}
+
+- (void) saveProtocols   // Liste speichern, alle Menues (Panel + Toolbars) folgen
+{
+    NSInteger keep = [self selectedProtocol], def = [[presetPopup selectedItem] tag];
+    [SekhmetOrientation setProtocolList: protocols];
+    [self reloadPresetMenus];
+    [presetPopup selectItemWithTag: [SekhmetOrientation presetExists: def] ? def : SekhmetPresetHeadSpine];
+    [protocolTable reloadData];
+    [self selectProtocol: keep];
+    [keywordTable reloadData];
+}
+
+- (void) reloadPresetMenus
+{
+    [presetPopup setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
+    [keywordPresetCell setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
+}
+
+- (IBAction) addProtocol:(id) sender
+{
+    NSInteger p = [SekhmetOrientation addProtocolNamed: nil];
+    [self loadFromDefaults];
+    [self selectProtocol: p];
+    [protocolTable editColumn: 0 row: [protocolTable selectedRow] withEvent: nil select: YES];
+}
+
+- (IBAction) removeProtocol:(id) sender
+{
+    NSInteger p = [self selectedProtocol];
+    if( [SekhmetOrientation canRemovePreset: p] == NO) return;
+    NSAlert *a = [[[NSAlert alloc] init] autorelease];
+    [a setMessageText: [NSString stringWithFormat: NSLocalizedString( @"Delete the protocol \"%@\"?", nil), [SekhmetOrientation nameForPreset: p]]];
+    [a setInformativeText: NSLocalizedString( @"Its rules, MPR layout and keywords are deleted too. Studies that used it fall back to the keyword or default protocol.", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Delete", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Cancel", nil)];
+    if( [a runModal] != NSAlertFirstButtonReturn) return;
+    [SekhmetOrientation removeProtocol: p];
+    [self loadFromDefaults];
+    [SekhmetOrientation applyToAllViewersOfStudyUID: nil];
 }
 
 - (IBAction) layoutPresetChanged:(id) sender
@@ -237,7 +336,8 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
         return;
     }
     NSInteger preset = [self layoutPreset];
-    [a setMessageText: [NSString stringWithFormat: NSLocalizedString( @"Use this layout for \"%@\"?", nil), [[SekhmetOrientation presetNames] objectAtIndex: preset]]];
+    if( preset == SekhmetPresetOff) return;
+    [a setMessageText: [NSString stringWithFormat: NSLocalizedString( @"Use this layout for \"%@\"?", nil), [SekhmetOrientation nameForPreset: preset]]];
     [a setInformativeText: [NSString stringWithFormat: NSLocalizedString( @"From \"%@\":\n%@\n\nEvery MPR window opened or switched to this preset will be arranged like this.", nil),
                             [[c window] title], [SekhmetOrientation describeMPRLayout: layout]]];
     [a addButtonWithTitle: NSLocalizedString( @"Use layout", nil)];
@@ -250,6 +350,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (IBAction) resetMPRLayout:(id) sender
 {
+    if( [self layoutPreset] == SekhmetPresetOff) return;
     [SekhmetOrientation setMPRLayout: nil forPreset: [self layoutPreset]];
     [self updateLayoutStatus];
 }
@@ -259,14 +360,16 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 - (void) loadFromDefaults
 {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    [presetPopup selectItemAtIndex: [d integerForKey: SekhmetVetPresetKey]];
+    NSInteger keep = [self selectedProtocol];
+    [self reloadPresetMenus];
+    NSInteger def = [d integerForKey: SekhmetVetPresetKey];
+    [presetPopup selectItemWithTag: [SekhmetOrientation presetExists: def] ? def : SekhmetPresetHeadSpine];
 
-    for( NSButton *b in ruleButtons)
-    {
-        NSInteger p = [b tag] / 10, r = [b tag] % 10;
-        NSDictionary *rules = [SekhmetOrientation rulesForPreset: p];
-        [b setState: [[rules objectForKey: kRuleKeys[ r]] boolValue] ? NSControlStateValueOn : NSControlStateValueOff];
-    }
+    [protocols removeAllObjects];
+    for( NSDictionary *k in [SekhmetOrientation protocolList])
+        [protocols addObject: [[k mutableCopy] autorelease]];
+    [protocolTable reloadData];
+    [self selectProtocol: [SekhmetOrientation presetExists: keep] && keep != SekhmetPresetOff ? keep : SekhmetPresetHeadSpine];
 
     [keywords removeAllObjects];
     for( NSDictionary *k in [d arrayForKey: SekhmetVetKeywordsKey])
@@ -287,18 +390,16 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (IBAction) presetChanged:(id) sender
 {
-    [[NSUserDefaults standardUserDefaults] setInteger: [presetPopup indexOfSelectedItem] forKey: SekhmetVetPresetKey];
+    [[NSUserDefaults standardUserDefaults] setInteger: [[presetPopup selectedItem] tag] forKey: SekhmetVetPresetKey];
 }
 
 - (IBAction) ruleChanged:(id) sender
 {
-    NSInteger p = [sender tag] / 10;
+    NSInteger p = [self selectedProtocol];
+    if( p == SekhmetPresetOff) return;
     NSMutableDictionary *rules = [NSMutableDictionary dictionary];
     for( NSButton *b in ruleButtons)
-    {
-        if( [b tag] / 10 == p)
-            [rules setObject: [NSNumber numberWithBool: ([b state] == NSControlStateValueOn)] forKey: kRuleKeys[ [b tag] % 10]];
-    }
+        [rules setObject: [NSNumber numberWithBool: ([b state] == NSControlStateValueOn)] forKey: kRuleKeys[ [b tag]]];
     [SekhmetOrientation setRules: rules forPreset: p];
 }
 
@@ -344,6 +445,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (NSMutableArray*) arrayForTable:(NSTableView*) tv
 {
+    if( [[tv identifier] isEqualToString: @"protocols"]) return protocols;
     return [[tv identifier] isEqualToString: @"dx"] ? dxRules : keywords;
 }
 
@@ -357,7 +459,12 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
     NSMutableDictionary *d = [[self arrayForTable: tv] objectAtIndex: row];
     NSString *ident = [col identifier];
     if( [ident isEqualToString: @"Keyword"]) return [d objectForKey: @"keyword"];
-    if( [ident isEqualToString: @"Preset"]) return [d objectForKey: @"preset"];
+    if( [ident isEqualToString: @"Name"]) return [d objectForKey: @"name"];
+    if( [ident isEqualToString: @"Preset"])   // SekhVet Paket BP: gespeichert ist die id, die Zelle will den Menue-Index
+    {
+        NSInteger idx = [[keywordPresetCell menu] indexOfItemWithTag: [[d objectForKey: @"preset"] integerValue]];
+        return [NSNumber numberWithInteger: idx < 0 ? 0 : idx];
+    }
     if( [ident isEqualToString: @"Match"]) return [d objectForKey: @"match"];
     if( [ident isEqualToString: @"Rotation °"]) return [d objectForKey: @"rotation"];
     if( [ident isEqualToString: @"Flip ↔"]) return [d objectForKey: @"xFlipped"];
@@ -371,12 +478,58 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
     NSString *ident = [col identifier];
     if( value == nil) value = @"";
     if( [ident isEqualToString: @"Keyword"]) [d setObject: value forKey: @"keyword"];
-    else if( [ident isEqualToString: @"Preset"]) [d setObject: [NSNumber numberWithInteger: [value integerValue]] forKey: @"preset"];
+    else if( [ident isEqualToString: @"Name"])
+    {
+        NSString *name = [[value description] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+        if( name.length == 0) return;
+        [d setObject: name forKey: @"name"];
+        [self saveProtocols];
+        return;
+    }
+    else if( [ident isEqualToString: @"Preset"])
+    {
+        NSMenuItem *mi = [[keywordPresetCell menu] itemAtIndex: MAX( 0, MIN( [value integerValue], [[keywordPresetCell menu] numberOfItems] - 1))];
+        [d setObject: [NSNumber numberWithInteger: [mi tag]] forKey: @"preset"];
+    }
     else if( [ident isEqualToString: @"Match"]) [d setObject: value forKey: @"match"];
     else if( [ident isEqualToString: @"Rotation °"]) [d setObject: [NSNumber numberWithFloat: [value floatValue]] forKey: @"rotation"];
     else if( [ident isEqualToString: @"Flip ↔"]) [d setObject: [NSNumber numberWithBool: [value boolValue]] forKey: @"xFlipped"];
     else if( [ident isEqualToString: @"Flip ↕"]) [d setObject: [NSNumber numberWithBool: [value boolValue]] forKey: @"yFlipped"];
     [self saveTables];
+}
+
+#pragma mark - SekhVet Paket BP: Reihenfolge per Ziehen
+
+- (id <NSPasteboardWriting>) tableView:(NSTableView*) tv pasteboardWriterForRow:(NSInteger) row
+{
+    if( tv != protocolTable) return nil;
+    NSPasteboardItem *it = [[[NSPasteboardItem alloc] init] autorelease];
+    [it setString: [NSString stringWithFormat: @"%d", (int) row] forType: kRowType];
+    return it;
+}
+
+- (NSDragOperation) tableView:(NSTableView*) tv validateDrop:(id <NSDraggingInfo>) info proposedRow:(NSInteger) row proposedDropOperation:(NSTableViewDropOperation) op
+{
+    if( tv != protocolTable || [info draggingSource] != protocolTable) return NSDragOperationNone;
+    if( op == NSTableViewDropOn) [tv setDropRow: row dropOperation: NSTableViewDropAbove];
+    return NSDragOperationMove;
+}
+
+- (BOOL) tableView:(NSTableView*) tv acceptDrop:(id <NSDraggingInfo>) info row:(NSInteger) row dropOperation:(NSTableViewDropOperation) op
+{
+    if( tv != protocolTable) return NO;
+    NSString *s = [[info draggingPasteboard] stringForType: kRowType];
+    if( s == nil) return NO;
+    NSInteger from = [s integerValue];
+    if( from < 0 || from >= (NSInteger) protocols.count) return NO;
+    id item = [[[protocols objectAtIndex: from] retain] autorelease];
+    [protocols removeObjectAtIndex: from];
+    if( row > from) row--;
+    row = MAX( 0, MIN( row, (NSInteger) protocols.count));
+    [protocols insertObject: item atIndex: row];
+    [protocolTable selectRowIndexes: [NSIndexSet indexSetWithIndex: row] byExtendingSelection: NO];
+    [self saveProtocols];
+    return YES;
 }
 
 @end

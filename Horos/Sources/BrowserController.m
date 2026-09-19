@@ -7112,6 +7112,14 @@ static NSConditionLock *threadLock = nil;
     // SekhVet Paket AU: Passt ein Oeffnungsprotokoll, bestimmt es Serienwahl, Reihenfolge,
     // Kachelung und Fensterung - und Horos' eigener Weg bleibt aussen vor. Passt keines,
     // faellt alles auf Horos zurueck (applyToStudy: liefert dann NO).
+    // SekhVet Paket BS: manchmal blieb das Datenbankfenster nach dem Doppelklick vorn -- Horos laedt die Serien nach und holt
+    // dabei gelegentlich den Browser zurueck. Zweimal zeitversetzt nachsehen und die Viewer der Studie nach vorn holen.
+    NSString *sekhmetOpenedUID = [currentStudy valueForKey: @"studyInstanceUID"];
+    if( sekhmetOpenedUID.length)
+    {
+        [SekhmetOpening performSelector: @selector(bringViewersToFrontForStudyUID:) withObject: sekhmetOpenedUID afterDelay: 0.4];
+        [SekhmetOpening performSelector: @selector(bringViewersToFrontForStudyUID:) withObject: sekhmetOpenedUID afterDelay: 1.5];
+    }
     if( [SekhmetOpening applyToStudy: currentStudy]) return;
 
     BOOL restoreNOAutotiling = NO;

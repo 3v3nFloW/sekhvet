@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict/>
+<dict>
+	<!-- SekhVet Paket BT: ad hoc signierte Builds haben keine Team-ID; mit Hardened Runtime verweigert dyld sonst die eigenen
+	     Frameworks (DCM.framework) und der Helfer Decompress stuerzt bei jedem Aufruf ab (SR -> PDF, Dekompression). -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
 </plist>

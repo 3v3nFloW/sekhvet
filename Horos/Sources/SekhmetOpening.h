@@ -74,6 +74,7 @@ enum {
 
 /** Oeffnet die Studie nach Protokoll. NO = kein Protokoll gefunden oder abgeschaltet,
  *  dann macht der Aufrufer weiter wie bisher. */
++ (void) bringViewersToFrontForStudyUID:(NSString*) uid;   // SekhVet Paket BS
 + (BOOL) applyToStudy:(DicomStudy*) study;
 
 /** SekhVet Paket AY — Roentgen-Zweiebenen-Aufhaengung, aus ImagoPilot (zwei-ebenen.ts) uebernommen.

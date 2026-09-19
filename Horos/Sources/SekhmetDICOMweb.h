@@ -45,6 +45,8 @@ extern NSString* const SekhmetDICOMwebNodesKey;   // Array von {name, url, user}
     long long expectedLength;
     long long receivedLength;
     int filesWritten;
+    NSMutableSet *retrieveAfterLoad;   // SekhVet Paket BS: StudyUIDs, deren fehlende Serien nach dem Laden der Serienliste geholt werden
+    NSMutableSet *quietLoads;          // SekhVet Paket BS: Serienliste still nachladen (ohne Aufklappen), um Berichte aus dem Soll zu nehmen
 }
 
 + (SekhmetDICOMweb*) shared;

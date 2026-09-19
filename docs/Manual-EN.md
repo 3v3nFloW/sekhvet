@@ -1,6 +1,6 @@
 # SekhVet — User Guide (English)
 
-Version 1.0 beta, build 107 · 18 September 2026
+Version 1.0 beta, build 110 · 19 September 2026
 
 > **SekhVet is a veterinary DICOM viewer and is not a certified medical device.**
 > It is not cleared by the FDA, not CE-marked and has not undergone any formal validation.
@@ -97,28 +97,63 @@ and restart SekhVet.
 
 ### 5.2 Hanging Protocol (Vet Tools › Hanging Protocol…)
 
-Hangs series the veterinary way: rotation and flip by rules per preset. It is purely a
-display transformation; pixel data is never modified.
+A hanging protocol decides **how a series is turned on screen**: which anatomical direction
+points up and which points left, in 2D windows and in the three planes of the 3D MPR. It is
+purely a display transformation (rotation and flip); pixel data is never modified. Which
+series open, and in which grid, is a different matter — see opening protocols (5.3).
 
-- **Presets:** Off · Head / Spine · Limbs · Custom. Default in the panel, per-study switching
-  via the popup in the viewer toolbar.
-- **Rules per preset** (individually switchable):
-  "Sagittal: cranial left", "Transverse: dorsal up", "Dorsal plane: cranial up",
-  "Patient left on the right side of the image".
-- **Keywords:** table "study/series description contains … → preset". A match overrides the
-  default. Example: "elbow", "shoulder", "carpus" → Limbs.
-- **Radiographs (DX/CR):** rule per source (station/modality → rotation, flip). Images from a
-  device that "always comes in wrong" hang correctly from the first opening.
-- **Apply Hanging Protocol to Open Viewers** applies the preset to all open windows.
-- **Take from screen** copies the orientation of the open windows into the selected protocol.
-- Also works in the **3D MPR**: the three planes are rotated so the letters are right
-  (sagittal Cr left, transverse D up, dorsal Cr up), even if the planes were oblique before.
-  Popup in the MPR toolbar. The last straightened position of a series is remembered per preset
-  and restored the next time it opens.
-- Localizers and oblique series are flagged, not rotated.
-- Window/level is not touched here (see 5.4).
+**The protocols.** SekhVet ships with *Head / Spine*, *Hindlimbs*, *Forelimbs*, *Custom 1* and
+*Custom 2*, plus **Off**. With Off, SekhVet behaves like Horos and restores the last saved
+orientation. The list on the left of the panel is yours to edit:
 
-With preset **Off**, SekhVet behaves like Horos and restores the last saved orientation.
+| You want to … | Do this |
+|---|---|
+| add a protocol | **+** below the list; type a name. It starts with the rules of Head / Spine. |
+| rename a protocol | double-click its name. |
+| change the order | drag the row. The popups in the viewer and MPR toolbars follow this order. |
+| delete a protocol | select it, **−**. Its rules, MPR layout and keywords go with it; studies that used it fall back to the keyword or default protocol. The three built-in ones (Head / Spine, Hindlimbs, Forelimbs) can be renamed and moved but not deleted. |
+
+Renaming and reordering never breaks anything: keywords, rules, MPR layouts and the choice
+remembered per study are tied to the protocol itself, not to its name or position. The panel
+can be resized; it remembers its size.
+
+**Rules of the selected protocol** (right side of the panel; select a protocol first):
+
+| Rule | On | Off |
+|---|---|---|
+| Transverse: dorsal up | dorsal at the top | ventral at the top |
+| Sagittal: cranial left | cranial on the left, dorsal up | cranial/proximal at the top (limbs) |
+| Dorsal plane: cranial up | cranial at the top | cranial on the left |
+| Patient left on the right side of the image | radiological convention | left is left |
+| Limb: proximal = caudal (forelimb) | for a forelimb stretched forward: caudal (= proximal) at the top | — |
+
+**Which protocol a study gets**, in this order:
+
+1. what you chose for this study in the **Hanging Protocol popup** of the viewer or MPR toolbar
+   (remembered per study, also after a restart);
+2. the first **keyword** found in the study or series description (table "Keywords": text →
+   protocol; e.g. "elbow", "shoulder", "carpus" → Forelimbs);
+3. the **default protocol** at the top of the panel.
+
+**3D MPR.** The three planes are turned so the letters are right (for Head / Spine: sagittal Cr
+left, transverse D up, dorsal Cr up), even if the planes were oblique before. To decide *which
+plane sits in which of the three views*: arrange one MPR window the way you want it, select the
+protocol in the list and press **Take from screen**. Every MPR window opened with or switched
+to this protocol is then arranged like that. **Standard layout** removes the arrangement again.
+The last straightened position of a series is remembered per protocol.
+
+**Radiographs (DX/CR)** have no planes; they get a rule per source instead: text found in
+StationName or modality → rotation and flips. Images from a device that "always comes in
+wrong" then hang correctly from the first opening.
+
+**Apply to open viewers** (button, and Vet Tools › Apply Hanging Protocol to Open Viewers)
+applies the current settings to all open windows. Localizers and oblique series are flagged,
+not rotated. Window/level is not touched here (see 5.4).
+
+**Two MPR windows side by side.** With "Tile 3D windows automatically when opened" (Vet Tools ›
+Display) the MPR windows are arranged in the order of their 2D source series: the MPR of the
+series on the left sits on the left, even if you had dragged a window elsewhere. Switch the
+option off to place MPR windows yourself; an MPR then opens over its own 2D window.
 
 ### 5.3 Opening protocols (Vet Tools › Opening Protocols (which series open)…)
 
@@ -153,20 +188,65 @@ alphabetical order shown in the table.
 
 ### 5.5 Spine Labeling (Vet Tools › Spine Labeling…)
 
-Count vertebrae by clicking, in CT MPR and MR stacks.
+Count vertebrae by clicking, in CT (2D or MPR) and MR. Not meant for radiographs.
 
-1. Open the panel: choose species (**Dog / Cat 7-13-7-3**, **Rabbit 7-12-7-4**,
-   **Horse 7-18-6-5** = C-T-L-S), start label (e.g. L1) and counting direction.
-2. Click with the point tool: every click places the next label; transitions
-   C7→T1→…→L7→S1→…→Cd1 are automatic.
-3. **Alt-click** places a disc label ("L1-L2").
-4. **⌫** removes the last label, **Esc** ends labeling.
-5. **Rename with recount:** double-click a point, change its name (e.g. L1 → T13); all
-   subsequent labels of the series are renumbered.
+**Where to click — this matters.** Place every point **in the centre of the vertebral body**,
+on a sagittal image close to the midline. SekhVet derives the level of every other slice from
+these points: along the line from one vertebral centre to the next, the first 40 % belong to
+the first vertebra, the last 40 % to the next one, and the **middle 20 % are shown as the disc
+space** ("L3-L4"). Centres placed consistently give disc labels that sit on the disc; a point
+on an end plate shifts the disc zone by that amount. Beyond the first and last labelled
+vertebra the level is shown for half a vertebra's distance, then nothing. Special cases: C1 —
+click the centre of the atlas ring at the level of the dens; sacrum — one point per segment, or
+only S1; a block vertebra or transitional vertebra — see "Formula" below.
 
-Labels are ordinary point ROIs, stored in the database and visible in all MPR planes. In the
-transverse view, "▶ Spine level: L3" appears top left for the nearest vertebra. Toolbar
-button "Spine Labeling" in 2D and MPR windows.
+**Step by step**
+
+1. Press **Spine Labeling** in the toolbar of the 2D or MPR window (or the menu). The panel
+   opens and labeling starts; the point tool is selected.
+2. **Species** sets the vertebral formula (**Dog / Cat 7-13-7-3**, **Rabbit 7-12-7-4**,
+   **Horse 7-18-6-5** = C-T-L-S). **Formula:** change a number if this animal differs — e.g. L = 6
+   or 8, T = 12 or 14 for a transitional vertebra. The changed formula is stored with the study;
+   counting and renumbering follow it (with L = 6, S1 follows L6).
+3. **Start at:** the vertebra you will click first, e.g. L1 — choose one you can identify with
+   certainty (last rib → T13, sacrum → L7, C2).
+4. Click the first vertebra, then the neighbouring one. With **Direction: Automatic** SekhVet
+   takes the counting direction from these first two clicks (towards the tail = counting up,
+   towards the head = counting down). Set the direction by hand if the animal lies unusually.
+   The next label is shown in the panel and at the top of the active image ("Spine ▸ next: L3").
+5. Keep clicking; transitions C7→T1, T13→L1, L7→S1, S3→Cd1 are automatic.
+6. **Disc labels:** click **between** two labelled neighbours and the point becomes "L3-L4"
+   without advancing the counter. **Alt-click** forces a disc label between the last and the
+   next vertebra while you are still counting.
+7. **⌫** removes the last label, **Esc** ends labeling.
+
+**What you see afterwards**
+
+- **Transverse images** — any series of the study with the same frame of reference, and the
+  transverse MPR view — show the level in large green type at the top: "L3", between two
+  vertebrae "L3-L4". This works while scrolling and needs no points in that series.
+- The **dorsal MPR view** shows the level at the position of the crosshair in the same way.
+- The **sagittal view** shows the points with their names; in other sagittal series of the
+  study they appear as small circles with a leader line.
+- **Show the label points** (checkbox in the panel) hides and shows all points at once; the
+  level display stays. Starting to label switches the points on again.
+- **… also in the transverse and dorsal views** is off by default, so the points do not clutter
+  those views. Switch it on when you want to see or **drag** a point there, e.g. to centre it
+  left–right.
+
+**Correcting**
+
+- **Drag** a point to move it; the level display follows.
+- **Rename with recount:** double-click a label in the panel's list (or the point itself) and
+  type the right name, e.g. L1 → T13. All labels caudal to it are renumbered, disc labels
+  included. This is the way to fix a miscount at the start.
+- The **list** in the panel shows all labels of the study. Click one to jump all 2D windows of
+  the study to that slice. **Delete label** removes one, **Delete all** removes every label of
+  the study. Renaming and deleting need the series in which the label was set to be open.
+
+Labels are ordinary point ROIs, stored with the series by the database as in Horos. In
+addition SekhVet keeps the 3D positions per study in the folder `SPINE` of the data folder;
+this is what lets other series show the level.
 
 ### 5.6 Norberg angle (Vet Tools › Norberg Angle (Hip Dysplasia) — Place / Reset)
 
@@ -272,8 +352,14 @@ that works against Orthanc, dcm4chee and other servers.
    Last 3 days, Last 4 days, Last week, Last month). Results show series, image count, time and
    institution. A ball in front of the name shows whether the study is already fully (green) or
    partially (orange) in the local database, as in the Horos Q/R window.
-3. **Retrieve:** load selected studies via WADO-RS; images go into the database. Large
-   studies are streamed, not held in memory in full.
+3. **Retrieve:** load selected studies or single series via WADO-RS; images go into the
+   database. Large studies are streamed, not held in memory in full. If part of the selection
+   is already here (green or orange ball), SekhVet asks: **Only missing parts** (skips
+   everything green and retrieves only incomplete series), **Download everything again**, or
+   Cancel. Alt-click on Retrieve downloads everything without asking.
+   Structured reports (dose report, examination report) are imported as their own series and
+   open as a rendered page. Report types the database cannot take (e.g. key object selections)
+   are marked "report — not in the database" and do not keep a study from turning green.
 4. **Send:** **Vet Tools › Send Selected Studies via STOW-RS…** or the button in the window
    sends the studies selected in the database to the node.
 
@@ -353,12 +439,12 @@ All SekhVet windows open inside the viewer area. All SekhVet toolbar buttons can
 removed via **Customize Toolbar**; new buttons appear once automatically, and stay away if you
 remove them.
 
-## 7. Beta status, limitations and known restrictions (build 107)
+## 7. Beta status, limitations and known restrictions (build 110)
 
 **Experimental in this beta.** These functions work, but have been tested on few devices or
 are still being adjusted. Use them with a critical eye and report what you see:
 
-- **Spine Labeling** (5.5): the counting logic is still being adjusted.
+- **Spine Labeling** (5.5): rebuilt in build 108–110 (level display in all series, disc labels, formula per study); counting and level logic verified headless, first device tests 19 September 2026; the on-screen drawing has been checked on one Mac only.
 - **Hanging protocol in the 3D MPR** (5.2, MPR part) and **opening protocols** (5.3) including
   the two-view radiograph hanging: rebuilt in September 2026, verified headless, device
   verification still running.
