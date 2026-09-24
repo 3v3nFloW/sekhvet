@@ -402,7 +402,7 @@ Put photos, screenshots, lab reports and referral letters into the study.
   values of the hip measurements. Changes take effect immediately. Text in the image is drawn
   in full colour and opacity on every display (before build 111 it appeared at about half
   brightness on wide-gamut displays).
-- **Corner information (Preferences › Annotations):** the default layout follows OsiriX — top
+- **Corner information (Preferences › Annotations):** the default layout shows top
   left image size, WL/WW and mouse position; top centre orientation and patient orientation;
   top right patient ID, study and series description; bottom right MR data, acquisition date
   and acquisition duration. **CT** has its own entry that shows kVp, mA and mAs at the bottom left;

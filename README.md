@@ -86,7 +86,7 @@ Everything below lives in the **Vet Tools** menu unless stated otherwise.
 | **MPR extras** | Convolution filters on all three planes, larger crosshair hit zones, quiet cursor, no high-dynamic-range dialog |
 | **Ultrasound** | Length measurements on frames without calibration data borrow the calibration of a neighbouring frame with the same depth scale |
 | **Rename patient** | Writes name, ID, birth date and sex into the DICOM files of one or more studies, or takes the identity from an existing patient |
-| **Display** | Screen area per monitor, readable annotation text in full colour, OsiriX-style corner information (kVp / mA / mAs for CT and CBCT), dark mode, modality colours in the database |
+| **Display** | Screen area per monitor, readable annotation text in full colour, corner information with kVp / mA / mAs for CT and CBCT, dark mode, modality colours in the database |
 | **DICOMweb** | QIDO-RS search with sortable results, WADO-RS retrieve as a stream with a queue, STOW-RS send; Basic Auth in the keychain |
 | **Import** | Photos and PDFs into a study as DICOM, optionally attached to an existing study |
 | **Feedback** | Send Feedback… opens a prepared e-mail with build and macOS version |

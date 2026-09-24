@@ -412,7 +412,7 @@ Fotos, Screenshots, Laborbefunde und Überweisungen in die Studie legen.
   Werte der HD-Messungen. Änderungen greifen sofort. Schrift im Bild erscheint auf jedem
   Bildschirm in voller Farbe und Deckkraft (vor Build 111 auf Bildschirmen mit grossem
   Farbraum nur etwa halb so hell).
-- **Eck-Informationen (Preferences › Annotations):** die Vorgabe folgt OsiriX — oben links
+- **Eck-Informationen (Preferences › Annotations):** die Vorgabe zeigt oben links
   Bildgrösse, WL/WW und Mausposition; oben Mitte Orientierung und Patient Orientation; oben
   rechts Patient-ID, Studien- und Serienbeschreibung; unten rechts MR-Daten, Aufnahmedatum und
   Aufnahmedauer. **CT** hat einen eigenen Eintrag, der unten links kVp, mA und mAs zeigt; CBCT-Studien
