@@ -10,7 +10,7 @@
 PRODUCT_BUNDLE_IDENTIFIER_PREFIX = vet.kappa1.sekhvet
 
 /// Current version of the project
-CURRENT_PROJECT_VERSION = 110
+CURRENT_PROJECT_VERSION = 117
 
 /// User-visible version of the project
 MARKETING_VERSION = 4.0.0

@@ -59,6 +59,7 @@
     if (self)
 	{
 		hasFocus = NO;
+		if (@available(macOS 14.0, *)) self.clipsToBounds = YES; // SekhVet Paket BV
 		annotationsArray = [[NSMutableArray arrayWithCapacity:0] retain];
 		animatedFrameSize = frame.size;
 		align = CIAPlaceHolderAlignLeft;
@@ -77,6 +78,9 @@
 {
 	#define ROUNDED_CORNER_SIZE 5.0
 		
+	// SekhVet Paket BV: Form aus dem eigenen Rahmen, nicht aus dem Neuzeichnen-Rechteck. Seit macOS 14 schneidet AppKit nicht mehr
+	// auf die View zu (clipsToBounds = NO), das Rechteck kann die ganze Seite sein -- sie wurde orange/grau uebermalt.
+	rect = [self bounds];
 	rect = NSMakeRect(rect.origin.x+2.0, rect.origin.y+2.0, rect.size.width-4.0, rect.size.height-4.0);
 	
 	NSBezierPath *borderFrame = [NSBezierPath bezierPathWithRoundedRect:rect cornerRadius:ROUNDED_CORNER_SIZE];

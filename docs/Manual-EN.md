@@ -1,6 +1,6 @@
 # SekhVet — User Guide (English)
 
-Version 1.0 beta, build 110 · 19 September 2026
+Version 1.0 beta, build 117 · 24 September 2026
 
 > **SekhVet is a veterinary DICOM viewer and is not a certified medical device.**
 > It is not cleared by the FDA, not CE-marked and has not undergone any formal validation.
@@ -39,7 +39,7 @@ an independent maintenance fork, not an upstream contribution.
 
 ## 3. Installation
 
-1. Download `SekhVet-1.0-beta-build107-macOS.dmg` from the releases page,
+1. Download `SekhVet-1.0-beta-build117-macOS.dmg` from the releases page,
    https://github.com/3v3nFloW/sekhvet/releases, and open it. The zip file on the same page
    contains the same app, for those who prefer it.
 2. In the window that opens, drag SekhVet onto the Applications folder, then eject the disk
@@ -57,7 +57,7 @@ an independent maintenance fork, not an upstream contribution.
 5. **On first launch** SekhVet shows a one-time notice that it is not a certified medical
    device. "I understand" confirms it, "Quit" leaves the program. The notice returns only if
    its wording changes.
-6. Checksum (optional): `shasum -a 256 SekhVet-1.0-beta-build107-macOS.dmg` (or the zip) must
+6. Checksum (optional): `shasum -a 256 SekhVet-1.0-beta-build117-macOS.dmg` (or the zip) must
    match the value shown on the releases page.
 
 **SekhVet next to Horos or OsiriX:** SekhVet has its own database (`~/Documents/SekhVet Data`),
@@ -218,7 +218,11 @@ only S1; a block vertebra or transitional vertebra — see "Formula" below.
 6. **Disc labels:** click **between** two labelled neighbours and the point becomes "L3-L4"
    without advancing the counter. **Alt-click** forces a disc label between the last and the
    next vertebra while you are still counting.
-7. **⌫** removes the last label, **Esc** ends labeling.
+7. **⌫** removes the last label. **Esc**, **Stop** or closing the panel ends labeling; the toolbar
+   tool you had before comes back in every window.
+
+**Label colour** (colour well in the row of "Delete label") sets the colour of the level display,
+the projected markers and the names of the label points. Default: the green used so far.
 
 **What you see afterwards**
 
@@ -326,6 +330,10 @@ of Reference.
 - A second MPR adopts the position of the first when it opens.
 - **Double-click a view** to enlarge it to the whole window; a second double-click restores the
   three views. The other MPR window is not affected.
+- **One click** into a 2D series makes it the active series: the MPR button then builds the MPR
+  from this series (no second click or scroll needed).
+- **Swap sides:** **⌘H** or the **Swap** toolbar button lets the two MPR windows change sides,
+  together with their 2D series underneath; each MPR ends up over its own series again (5.17).
 
 ### 5.11 Further MPR improvements
 
@@ -357,6 +365,12 @@ that works against Orthanc, dcm4chee and other servers.
    is already here (green or orange ball), SekhVet asks: **Only missing parts** (skips
    everything green and retrieves only incomplete series), **Download everything again**, or
    Cancel. Alt-click on Retrieve downloads everything without asking.
+   **Retrieve stays available while a download is running:** further studies are added to a
+   queue (no duplicates; the status line shows "Added to the queue: N — M waiting"). A failed
+   retrieve no longer stops the queue; failures are listed at the end. The queue does not
+   remember the node: switching the node during a download retrieves the rest from the new one.
+   **Sorting:** click a column header to sort the studies (date/time newest first on the first
+   click, click again to reverse); the choice is remembered.
    Structured reports (dose report, examination report) are imported as their own series and
    open as a rendered page. Report types the database cannot take (e.g. key object selections)
    are marked "report — not in the database" and do not keep a study from turning green.
@@ -385,7 +399,14 @@ Put photos, screenshots, lab reports and referral letters into the study.
   immediately. Replaces Magnet and similar tools on wide monitors.
 - **Annotations:** font, size (default Helvetica Bold 14), text colour (default white),
   outline/box (default: 70 % black box with outline) for measurement text, corner text and the
-  values of the hip measurements. Changes take effect immediately.
+  values of the hip measurements. Changes take effect immediately. Text in the image is drawn
+  in full colour and opacity on every display (before build 111 it appeared at about half
+  brightness on wide-gamut displays).
+- **Corner information (Preferences › Annotations):** the default layout follows OsiriX — top
+  left image size, WL/WW and mouse position; top centre orientation and patient orientation;
+  top right patient ID, study and series description; bottom right MR data, acquisition date
+  and acquisition duration. **CT** has its own entry that shows kVp, mA and mAs at the bottom left;
+  CBCT studies are stored as modality CT and get the same. A layout you saved yourself is kept.
 - **Appearance:** System / Light / Dark, default Dark.
 - **Modality colours:** study and series rows in the database tinted by modality (CT blue, MR
   violet, radiographs green, US orange …). Can be switched off.
@@ -417,6 +438,25 @@ defaults write vet.kappa1.sekhvet.horos SekhmetUSCalibrationFallback -bool NO
 Tested so far with one device (Mindray Vetus 9). If a borrowed calibration is wrong for your
 device, switch it off and report the device model.
 
+### 5.17 Swap / rotate windows (⌘H)
+
+**⌘H**, the **Swap** toolbar button (in the 2D viewer next to Point and in the MPR window next
+to Zoom sync) or **Vet Tools › Swap / Rotate Windows** rearranges the open windows:
+
+| Open | Result |
+|---|---|
+| two MPR windows | they change sides together with their 2D series; each MPR sits over its own series again |
+| three or more MPR windows | every MPR moves one place on, together with its series |
+| no or one MPR, two 2D series | the two 2D windows change places |
+| no or one MPR, three or more 2D series | every window moves one place to the right, the last one comes to the front: `[A][B][C]` → `[C][A][B]` |
+
+Places are counted per display from left to right, then row by row from the top. The active
+window stays active; window/level, crosshair and spine labels are not affected. Series spread
+over several displays can move to another display. **⌘H no longer hides SekhVet;** "Hide
+SekhVet" stays in the SekhVet menu without a shortcut, ⌥⌘H (Hide Others) is unchanged. To use a
+different key: System Settings › Keyboard › Keyboard Shortcuts › App Shortcuts, menu title
+"Swap / Rotate Windows (MPR with their 2D series, else 2D series)".
+
 ## 6. Behaviour that differs from Horos
 
 | Topic | Horos | SekhVet |
@@ -434,12 +474,13 @@ device, switch it off and report the device model.
 | Horos Cloud | plugin | removed |
 | Data folder | Horos Data | SekhVet Data |
 | DICOM port | 11112 | 11113 |
+| ⌘H | hides the program | swaps / rotates windows (5.17) |
 
 All SekhVet windows open inside the viewer area. All SekhVet toolbar buttons can be moved or
 removed via **Customize Toolbar**; new buttons appear once automatically, and stay away if you
 remove them.
 
-## 7. Beta status, limitations and known restrictions (build 110)
+## 7. Beta status, limitations and known restrictions (build 117)
 
 **Experimental in this beta.** These functions work, but have been tested on few devices or
 are still being adjusted. Use them with a critical eye and report what you see:
@@ -449,6 +490,8 @@ are still being adjusted. Use them with a critical eye and report what you see:
   the two-view radiograph hanging: rebuilt in September 2026, verified headless, device
   verification still running.
 - **Ultrasound calibration from a neighbouring image** (5.16): one device tested.
+- **DICOMweb retrieve queue** (5.12, new in build 111): not yet tested on a device.
+- **CT corner information** kVp/mA/mAs (5.14, new in build 114): not yet checked on a device.
 - **macOS 27:** tested in a test installation, including double MPR with a large CT and the
   double-click zoom; daily use is on macOS 26.
 

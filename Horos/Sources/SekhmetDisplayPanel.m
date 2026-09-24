@@ -446,6 +446,31 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     [[[BrowserController currentBrowser] databaseOutline] setNeedsDisplay: YES];
 }
 
++ (NSImage*) swapMPRIcon // SekhVet Paket BW-2: zwei Fensterrahmen nebeneinander, darueber ein Doppelpfeil
+{
+    static NSImage *icon = nil;
+    if( icon) return icon;
+    icon = [[NSImage imageWithSize: NSMakeSize( 32, 32) flipped: NO drawingHandler: ^BOOL(NSRect r) {
+        [[NSColor blackColor] set];
+        NSBezierPath *f = [NSBezierPath bezierPath];
+        [f setLineWidth: 2.0];
+        [f appendBezierPathWithRect: NSMakeRect( 3, 4, 11, 14)];
+        [f appendBezierPathWithRect: NSMakeRect( 18, 4, 11, 14)];
+        [f stroke];
+        NSBezierPath *a = [NSBezierPath bezierPath];
+        [a setLineWidth: 2.0];
+        [a moveToPoint: NSMakePoint( 7, 25)]; [a lineToPoint: NSMakePoint( 25, 25)];
+        [a stroke];
+        NSBezierPath *h = [NSBezierPath bezierPath];
+        [h moveToPoint: NSMakePoint( 3, 25)]; [h lineToPoint: NSMakePoint( 9, 29.5)]; [h lineToPoint: NSMakePoint( 9, 20.5)]; [h closePath];
+        [h moveToPoint: NSMakePoint( 29, 25)]; [h lineToPoint: NSMakePoint( 23, 29.5)]; [h lineToPoint: NSMakePoint( 23, 20.5)]; [h closePath];
+        [h fill];
+        return YES;
+    }] retain];
+    [icon setTemplate: YES];
+    return icon;
+}
+
 + (NSImage*) crosshairIcon // SekhVet Paket AH: Kreis mit vier Strichen und freier Mitte, wie ein Zielfernrohr
 {
     static NSImage *icon = nil;

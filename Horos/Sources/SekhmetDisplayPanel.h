@@ -42,6 +42,7 @@ enum {
     NSColorWell *textColorWell, *boxColorWell;
 }
 
++ (NSImage*) swapMPRIcon; // SekhVet Paket BW-2: zwei Fenster mit Doppelpfeil (Template) fuer "Swap MPR"
 + (NSImage*) crosshairIcon; // SekhVet Paket AH: Fadenkreuz (Template) fuer das Point-Werkzeug
 + (SekhmetDisplayPanel*) shared;
 + (NSRect) areaForScreen:(NSScreen*) screen frame:(NSRect) visibleFrame;   // die Sekhmet-Flaeche

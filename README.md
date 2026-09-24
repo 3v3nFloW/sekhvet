@@ -44,6 +44,8 @@ or not yet on a real device; they are marked **experimental** here and in the ma
 | Opening protocols, two-view radiograph hanging | **experimental**, device verification running |
 | Spine labeling | **experimental**, rebuilt in build 108–110; counting and level logic verified headless, on-screen drawing checked on one Mac |
 | Ultrasound calibration from a neighbouring image | **experimental**, one device tested (Mindray Vetus 9) |
+| DICOMweb retrieve queue (new in build 111) | **experimental**, not yet tested on a device |
+| CT corner information kVp / mA / mAs (new in build 114) | **experimental**, not yet checked on a device |
 | macOS 27 | tested in a test installation (double MPR with a large CT, double-click zoom); daily use is on macOS 26 |
 
 What a beta means here: no function is known to corrupt data, measurements are reproducible on
@@ -80,11 +82,12 @@ Everything below lives in the **Vet Tools** menu unless stated otherwise.
 | **Distraction index** | PennHIP-style laxity measurement on the distraction view, sharing the femoral head circles with the Norberg angle; optional risk level |
 | **Point tool** | One click shows the same location in all other open series of the study |
 | **Double MPR** | Two MPR windows of one study stay in sync: crosshair, planes, thickness, rotation, zoom per view |
+| **Swap / rotate windows** | ⌘H or the Swap button: two MPR windows change sides together with their 2D series; without MPR the 2D series swap; with three or more windows each moves one place on |
 | **MPR extras** | Convolution filters on all three planes, larger crosshair hit zones, quiet cursor, no high-dynamic-range dialog |
 | **Ultrasound** | Length measurements on frames without calibration data borrow the calibration of a neighbouring frame with the same depth scale |
 | **Rename patient** | Writes name, ID, birth date and sex into the DICOM files of one or more studies, or takes the identity from an existing patient |
-| **Display** | Screen area per monitor, readable annotation text, dark mode, modality colours in the database |
-| **DICOMweb** | QIDO-RS search, WADO-RS retrieve as a stream, STOW-RS send; Basic Auth in the keychain |
+| **Display** | Screen area per monitor, readable annotation text in full colour, OsiriX-style corner information (kVp / mA / mAs for CT and CBCT), dark mode, modality colours in the database |
+| **DICOMweb** | QIDO-RS search with sortable results, WADO-RS retrieve as a stream with a queue, STOW-RS send; Basic Auth in the keychain |
 | **Import** | Photos and PDFs into a study as DICOM, optionally attached to an existing study |
 | **Feedback** | Send Feedback… opens a prepared e-mail with build and macOS version |
 

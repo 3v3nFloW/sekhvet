@@ -2950,6 +2950,20 @@ static float deg2rad = M_PI/180.0;
             idx++;
         }
         if( haveZoom == NO) [toolbar insertItemWithItemIdentifier: @"SekhmetZoomSync" atIndex: (syncIdx >= 0) ? syncIdx + 1 : [[toolbar items] count]];
+        // SekhVet Paket BW-2: "Swap MPR" einmalig hinter Zoom-Sync; nimmt der Benutzer ihn heraus, bleibt er weg
+        NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+        if( [ud boolForKey: @"SekhmetMPRSwapToolbarInsertedMPR"] == NO)
+        {
+            BOOL haveSwap = NO; NSInteger zoomIdx = -1; idx = 0;
+            for( NSToolbarItem *it in [toolbar items])
+            {
+                if( [[it itemIdentifier] isEqualToString: @"SekhmetMPRSwap"]) haveSwap = YES;
+                if( [[it itemIdentifier] isEqualToString: @"SekhmetZoomSync"]) zoomIdx = idx;
+                idx++;
+            }
+            if( haveSwap == NO) [toolbar insertItemWithItemIdentifier: @"SekhmetMPRSwap" atIndex: (zoomIdx >= 0) ? zoomIdx + 1 : [[toolbar items] count]];
+            [ud setBool: YES forKey: @"SekhmetMPRSwapToolbarInsertedMPR"];
+        }
     }
 	[[self window] setShowsToolbarButton: NO];
 	[[[self window] toolbar] setVisible: YES];
@@ -3066,6 +3080,15 @@ static float deg2rad = M_PI/180.0;
         [toolbarItem setView: b];
         [toolbarItem setMinSize: NSMakeSize( 70, 24)];
         [toolbarItem setMaxSize: NSMakeSize( 70, 24)];
+    }
+    else if ([itemIdent isEqualToString: @"SekhmetMPRSwap"]) // SekhVet Paket BW-2: Double MPR tauschen
+    {
+        [toolbarItem setLabel: NSLocalizedString( @"Swap", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Swap Windows (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Swap windows (Cmd-H): open MPRs swap sides together with their 2D series, otherwise the 2D series swap; with three or more, every window moves one place on", nil)];
+        [toolbarItem setImage: [SekhmetDisplayPanel swapMPRIcon]];
+        [toolbarItem setTarget: [AppController sharedAppController]];
+        [toolbarItem setAction: @selector(sekhmetSwapMPRWindows:)];
     }
     else if ([itemIdent isEqualToString: @"SekhmetMPRSync"]) // Sekhmet: Double MPR
     {
@@ -3236,7 +3259,7 @@ static float deg2rad = M_PI/180.0;
 
 - (NSArray *) toolbarDefaultItemIdentifiers: (NSToolbar *) toolbar
 {
-		return [NSArray arrayWithObjects: @"tbTools", @"tbWLWW", @"tbThickSlab", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetSpine", NSToolbarFlexibleSpaceItemIdentifier, @"ViewsPosition", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", nil];
+		return [NSArray arrayWithObjects: @"tbTools", @"tbWLWW", @"tbThickSlab", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetMPRSwap", @"SekhmetSpine", NSToolbarFlexibleSpaceItemIdentifier, @"ViewsPosition", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", nil];
 }
 
 - (NSArray *) toolbarAllowedItemIdentifiers: (NSToolbar *) toolbar
@@ -3245,7 +3268,7 @@ static float deg2rad = M_PI/180.0;
 											NSToolbarFlexibleSpaceItemIdentifier,
 											NSToolbarSpaceItemIdentifier,
 											NSToolbarSeparatorItemIdentifier,
-											@"tbTools", @"tbWLWW", @"tbLOD", @"tbThickSlab", @"tbBlending", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetSpine", @"tbMovie", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisColors", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"ViewsPosition", nil];
+											@"tbTools", @"tbWLWW", @"tbLOD", @"tbThickSlab", @"tbBlending", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetMPRSwap", @"SekhmetSpine", @"tbMovie", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisColors", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"ViewsPosition", nil];
     for (id key in [PluginManager plugins])
     {
         if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])

@@ -6280,6 +6280,14 @@ static ViewerController *draggedController = nil;
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(sekhmetShow3DPointTool:)];
     }
+    else if ([itemIdent isEqualToString: SekhmetMPRSwapToolbarItemIdentifier]) { // SekhVet Paket BW-2: Double MPR tauschen
+        [toolbarItem setLabel: NSLocalizedString( @"Swap", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"Swap Windows (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Swap windows (Cmd-H): open MPRs swap sides together with their 2D series, otherwise the 2D series swap; with three or more, every window moves one place on", nil)];
+        [toolbarItem setImage: [SekhmetDisplayPanel swapMPRIcon]];
+        [toolbarItem setTarget: [AppController sharedAppController]];
+        [toolbarItem setAction: @selector(sekhmetSwapMPRWindows:)];
+    }
     else if ([itemIdent isEqualToString: SyncSeriesToolbarItemIdentifier]) {
         
         [toolbarItem setTarget: self];
@@ -6783,6 +6791,7 @@ static ViewerController *draggedController = nil;
             QTSaveToolbarItemIdentifier,
             SyncSeriesToolbarItemIdentifier,
             Show3DPointToolbarItemIdentifier,
+            SekhmetMPRSwapToolbarItemIdentifier,
             SekhmetVetPresetToolbarItemIdentifier,
             SekhmetSpineToolbarItemIdentifier,
 							 SekhmetNorbergToolbarItemIdentifier,
@@ -6820,6 +6829,7 @@ static ViewerController *draggedController = nil;
                              BlendingToolbarItemIdentifier,
                              SyncSeriesToolbarItemIdentifier,
                              Show3DPointToolbarItemIdentifier,
+                             SekhmetMPRSwapToolbarItemIdentifier,
                              SekhmetVetPresetToolbarItemIdentifier,
                              SekhmetSpineToolbarItemIdentifier,
 							 SekhmetNorbergToolbarItemIdentifier,

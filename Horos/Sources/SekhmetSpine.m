@@ -28,6 +28,7 @@ static const int kCounts[ 3][ 5] = { { 7, 13, 7, 3, 99 }, { 7, 12, 7, 4, 99 }, {
 static NSString* const kMarkersOffKey = @"SekhmetSpineMarkersHidden";
 static NSString* const kElsewhereKey = @"SekhmetSpinePointsElsewhere";
 static NSString* const kSpeciesKey = @"SekhmetSpineSpecies";
+static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket BU: "r g b" (0..1), Vorgabe Gruen
 
 @implementation SekhmetSpine
 
@@ -38,6 +39,15 @@ static NSString* const kSpeciesKey = @"SekhmetSpineSpecies";
 }
 
 + (BOOL) isActive { return sekhmetSpine != nil && sekhmetSpine->active; }
+
+// SekhVet Paket BU: Farbe der Wirbel-Beschriftung (Eck-Label, projizierte Marker, Namen der Punkt-ROIs)
++ (void) labelColorR:(float*) r g:(float*) g b:(float*) b
+{
+    float c[ 3] = { 0.35f, 1.0f, 0.45f };
+    NSString *s = [[NSUserDefaults standardUserDefaults] stringForKey: kColorKey];
+    if( s.length) sscanf( [s UTF8String], "%f %f %f", &c[ 0], &c[ 1], &c[ 2]);
+    *r = c[ 0]; *g = c[ 1]; *b = c[ 2];
+}
 
 + (NSArray*) speciesNames
 {
@@ -68,6 +78,7 @@ static NSString* const kSpeciesKey = @"SekhmetSpineSpecies";
     self = [super initWithWindow: w];
     if( self)
     {
+        [w setDelegate: self];   // SekhVet Paket BU: Schliessen des Panels beendet das Beschriften
         createdROIs = [[NSMutableArray alloc] init];
         store = [[NSMutableDictionary alloc] init];
         roiSeries = [[NSMutableDictionary alloc] init];
@@ -198,6 +209,13 @@ static NSString* const kSpeciesKey = @"SekhmetSpineSpecies";
 
     y -= 34;
     [cv addSubview: [self button: NSLocalizedString( @"Delete label", nil) frame: NSMakeRect( 12, y, 120, 30) action: @selector(deleteSelectedLabel:)]];
+    [cv addSubview: [self label: NSLocalizedString( @"Label colour:", nil) frame: NSMakeRect( 176, y + 7, 90, 18)]];
+    float lc[ 3]; [SekhmetSpine labelColorR: &lc[ 0] g: &lc[ 1] b: &lc[ 2]];
+    colorWell = [[[NSColorWell alloc] initWithFrame: NSMakeRect( 270, y + 3, 54, 24)] autorelease];   // SekhVet Paket BU
+    [colorWell setColor: [NSColor colorWithCalibratedRed: lc[ 0] green: lc[ 1] blue: lc[ 2] alpha: 1.0]];
+    [colorWell setToolTip: NSLocalizedString( @"Colour of the vertebra labels, the level shown across the spine and the projected points", nil)];
+    [colorWell setTarget: self]; [colorWell setAction: @selector(colorChanged:)];
+    [cv addSubview: colorWell];
 
     y -= 26;
     markersButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 16, y, 312, 18)] autorelease];
@@ -870,13 +888,15 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
     CGLContextObj cgl_ctx = [[NSOpenGLContext currentContext] CGLContextObj];   // CGLMacro: die gl-Aufrufe brauchen ihn im Sichtbereich
     if( cgl_ctx == nil) return;
     float sf = v.window.backingScaleFactor > 0 ? v.window.backingScaleFactor : 1;
-    NSString *key = [NSString stringWithFormat: @"%@|%.0f|%d|%.1f", txt, size, green, sf];
+    float lc[ 3] = { 1, 1, 1 };
+    if( green) [SekhmetSpine labelColorR: &lc[ 0] g: &lc[ 1] b: &lc[ 2]];   // SekhVet Paket BU: "green" = die gewaehlte Label-Farbe
+    NSString *key = [NSString stringWithFormat: @"%@|%.0f|%.3f %.3f %.3f|%.1f", txt, size, lc[ 0], lc[ 1], lc[ 2], sf];
     StringTexture *sT = [cache objectForKey: key];
     if( sT == nil)
     {
         NSMutableDictionary *attrib = [NSMutableDictionary dictionary];
         [attrib setObject: [NSFont boldSystemFontOfSize: size] forKey: NSFontAttributeName];
-        [attrib setObject: green ? [NSColor colorWithCalibratedRed: 0.35 green: 1.0 blue: 0.45 alpha: 1.0] : [NSColor whiteColor] forKey: NSForegroundColorAttributeName];
+        [attrib setObject: [NSColor colorWithCalibratedRed: lc[ 0] green: lc[ 1] blue: lc[ 2] alpha: 1.0] forKey: NSForegroundColorAttributeName];
         sT = [[[StringTexture alloc] initWithString: txt withAttributes: attrib] autorelease];
         [sT setAntiAliasing: YES];
         [sT genTextureWithBackingScaleFactor: sf];
@@ -953,6 +973,7 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
 
     NSRect fr = v.drawingFrameRect;
     float sf = v.window.backingScaleFactor > 0 ? v.window.backingScaleFactor : 1;
+    float lc[ 3]; [SekhmetSpine labelColorR: &lc[ 0] g: &lc[ 1] b: &lc[ 2]];   // SekhVet Paket BU
     glPushMatrix();
     glLoadIdentity();
     glScalef( 2.0f / fr.size.width, -2.0f / fr.size.height, 1.0f);   // Ansichtsraum: Pixel, Mitte = 0, y nach unten
@@ -1008,7 +1029,7 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
                 float alpha = dist < thick ? 0.95f : 0.6f, rad = (disc ? 3 : 4) * sf, off = (disc ? 22 : 34) * sf;
                 NSPoint tp = NSMakePoint( c.x + dirV.x * off, c.y + dirV.y * off);
                 glDisable( GL_TEXTURE_RECTANGLE_EXT);
-                glColor4f( 0.35f, 1.0f, 0.45f, alpha);
+                glColor4f( lc[ 0], lc[ 1], lc[ 2], alpha);
                 glLineWidth( 1.0f * sf);
                 glBegin( GL_LINE_LOOP);
                 for( int k = 0; k < 16; k++) glVertex2f( c.x + rad * cosf( k * M_PI / 8), c.y + rad * sinf( k * M_PI / 8));
@@ -1196,9 +1217,46 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
     [self redrawAll];
 }
 
+// SekhVet Paket BU: Start setzt das Punkt-Werkzeug nur in der Ansicht, die Werkzeugleiste zeigt weiter das alte.
+// Stop gibt jeder Ansicht, die noch auf t2DPoint steht, das Werkzeug zurueck, das ihre Werkzeugleiste zeigt.
+// Zeigt die Leiste selbst den Punkt (vom Benutzer gewaehlt), bleibt er.
++ (ToolMode) toolOfMatrix:(NSMatrix*) m
+{
+    NSInteger tag = [m isKindOfClass: [NSMatrix class]] ? [[m selectedCell] tag] : -1;
+    return tag >= 0 ? (ToolMode) tag : tWL;
+}
+
+- (void) restoreToolbarTools
+{
+    for( ViewerController *v in [ViewerController getDisplayed2DViewers])
+    {
+        @try
+        {
+            if( [[v imageView] currentTool] != t2DPoint) continue;
+            ToolMode t = [SekhmetSpine toolOfMatrix: [v valueForKey: @"toolsMatrix"]];
+            if( t != t2DPoint) [[v imageView] setCurrentTool: t];
+        }
+        @catch (NSException *e) { }
+    }
+    for( NSWindow *w in [NSApp windows])
+    {
+        id wc = [w windowController];
+        if( [wc isKindOfClass: [MPRController class]] == NO || [(MPRController*) wc windowWillClose]) continue;
+        @try
+        {
+            MPRController *mc = (MPRController*) wc;
+            if( [[mc mprView1] currentTool] != t2DPoint) continue;
+            ToolMode t = [SekhmetSpine toolOfMatrix: [mc valueForKey: @"toolsMatrix"]];
+            if( t != t2DPoint) [mc setToolIndex: t];
+        }
+        @catch (NSException *e) { }
+    }
+}
+
 - (void) stop
 {
     active = NO;
+    [self restoreToolbarTools];
     [self updateNextLabel];
     [self redrawAll];
 }
@@ -1233,6 +1291,11 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
         [self scheduleSyncForViewer: owner];
     }
     [self updateNextLabel];
+}
+
+- (void) windowWillClose:(NSNotification*) note   // SekhVet Paket BU
+{
+    if( active) [self stop];
 }
 
 - (IBAction) toggle:(id) sender
@@ -1297,6 +1360,14 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
         [self saveStudy: currentStudyUID];
     }
     [self settingsChanged: nil];
+}
+
+- (IBAction) colorChanged:(id) sender   // SekhVet Paket BU
+{
+    NSColor *c = [[colorWell color] colorUsingColorSpace: [NSColorSpace genericRGBColorSpace]];
+    if( c == nil) return;
+    [[NSUserDefaults standardUserDefaults] setObject: [NSString stringWithFormat: @"%.3f %.3f %.3f", c.redComponent, c.greenComponent, c.blueComponent] forKey: kColorKey];
+    [self redrawAll];
 }
 
 - (IBAction) visibilityChanged:(id) sender

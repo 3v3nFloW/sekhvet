@@ -257,14 +257,19 @@
 	
 	[bitmap release];
 	bitmap = nil;
-	NSImage *image = [[NSImage alloc] initWithSize:frameSize];
-	if( [image size].width > 0 && [image size].height > 0)
+	// SekhVet Paket BU: frueher NSImage lockFocus + initWithFocusedViewRect. Auf Bildschirmen mit grossem Farbraum/HDR
+	// liefert das eine 16-Bit-GLEITKOMMA-Bitmap im Bildschirmprofil, die unten als GL_SHORT (Ganzzahl) hochgeladen wird:
+	// 1.0 = 0x3C00 kommt als ~0.47 an -- jede Schrift im Bild (ROI-Texte, Eck-Texte, Wirbel-Labels) halb so hell und halb
+	// durchsichtig. Jetzt immer eine eigene 8-Bit-RGBA-Bitmap (Geraete-RGB, vormultipliziert) in Pixeln = Punkte x Faktor.
+	if( frameSize.width > 0 && frameSize.height > 0)
 	{
-		[image lockFocus];
+		bitmap = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes: NULL pixelsWide: (NSInteger) ceil( frameSize.width * backingScaleFactor) pixelsHigh: (NSInteger) ceil( frameSize.height * backingScaleFactor)
+		                                             bitsPerSample: 8 samplesPerPixel: 4 hasAlpha: YES isPlanar: NO colorSpaceName: NSDeviceRGBColorSpace bytesPerRow: 0 bitsPerPixel: 32];
+		memset( [bitmap bitmapData], 0, [bitmap bytesPerRow] * [bitmap pixelsHigh]);
+		[bitmap setSize: frameSize];
 		
-        if( backingScaleFactor == 1) // On Retina system, this will cancel the default 2x resolution in the NSImage "world"
-            [[NSAffineTransform transform] set];
-        
+		[NSGraphicsContext saveGraphicsState];
+		[NSGraphicsContext setCurrentContext: [NSGraphicsContext graphicsContextWithBitmapImageRep: bitmap]];
 		[[NSGraphicsContext currentContext] setShouldAntialias: antialiasing];
 		
 		if ([boxColor alphaComponent])
@@ -280,14 +285,7 @@
 		[textColor set];
 		[string drawAtPoint:NSMakePoint (marginSize.width, marginSize.height)];
 		
-        if( frameSize.width > 0 && frameSize.height > 0)
-        {
-            bitmap = [[NSBitmapImageRep alloc] initWithFocusedViewRect:NSMakeRect (0.0f, 0.0f, frameSize.width, frameSize.height)];
-        }
-		else
-            NSLog( @"StringTexture: frameSize.width > 0 && frameSize.height > 0");
-        
-		[image unlockFocus];
+		[NSGraphicsContext restoreGraphicsState];
                 
         //NSLog(@"%@",bitmap);
         
@@ -318,8 +316,6 @@
             [textArray addObject: [NSNumber numberWithInt: texName]];
         }
 	}
-    //[[image TIFFRepresentation] writeToFile: @"/tmp/string.tiff" atomically: YES];
-	[image release];
 	
 	return texName;
 }

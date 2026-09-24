@@ -3519,6 +3519,79 @@ static BOOL initialized = NO;
     [SekhmetOrientation applyToAllViewersOfStudyUID: nil];
 }
 
+// SekhVet Paket BW-3: Fenster in Lesereihenfolge -- je Bildschirm (links nach rechts), dann Zeile (oben zuerst), dann x
+static NSArray *sekhmetInReadingOrder( NSArray *controllers)
+{
+    return [controllers sortedArrayUsingComparator: ^NSComparisonResult( NSWindowController *a, NSWindowController *b) {
+        NSRect fa = [[a window] frame], fb = [[b window] frame];
+        CGFloat sa = [[[a window] screen] frame].origin.x, sb = [[[b window] screen] frame].origin.x;
+        if( sa != sb) return sa < sb ? NSOrderedAscending : NSOrderedDescending;
+        if( fabs( NSMidY( fa) - NSMidY( fb)) > MIN( fa.size.height, fb.size.height) / 2)
+            return NSMidY( fa) > NSMidY( fb) ? NSOrderedAscending : NSOrderedDescending;
+        if( NSMinX( fa) != NSMinX( fb)) return NSMinX( fa) < NSMinX( fb) ? NSOrderedAscending : NSOrderedDescending;
+        return NSOrderedSame;
+    }];
+}
+
+// SekhVet Paket BW-3: jedes Fenster rueckt einen Platz weiter, das letzte kommt nach vorne (bei zwei = Tausch)
+static void sekhmetRotateFrames( NSArray *ordered)
+{
+    NSUInteger n = [ordered count];
+    NSMutableArray *frames = [NSMutableArray array];
+    for( NSWindowController *wc in ordered) [frames addObject: [NSValue valueWithRect: [[wc window] frame]]];
+    for( NSUInteger i = 0; i < n; i++)
+        [[[ordered objectAtIndex: i] window] setFrame: [[frames objectAtIndex: (i + 1) % n] rectValue] display: YES];
+}
+
+// SekhVet Paket BW: Double MPR die Seite tauschen lassen; BW-3: allgemein "Swap".
+// Zwei oder mehr MPR/3D-Fenster: ihre 2D-Quellserien rotieren, danach legt tile3DWindows (Paket BO) jedes MPR wieder ueber
+// seine Serie (ohne eigene sichtbare Quellfenster rotieren die 3D-Rahmen selbst). Sonst rotieren die offenen 2D-Serien.
+- (IBAction) sekhmetSwapMPRWindows:(id) sender
+{
+    NSMutableArray *list3D = [NSMutableArray array];
+    for( NSWindow *win in [NSApp orderedWindows])
+    {
+        id wc = [win windowController];
+        if( [wc isKindOfClass: [Window3DController class]] && [wc windowWillClose] == NO && [win isMiniaturized] == NO && [win isVisible])
+            [list3D addObject: wc];
+    }
+    
+    NSWindow *key = [NSApp keyWindow];
+    
+    if( list3D.count >= 2)
+    {
+        NSArray *ordered = sekhmetInReadingOrder( list3D);
+        NSMutableArray *sources = [NSMutableArray array];
+        for( Window3DController *wc in ordered)
+        {
+            ViewerController *v = [wc respondsToSelector: @selector(viewer)] ? [wc viewer] : nil;
+            if( v == nil || [[v window] isVisible] == NO || [sources containsObject: v]) { sources = nil; break; }
+            [sources addObject: v];
+        }
+        if( sources)
+        {
+            sekhmetRotateFrames( sekhmetInReadingOrder( sources));
+            [self tile3DWindows: sender];
+        }
+        else
+            sekhmetRotateFrames( ordered);
+    }
+    else
+    {
+        NSMutableArray *list2D = [NSMutableArray array];
+        for( ViewerController *v in [ViewerController getDisplayed2DViewers])
+            if( [[v window] isVisible] && [[v window] isMiniaturized] == NO) [list2D addObject: v];
+        if( list2D.count < 2)
+        {
+            NSBeep();
+            return;
+        }
+        sekhmetRotateFrames( sekhmetInReadingOrder( list2D));
+    }
+    
+    [key makeKeyAndOrderFront: self];
+}
+
 - (void) sekhmetInstallMenu
 {
     NSMenu *sek = [[NSMenu alloc] initWithTitle: NSLocalizedString( @"Vet Tools", nil)]; // Paket F: App-Menue heisst SekhVet, darum eigener Name
@@ -3527,6 +3600,12 @@ static BOOL initialized = NO;
     [[sek addItemWithTitle: NSLocalizedString( @"Opening Protocols (which series open)…", nil) action: @selector(sekhmetShowOpeningPanel:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket AU
     [[sek addItemWithTitle: NSLocalizedString( @"Apply Hanging Protocol to Open Viewers", nil) action: @selector(sekhmetApplyOrientation:) keyEquivalent: @""] setTarget: self];
     [[sek addItemWithTitle: NSLocalizedString( @"Display (Screen Area, Annotations, MPR)…", nil) action: @selector(sekhmetShowDisplayPanel:) keyEquivalent: @""] setTarget: self];
+    [[sek addItemWithTitle: NSLocalizedString( @"Swap / Rotate Windows (MPR with their 2D series, else 2D series)", nil) action: @selector(sekhmetSwapMPRWindows:) keyEquivalent: @"h"] setTarget: self]; // SekhVet Paket BW-2: Cmd-H (Erweiterung von "h" = horizontal spiegeln)
+    // SekhVet Paket BW-2: Cmd-H gehoert jetzt dem MPR-Tausch -- "Hide SekhVet" (MainMenu.xib) gibt das Kuerzel ab, "Hide Others" (Opt-Cmd-H) bleibt
+    NSMenuItem *appItem = [[[NSApp mainMenu] itemArray] firstObject];
+    for( NSMenuItem *mi in [[appItem submenu] itemArray])
+        if( [mi action] == @selector(hide:) && [[mi keyEquivalent] isEqualToString: @"h"] && ([mi keyEquivalentModifierMask] & NSEventModifierFlagOption) == 0)
+            [mi setKeyEquivalent: @""];
     [[sek addItemWithTitle: NSLocalizedString( @"Spine Labeling…", nil) action: @selector(sekhmetShowSpine:) keyEquivalent: @""] setTarget: self];
     [[sek addItemWithTitle: NSLocalizedString( @"Norberg Angle (Hip Dysplasia) — Place / Reset", nil) action: @selector(sekhmetNorberg:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket U
     [[sek addItemWithTitle: NSLocalizedString( @"Delete Norberg Measurement", nil) action: @selector(sekhmetNorbergDelete:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket W

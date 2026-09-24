@@ -21,6 +21,7 @@ extern NSString* const SekhmetSpineToolbarItemIdentifier;  // „SekhmetSpine" �
 extern NSString* const SekhmetNorbergToolbarItemIdentifier;  // „SekhmetNorberg" — Norberg-Winkel (HD), Paket V
 extern NSString* const SekhmetNorbergDeleteToolbarItemIdentifier;  // „SekhmetNorbergDelete" — Messung entfernen, Paket W
 extern NSString* const SekhmetDIToolbarItemIdentifier;  // „SekhmetDI" — Distraktionsindex (PennHIP), Paket BD
+extern NSString* const SekhmetMPRSwapToolbarItemIdentifier;  // „SekhmetMPRSwap" — Double MPR tauschen, Paket BW-2 (auch im MPR-Fenster)
 extern NSString* const SekhmetDIDeleteToolbarItemIdentifier;  // „SekhmetDIDelete" — Distraktionsindex entfernen, Paket BD
 extern NSString* const SekhmetScreenAreaToolbarItemIdentifier;  // „SekhmetScreenArea" — Bildschirmflaeche
 

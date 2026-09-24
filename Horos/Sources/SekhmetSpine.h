@@ -20,13 +20,14 @@
 
 @class ROI, DCMView;
 
-@interface SekhmetSpine : NSWindowController <NSTableViewDataSource, NSTableViewDelegate>
+@interface SekhmetSpine : NSWindowController <NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate>
 {
     NSPopUpButton *speciesPopup, *regionPopup, *directionPopup;
     NSButton *markersButton, *elsewhereButton;   // SekhVet Paket BT
     NSTextField *numberField, *nextLabel, *listStatus;
     NSTextField *formulaFields[ 4];    // C, T, L, S
     NSButton *startButton;
+    NSColorWell *colorWell;            // SekhVet Paket BU: Label-Farbe
     NSTableView *labelTable;
     BOOL active;
     NSInteger region, number;
@@ -45,6 +46,7 @@
 
 + (SekhmetSpine*) shared;
 + (BOOL) isActive;
++ (void) labelColorR:(float*) r g:(float*) g b:(float*) b;   // SekhVet Paket BU
 + (NSArray*) speciesNames;
 + (NSArray*) regionNames;
 

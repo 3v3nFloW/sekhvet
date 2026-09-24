@@ -1681,6 +1681,7 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
         if( sekhmetMode == 1) { tr = tg = tb = 1.0f; }
         else if( sekhmetMode == 2) { tr = 1.0f; tg = 0.95f; tb = 0.2f; }
         else if( sekhmetMode == 3) sscanf( [[[NSUserDefaults standardUserDefaults] stringForKey: @"SekhmetROITextColor"] UTF8String] ?: "", "%f %f %f", &tr, &tg, &tb);
+        if( type == t2DPoint && self.name.length && [SekhmetSpine rankOfLabel: self.name] >= 0) [SekhmetSpine labelColorR: &tr g: &tg b: &tb]; // SekhVet Paket BU: Wirbel-Labels in ihrer Farbe
         glColor4f( tr, tg, tb, 1.0f);
     }
     [sT drawAtPoint: NSMakePoint( xc, yc)];

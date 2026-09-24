@@ -28,6 +28,7 @@ NSString* const SekhmetNorbergToolbarItemIdentifier = @"SekhmetNorberg";
 NSString* const SekhmetNorbergDeleteToolbarItemIdentifier = @"SekhmetNorbergDelete";
 NSString* const SekhmetDIToolbarItemIdentifier = @"SekhmetDI";
 NSString* const SekhmetDIDeleteToolbarItemIdentifier = @"SekhmetDIDelete";
+NSString* const SekhmetMPRSwapToolbarItemIdentifier = @"SekhmetMPRSwap"; // SekhVet Paket BW-2
 NSString* const SekhmetScreenAreaToolbarItemIdentifier = @"SekhmetScreenArea";
 
 @implementation ViewerController (SekhVet)
@@ -111,11 +112,11 @@ NSString* const SekhmetScreenAreaToolbarItemIdentifier = @"SekhmetScreenArea";
     if( toolbar == nil) return;
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     // Paket W: Norberg + Delete Norberg (one key); Paket BD: Distraction Index; Paket BE: Delete DI — each with its own key,
-    // so installations that already have the earlier buttons get the new one once as well.
-    NSString *wanted[ 4] = { SekhmetNorbergToolbarItemIdentifier, SekhmetNorbergDeleteToolbarItemIdentifier, SekhmetDIToolbarItemIdentifier, SekhmetDIDeleteToolbarItemIdentifier };
-    NSString *after[ 4]  = { SekhmetSpineToolbarItemIdentifier, SekhmetNorbergToolbarItemIdentifier, SekhmetNorbergDeleteToolbarItemIdentifier, SekhmetDIToolbarItemIdentifier };
-    NSString *key[ 4]    = { @"SekhmetNorbergToolbarInserted2", @"SekhmetNorbergToolbarInserted2", @"SekhmetDIToolbarInserted", @"SekhmetDIDeleteToolbarInserted" };
-    for( int w = 0; w < 4; w++)
+    // so installations that already have the earlier buttons get the new one once as well. Paket BW-2: Swap MPR behind Point.
+    NSString *wanted[ 5] = { SekhmetNorbergToolbarItemIdentifier, SekhmetNorbergDeleteToolbarItemIdentifier, SekhmetDIToolbarItemIdentifier, SekhmetDIDeleteToolbarItemIdentifier, SekhmetMPRSwapToolbarItemIdentifier };
+    NSString *after[ 5]  = { SekhmetSpineToolbarItemIdentifier, SekhmetNorbergToolbarItemIdentifier, SekhmetNorbergDeleteToolbarItemIdentifier, SekhmetDIToolbarItemIdentifier, @"Sekhmet3DPoint" };
+    NSString *key[ 5]    = { @"SekhmetNorbergToolbarInserted2", @"SekhmetNorbergToolbarInserted2", @"SekhmetDIToolbarInserted", @"SekhmetDIDeleteToolbarInserted", @"SekhmetMPRSwapToolbarInserted" };
+    for( int w = 0; w < 5; w++)
     {
         if( [ud boolForKey: key[ w]]) continue;
         NSInteger idx = -1, i = 0;
@@ -130,7 +131,7 @@ NSString* const SekhmetScreenAreaToolbarItemIdentifier = @"SekhmetScreenArea";
         if( idx < 0) idx = [[toolbar items] count];
         [toolbar insertItemWithItemIdentifier: wanted[ w] atIndex: idx];
     }
-    for( int w = 0; w < 4; w++) [ud setBool: YES forKey: key[ w]];
+    for( int w = 0; w < 5; w++) [ud setBool: YES forKey: key[ w]];
 }
 
 - (IBAction) sekhmetScreenAreaChanged:(id) sender

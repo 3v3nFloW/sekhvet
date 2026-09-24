@@ -1,6 +1,6 @@
 # SekhVet — Anleitung (Deutsch)
 
-Version 1.0 beta, Build 110 · Stand 19.09.2026
+Version 1.0 beta, Build 117 · Stand 24.09.2026
 
 > **SekhVet ist ein veterinärmedizinischer DICOM-Viewer und kein zertifiziertes Medizinprodukt.**
 > Es ist weder FDA-cleared noch CE-gekennzeichnet und hat keine formale Validierung durchlaufen.
@@ -40,7 +40,7 @@ kein Upstream-Beitrag.
 
 ## 3. Installation
 
-1. `SekhVet-1.0-beta-build107-macOS.dmg` von der Releases-Seite
+1. `SekhVet-1.0-beta-build117-macOS.dmg` von der Releases-Seite
    https://github.com/3v3nFloW/sekhvet/releases laden und öffnen. Die Zip-Datei auf derselben
    Seite enthält dieselbe App, für alle, die das lieber mögen.
 2. Im geöffneten Fenster SekhVet auf den Ordner „Programme“ ziehen, danach das Laufwerk
@@ -58,7 +58,7 @@ kein Upstream-Beitrag.
 5. **Beim ersten Start** zeigt SekhVet einmalig den Hinweis, dass es kein zertifiziertes
    Medizinprodukt ist. „I understand" bestätigt ihn, „Quit" beendet das Programm. Der Hinweis
    kommt erst wieder, wenn sich sein Wortlaut ändert.
-6. Prüfsumme (optional): `shasum -a 256 SekhVet-1.0-beta-build107-macOS.dmg` (oder die Zip)
+6. Prüfsumme (optional): `shasum -a 256 SekhVet-1.0-beta-build117-macOS.dmg` (oder die Zip)
    muss mit dem Wert auf der Releases-Seite übereinstimmen.
 
 **SekhVet neben Horos oder OsiriX:** SekhVet hat eine eigene Datenbank
@@ -223,7 +223,11 @@ nur S1; Blockwirbel oder Übergangswirbel — siehe „Formula“ unten.
 6. **Bandscheiben:** ein Klick **zwischen** zwei beschriftete Nachbarn wird zu „L3-L4“, ohne dass
    das Zählwerk weiterläuft. **Alt-Klick** erzwingt während des Zählens eine Bandscheibe
    zwischen dem letzten und dem nächsten Wirbel.
-7. **⌫** nimmt das letzte Label zurück, **Esc** beendet das Beschriften.
+7. **⌫** nimmt das letzte Label zurück. **Esc**, **Stop** oder das Schliessen des Fensters beendet
+   das Beschriften; in jedem Fenster kommt das vorher gewählte Werkzeug zurück.
+
+**Label colour** (Farbfeld in der Zeile von „Delete label“) bestimmt die Farbe der Höhenanzeige,
+der projizierten Marker und der Namen der Label-Punkte. Vorgabe: das bisherige Grün.
 
 **Was Sie danach sehen**
 
@@ -331,6 +335,11 @@ gleicher Frame of Reference.
 - Ein zweites MPR übernimmt beim Öffnen die Lage des ersten.
 - **Doppelklick auf eine Ansicht** vergrössert sie auf das ganze Fenster, ein zweiter Doppelklick
   stellt die drei Ansichten wieder her; das andere MPR-Fenster ist davon nicht betroffen.
+- **Ein Klick** in eine 2D-Serie macht sie zur aktiven Serie: der MPR-Knopf baut das MPR dann aus
+  dieser Serie (kein zweiter Klick und kein Scrollen nötig).
+- **Seiten tauschen:** **⌘H** oder der Toolbar-Knopf **Swap** lässt die beiden MPR-Fenster die
+  Seite wechseln, samt ihrer 2D-Serien darunter; jedes MPR liegt danach wieder über seiner
+  eigenen Serie (5.17).
 
 ### 5.11 Weitere MPR-Verbesserungen
 
@@ -363,6 +372,13 @@ DICOMweb, das gegen Orthanc, dcm4chee und andere Server läuft.
    der Auswahl schon etwas hier (grüne oder orange Kugel), fragt SekhVet: **Only missing parts**
    (überspringt alles Grüne, holt nur unvollständige Serien), **Download everything again** oder
    Abbrechen. Alt-Klick auf Retrieve lädt alles ohne Frage.
+   **Retrieve bleibt während eines Downloads bedienbar:** weitere Studien kommen in eine
+   Warteschlange (ohne Doppel; die Statuszeile zeigt „Added to the queue: N — M waiting“). Ein
+   fehlgeschlagener Abruf hält die Warteschlange nicht mehr an; Fehler stehen am Ende gesammelt
+   da. Die Warteschlange merkt sich den Knoten nicht: wer während des Downloads den Knoten
+   wechselt, holt den Rest vom neuen.
+   **Sortieren:** Klick auf einen Spaltenkopf sortiert die Studien (Datum/Uhrzeit beim ersten
+   Klick neueste zuerst, erneuter Klick kehrt um); die Wahl bleibt gemerkt.
    Strukturierte Berichte (Dosisbericht, Untersuchungsbericht) werden als eigene Serie
    importiert und öffnen als gesetzte Seite. Berichtsarten, die die Datenbank nicht aufnimmt
    (z. B. Key Object Selection), tragen „report — not in the database“ und halten eine Studie
@@ -393,7 +409,15 @@ Fotos, Screenshots, Laborbefunde und Überweisungen in die Studie legen.
   kachelt sofort. Ersetzt Magnet & Co. am breiten Monitor.
 - **Annotations:** Schrift, Grösse (Vorgabe Helvetica Bold 14), Textfarbe (Vorgabe weiss),
   Kontur/Kasten (Vorgabe: Kasten 70 % schwarz mit Kontur) für Messtexte, Ecken-Text und die
-  Werte der HD-Messungen. Änderungen greifen sofort.
+  Werte der HD-Messungen. Änderungen greifen sofort. Schrift im Bild erscheint auf jedem
+  Bildschirm in voller Farbe und Deckkraft (vor Build 111 auf Bildschirmen mit grossem
+  Farbraum nur etwa halb so hell).
+- **Eck-Informationen (Preferences › Annotations):** die Vorgabe folgt OsiriX — oben links
+  Bildgrösse, WL/WW und Mausposition; oben Mitte Orientierung und Patient Orientation; oben
+  rechts Patient-ID, Studien- und Serienbeschreibung; unten rechts MR-Daten, Aufnahmedatum und
+  Aufnahmedauer. **CT** hat einen eigenen Eintrag, der unten links kVp, mA und mAs zeigt; CBCT-Studien
+  werden als Modalität CT gespeichert und bekommen dasselbe. Eine selbst gespeicherte Belegung
+  bleibt erhalten.
 - **Appearance:** System / Light / Dark, Vorgabe Dark.
 - **Modality colours:** Studien- und Serienzeilen in der Datenbank nach Modalität getönt
   (CT blau, MR violett, Röntgen grün, US orange …). Abschaltbar.
@@ -427,6 +451,26 @@ defaults write vet.kappa1.sekhvet.horos SekhmetUSCalibrationFallback -bool NO
 Bisher an einem Gerät geprüft (Mindray Vetus 9). Stimmt eine geborgte Kalibrierung bei Ihrem
 Gerät nicht, schalten Sie die Funktion ab und melden Sie das Gerätemodell.
 
+### 5.17 Fenster tauschen / rotieren (⌘H)
+
+**⌘H**, der Toolbar-Knopf **Swap** (im 2D-Viewer neben Point, im MPR-Fenster neben Zoom-Sync)
+oder **Vet Tools › Swap / Rotate Windows** ordnet die offenen Fenster um:
+
+| Offen | Ergebnis |
+|---|---|
+| zwei MPR-Fenster | sie wechseln die Seite samt ihrer 2D-Serien; jedes MPR liegt wieder über seiner Serie |
+| drei oder mehr MPR-Fenster | jedes MPR rückt samt Serie einen Platz weiter |
+| kein oder ein MPR, zwei 2D-Serien | die beiden 2D-Fenster tauschen die Plätze |
+| kein oder ein MPR, drei oder mehr 2D-Serien | jedes Fenster rückt einen Platz nach rechts, das letzte kommt nach vorne: `[A][B][C]` → `[C][A][B]` |
+
+Gezählt wird je Bildschirm von links nach rechts, dann zeilenweise von oben. Das aktive Fenster
+bleibt aktiv; Fensterung, Fadenkreuz und Spine-Labels bleiben unberührt. Serien, die über
+mehrere Bildschirme verteilt sind, können dabei den Bildschirm wechseln. **⌘H blendet SekhVet
+nicht mehr aus;** „Hide SekhVet“ steht weiter im SekhVet-Menü, ohne Kürzel, ⌥⌘H (Hide Others)
+bleibt. Eine andere Taste: Systemeinstellungen › Tastatur › Tastaturkurzbefehle ›
+App-Tastaturkurzbefehle, Menütitel „Swap / Rotate Windows (MPR with their 2D series, else 2D
+series)“.
+
 ## 6. Bedienung, die anders ist als in Horos
 
 | Thema | Horos | SekhVet |
@@ -444,12 +488,13 @@ Gerät nicht, schalten Sie die Funktion ab und melden Sie das Gerätemodell.
 | Horos Cloud | Plugin | entfernt |
 | Datenordner | Horos Data | SekhVet Data |
 | DICOM-Port | 11112 | 11113 |
+| ⌘H | blendet das Programm aus | tauscht / rotiert Fenster (5.17) |
 
 Alle SekhVet-Fenster öffnen sich innerhalb der Viewer-Fläche. Alle Toolbar-Knöpfe von SekhVet
 lassen sich über **Customize Toolbar** verschieben oder entfernen; neue Knöpfe erscheinen einmal
 automatisch, entfernt man sie, bleiben sie weg.
 
-## 7. Beta-Stand, Grenzen und bekannte Einschränkungen (Build 110)
+## 7. Beta-Stand, Grenzen und bekannte Einschränkungen (Build 117)
 
 **Experimentell in dieser Beta.** Diese Funktionen laufen, sind aber erst an wenigen Geräten
 geprüft oder werden noch nachjustiert. Mit kritischem Blick benutzen und Auffälligkeiten melden:
@@ -459,6 +504,8 @@ geprüft oder werden noch nachjustiert. Mit kritischem Blick benutzen und Auffä
   Röntgen-Zweiebenen-Hängung: im September 2026 neu gebaut, headless geprüft, Prüfung am Gerät
   läuft noch.
 - **Ultraschall-Kalibrierung vom Nachbarbild** (5.16): an einem Gerät geprüft.
+- **DICOMweb-Warteschlange** (5.12, neu in Build 111): am Gerät noch nicht geprüft.
+- **CT-Eckinformation** kVp/mA/mAs (5.14, neu in Build 114): am Gerät noch nicht geprüft.
 - **macOS 27:** in einer Testinstallation geprüft, auch Double MPR mit grossem CT und der
   Doppelklick-Zoom; der Alltag läuft unter macOS 26.
 

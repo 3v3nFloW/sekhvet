@@ -4259,6 +4259,14 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 {
     if( CGCursorIsVisible() == NO && lensTexture == nil) return; //For Synergy compatibility
     if( [self is2DViewer] && [[self window] isKeyWindow] == NO) [[self window] makeKeyAndOrderFront: self]; // SekhVet: Werkzeugleiste/MPR gelten sonst fuer das alte Fenster
+    // SekhVet Paket BU: der Klick macht das Fenster zwar key/main, aber windowDidBecomeMain fragt die Fensterreihenfolge ab, bevor
+    // AppKit das Fenster nach vorn geholt hat -- der Front-Viewer-Cache bleibt auf der vorigen Serie, deren Werkzeugleiste bleibt stehen
+    // und MPR/3D bauen aus ihr. Das Mausrad hatte dafuer schon den richtigen Weg (scrollWheel:, SelectWindowScrollWheel); hier derselbe.
+    if( [self is2DViewer] && [ViewerController isFrontMost2DViewer: self.window] == NO)
+    {
+        [[self window] makeKeyAndOrderFront: self];
+        [self.windowController windowDidBecomeMain: [NSNotification notificationWithName: NSWindowDidBecomeMainNotification object: self.window]];
+    }
     if( [self is2DViewer] && [[self window] firstResponder] != self) [[self window] makeFirstResponder: self]; // SekhVet: geklickte Kachel wird Key-View (Horos tut das nur bei Rechtsklick)
     if ([self eventToPlugins:event]) return;
     

@@ -39,6 +39,8 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 - (void) loadSeriesForStudy:(NSMutableDictionary*) study;                           // Paket AM
 - (NSArray*) missingSeriesJobsForStudy:(NSDictionary*) study;                      // Paket BS
 - (void) retrieveMissingAfterLoad:(NSDictionary*) study;                            // Paket BS
+- (void) sortResults;                                                              // Paket BU
+- (void) retrieveFailed:(NSString*) message;                                        // Paket BU
 #if SEKHVET_TESTHAKEN
 - (void) debugLocalListLog;              // Paket AM
 - (void) debugLocalSeriesLog;           // Paket AM
@@ -159,6 +161,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 - (void) dealloc
 {
     [session invalidateAndCancel]; [session release]; [retrieveTask release]; [stowTask release]; [stowTempPath release]; [retrieveStamp release];
+    [retrieveJob release]; [lastRetrieveError release];   // Paket BU
     [receivedData release]; [retrieveBoundary release]; [retrieveStudyUID release];
     [results release]; [nodes release];
     [super dealloc];
@@ -261,7 +264,19 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     [resultTable addTableColumn: [self column: @"Series" width: 50 editable: NO]];
     [resultTable addTableColumn: [self column: @"Images" width: 60 editable: NO]];
     [resultTable addTableColumn: [self column: @"Local" width: 130 editable: NO]];      // Paket AM
+    // SekhVet Paket BU: Klick auf den Spaltenkopf sortiert die Studien (Serien bleiben in ihrer Reihenfolge); Datum/Zeit zuerst absteigend.
+    // Bei Gleichstand gilt immer: neueste zuerst. Die Wahl bleibt ueber den Neustart erhalten.
+    for( NSTableColumn *c in [resultTable tableColumns])
+    {
+        BOOL newestFirst = [[c identifier] isEqualToString: @"Date"] || [[c identifier] isEqualToString: @"Time"];
+        [c setSortDescriptorPrototype: [NSSortDescriptor sortDescriptorWithKey: [c identifier] ascending: newestFirst == NO]];
+    }
     [resultTable setDataSource: self]; [resultTable setDelegate: self];
+    NSDictionary *savedSort = [[NSUserDefaults standardUserDefaults] dictionaryForKey: @"SekhmetDICOMwebSort"];
+    NSString *sortKey = [savedSort objectForKey: @"key"];
+    if( [resultTable tableColumnWithIdentifier: sortKey ?: @""] == nil) sortKey = @"Date";
+    BOOL sortAsc = savedSort ? [[savedSort objectForKey: @"ascending"] boolValue] : NO;
+    [resultTable setSortDescriptors: [NSArray arrayWithObject: [NSSortDescriptor sortDescriptorWithKey: sortKey ascending: sortAsc]]];
     [resultTable setUsesAlternatingRowBackgroundColors: YES];
     [resultTable setAllowsMultipleSelection: YES];
     [resultTable setIndentationPerLevel: 14];
@@ -515,8 +530,8 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
                                  [NSNumber numberWithBool: NO], @"loaded",
                                  [NSNumber numberWithBool: NO], @"loading", nil]];
         }
-        [results sortUsingDescriptors: [NSArray arrayWithObjects: [NSSortDescriptor sortDescriptorWithKey: @"Date" ascending: NO], [NSSortDescriptor sortDescriptorWithKey: @"Time" ascending: NO], nil]]; // Build 67
         [self annotateLocalStatus];   // Paket AM: was liegt schon in der eigenen Datenbank?
+        [self sortResults];           // Paket BU: nach der Spalte, die der Benutzer gewaehlt hat (Vorgabe Datum, neueste zuerst)
         [resultTable reloadData];
         [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"%d studies", nil), (int) results.count]];
     }];
@@ -810,7 +825,6 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 {
     NSIndexSet *sel = [resultTable selectedRowIndexes];
     if( sel.count == 0) { [self setStatus: NSLocalizedString( @"No study selected", nil)]; return; }
-    if( retrieveStudyUID) { [self setStatus: NSLocalizedString( @"Retrieve already running", nil)]; return; }
 
     // Paket AM: markiert sein koennen Studien- und Serienzeilen. Auftrag ist "<StudyUID>" oder "<StudyUID>|<SeriesUID>";
     // ist die ganze Studie markiert, fallen ihre einzeln markierten Serien weg.
@@ -884,8 +898,23 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
         if( waiting == 0) [self setStatus: NSLocalizedString( @"Everything selected is already here — nothing to retrieve", nil)];
         return;
     }
+    // SekhVet Paket BU: laeuft schon ein Abruf, kommen die neuen Auftraege hinten an die Warteschlange (ohne Doppel, ohne den laufenden)
+    if( retrieveStudyUID)
+    {
+        NSMutableArray *pending = [NSMutableArray arrayWithArray: [[NSUserDefaults standardUserDefaults] arrayForKey: @"SekhmetDICOMwebRetrieveQueue"]];
+        int added = 0;
+        for( NSString *job in queue)
+        {
+            if( [pending containsObject: job] || [job isEqualToString: retrieveJob]) continue;
+            [pending addObject: job]; added++;
+        }
+        [[NSUserDefaults standardUserDefaults] setObject: pending forKey: @"SekhmetDICOMwebRetrieveQueue"];
+        [self setStatus: added ? [NSString stringWithFormat: NSLocalizedString( @"Added to the queue: %d — %d waiting after the current retrieve", nil), added, (int) pending.count]
+                               : NSLocalizedString( @"Already in the queue", nil)];
+        return;
+    }
     [[NSUserDefaults standardUserDefaults] setObject: queue forKey: @"SekhmetDICOMwebRetrieveQueue"];
-    filesWritten = 0;
+    filesWritten = 0; failedJobs = 0;
     [self retrieveNextStudy];
 }
 
@@ -910,9 +939,9 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     NSArray *jobs = [self missingSeriesJobsForStudy: study];
     if( jobs.count == 0) { [self setStatus: NSLocalizedString( @"Everything selected is already here — nothing to retrieve", nil)]; return; }
     NSMutableArray *queue = [NSMutableArray arrayWithArray: [[NSUserDefaults standardUserDefaults] arrayForKey: @"SekhmetDICOMwebRetrieveQueue"]];
-    for( NSString *job in jobs) if( [queue containsObject: job] == NO) [queue addObject: job];
+    for( NSString *job in jobs) if( [queue containsObject: job] == NO && [job isEqualToString: retrieveJob] == NO) [queue addObject: job];
     [[NSUserDefaults standardUserDefaults] setObject: queue forKey: @"SekhmetDICOMwebRetrieveQueue"];
-    if( retrieveStudyUID == nil) { filesWritten = 0; [self retrieveNextStudy]; }   // laeuft schon ein Abruf, nimmt er die Auftraege am Ende mit
+    if( retrieveStudyUID == nil) { filesWritten = 0; failedJobs = 0; [self retrieveNextStudy]; }   // laeuft schon ein Abruf, nimmt er die Auftraege am Ende mit
 }
 
 - (void) retrieveNextStudy
@@ -921,9 +950,12 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     if( queue.count == 0)
     {
         [retrieveStudyUID release]; retrieveStudyUID = nil;
+        [retrieveJob release]; retrieveJob = nil;
         [progress stopAnimation: nil]; [progress setHidden: YES];
         [retrieveButton setEnabled: YES];
-        [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Done: %d files written to INCOMING — importing now", nil), filesWritten]];
+        NSString *done = [NSString stringWithFormat: NSLocalizedString( @"Done: %d files written to INCOMING — importing now", nil), filesWritten];
+        if( failedJobs) done = [done stringByAppendingFormat: NSLocalizedString( @" (%d retrieves failed: %@)", nil), failedJobs, lastRetrieveError ?: @"?"];
+        [self setStatus: done];
         // Paket AM: Horos importiert INCOMING im Hintergrund — Bestandsanzeige zweimal zeitversetzt nachziehen
         [self performSelector: @selector(refreshLocalStatus) withObject: nil afterDelay: 8];
         [self performSelector: @selector(refreshLocalStatus) withObject: nil afterDelay: 30];
@@ -939,6 +971,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     NSDictionary *node = [self currentNode];
     if( node == nil) return;
 
+    [retrieveJob release]; retrieveJob = [job retain];   // Paket BU
     [retrieveStudyUID release]; retrieveStudyUID = [uid retain];
     [receivedData release]; receivedData = [[NSMutableData alloc] init];
     [retrieveBoundary release]; retrieveBoundary = nil;
@@ -950,13 +983,24 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
                                      : [NSString stringWithFormat: @"%@/studies/%@", [node objectForKey: @"url"], uid];
     NSMutableURLRequest *req = [self requestForURL: url accept: @"multipart/related; type=\"application/dicom\"; transfer-syntax=*" node: node];
 
-    [retrieveButton setEnabled: NO];
-    [progress setIndeterminate: YES]; [progress setHidden: NO]; [progress startAnimation: nil];
+    [progress setIndeterminate: YES]; [progress setHidden: NO]; [progress startAnimation: nil];   // Paket BU: Retrieve bleibt bedienbar (haengt an)
     [self setStatus: seriesUID.length ? NSLocalizedString( @"Retrieving series…", nil) : NSLocalizedString( @"Retrieving…", nil)];
 
     NSURLSessionDataTask *task = [[self session] dataTaskWithRequest: req];
     [retrieveTask release]; retrieveTask = [task retain];
     [task resume];
+}
+
+// SekhVet Paket BU: ein fehlgeschlagener Auftrag haelt die Warteschlange nicht an; der naechste startet, die Fehler stehen am Ende im Status
+- (void) retrieveFailed:(NSString*) message
+{
+    failedJobs++;
+    [lastRetrieveError release]; lastRetrieveError = [message retain];
+    [self setStatus: message];
+    [retrieveTask release]; retrieveTask = nil;   // spaete Meldungen des abgebrochenen Tasks zaehlen nicht mehr
+    [receivedData release]; receivedData = nil;
+    [retrieveStudyUID release]; retrieveStudyUID = nil;
+    [self performSelector: @selector(retrieveNextStudy) withObject: nil afterDelay: 0];
 }
 
 - (void) URLSession:(NSURLSession*) s dataTask:(NSURLSessionDataTask*) task didReceiveResponse:(NSURLResponse*) response completionHandler:(void (^)(NSURLSessionResponseDisposition)) completionHandler
@@ -976,10 +1020,8 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     }
     if( r.statusCode != 200)
     {
-        [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Retrieve: HTTP %d", nil), (int) r.statusCode]];
         completionHandler( NSURLSessionResponseCancel);
-        [retrieveStudyUID release]; retrieveStudyUID = nil;
-        [progress stopAnimation: nil]; [progress setHidden: YES]; [retrieveButton setEnabled: YES];
+        [self retrieveFailed: [NSString stringWithFormat: NSLocalizedString( @"Retrieve: HTTP %d", nil), (int) r.statusCode]];
         return;
     }
     if( expectedLength > 0) { [progress setIndeterminate: NO]; [progress setMinValue: 0]; [progress setMaxValue: expectedLength]; [progress setDoubleValue: 0]; }
@@ -1002,11 +1044,8 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
     if( error)
     {
-        [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Retrieve error: %@", nil), error.localizedDescription]];
         NSLog( @"SekhVet DICOMweb: WADO-RS error %@", error);
-        [retrieveStudyUID release]; retrieveStudyUID = nil;
-        [receivedData release]; receivedData = nil;
-        [progress stopAnimation: nil]; [progress setHidden: YES]; [retrieveButton setEnabled: YES];
+        [self retrieveFailed: [NSString stringWithFormat: NSLocalizedString( @"Retrieve error: %@", nil), error.localizedDescription]];
         return;
     }
 
@@ -1352,6 +1391,49 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 }
 
 #pragma mark - Ergebnis-Outline (Paket AM)
+
+// SekhVet Paket BU: Studien nach der gewaehlten Spalte; "Local" nach dem Anteil, der hier liegt; Gleichstand = neueste zuerst
+- (void) sortResults
+{
+    NSSortDescriptor *sd = [[resultTable sortDescriptors] firstObject];
+    NSString *key = sd.key.length ? sd.key : @"Date";
+    BOOL asc = sd ? sd.ascending : NO;
+    [results sortUsingComparator: ^NSComparisonResult( NSDictionary *a, NSDictionary *b) {
+        NSComparisonResult r = NSOrderedSame;
+        if( [key isEqualToString: @"Local"])
+        {
+            id fa = [a objectForKey: @"localFraction"], fb = [b objectForKey: @"localFraction"];
+            float xa = [fa isKindOfClass: [NSNumber class]] ? [fa floatValue] : -1, xb = [fb isKindOfClass: [NSNumber class]] ? [fb floatValue] : -1;
+            r = xa < xb ? NSOrderedAscending : (xa > xb ? NSOrderedDescending : NSOrderedSame);
+        }
+        else
+        {
+            NSString *va = [[a objectForKey: key] description] ?: @"", *vb = [[b objectForKey: key] description] ?: @"";
+            if( va.length == 0 || vb.length == 0) { if( va.length != vb.length) return va.length ? NSOrderedAscending : NSOrderedDescending; }   // leere Felder immer unten
+            else r = [va localizedStandardCompare: vb];
+        }
+        if( asc == NO) r = (NSComparisonResult) -r;
+        if( r != NSOrderedSame) return r;
+        NSString *da = [NSString stringWithFormat: @"%@ %@", [a objectForKey: @"Date"] ?: @"", [a objectForKey: @"Time"] ?: @""];
+        NSString *db = [NSString stringWithFormat: @"%@ %@", [b objectForKey: @"Date"] ?: @"", [b objectForKey: @"Time"] ?: @""];
+        return [db compare: da];
+    }];
+}
+
+- (void) outlineView:(NSOutlineView*) ov sortDescriptorsDidChange:(NSArray*) oldDescriptors
+{
+    NSSortDescriptor *sd = [[ov sortDescriptors] firstObject];
+    if( sd.key.length)
+        [[NSUserDefaults standardUserDefaults] setObject: [NSDictionary dictionaryWithObjectsAndKeys: sd.key, @"key", [NSNumber numberWithBool: sd.ascending], @"ascending", nil] forKey: @"SekhmetDICOMwebSort"];
+    NSArray *selected = [[resultTable selectedRowIndexes] count] ? [NSArray arrayWithObject: [resultTable itemAtRow: [resultTable selectedRow]]] : nil;
+    [self sortResults];
+    [resultTable reloadData];
+    if( selected.firstObject)
+    {
+        NSInteger row = [resultTable rowForItem: selected.firstObject];
+        if( row >= 0) { [resultTable selectRowIndexes: [NSIndexSet indexSetWithIndex: row] byExtendingSelection: NO]; [resultTable scrollRowToVisible: row]; }
+    }
+}
 
 - (NSInteger) outlineView:(NSOutlineView*) ov numberOfChildrenOfItem:(id) item
 {

@@ -42,6 +42,9 @@ extern NSString* const SekhmetDICOMwebNodesKey;   // Array von {name, url, user}
     NSMutableData *receivedData;
     NSString *retrieveBoundary;
     NSString *retrieveStudyUID;
+    NSString *retrieveJob;             // SekhVet Paket BU: laufender Auftrag "<StudyUID>" oder "<StudyUID>|<SeriesUID>"
+    int failedJobs;                    // SekhVet Paket BU: Fehlschlaege dieser Warteschlange
+    NSString *lastRetrieveError;
     long long expectedLength;
     long long receivedLength;
     int filesWritten;
