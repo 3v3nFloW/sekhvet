@@ -1,7 +1,8 @@
 /*=========================================================================
- Sekhmet — Einstellungsfenster fuer die Vet-Orientierung (programmatisch,
- ohne Nib): Vorgabe-Preset, vier Regeln je Preset, Stichwort-Tabelle,
- DX-Regeln je Geraet. Menue "Sekhmet > Vet-Orientierung…".
+ Sekhmet — Einstellungsfenster fuer das Hanging Protocol (programmatisch,
+ ohne Nib): Vorgabe-Protokoll, Protokoll-Liste mit fuenf Regeln je Protokoll,
+ Stichwort-Tabelle, DX-Regeln je Geraet, MPR-Anordnung je Protokoll.
+ Menue "Vet Tools > Hanging Protocol…".
  Teil des SekhVet-Forks von Horos, LGPL-3.0.
  ============================================================================*/
 

@@ -2038,9 +2038,9 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
 #ifdef OSIRIX_VIEWER
 #ifndef OSIRIX_LIGHT
     
-    [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_osirix/"];
+    [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_sekhvet/"];
     
-    NSString *htmlpath = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent: [filePath lastPathComponent]] stringByAppendingPathExtension: @"xml"];
+    NSString *htmlpath = [[@"/tmp/dicomsr_sekhvet/" stringByAppendingPathComponent: [filePath lastPathComponent]] stringByAppendingPathExtension: @"xml"];
     
     if( [[NSFileManager defaultManager] fileExistsAtPath: htmlpath] == NO)
     {

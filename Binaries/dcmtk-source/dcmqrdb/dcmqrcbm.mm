@@ -139,7 +139,7 @@ OFCondition decompressFileFormat(DcmFileFormat fileformat, const char *fname)
 			NSString *path = [NSString stringWithUTF8String:fname];
 			DCMObject *dcmObject = [[DCMObject alloc] initWithContentsOfFile:path decodingPixelData: NO];
 			[[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
-			[dcmObject writeToFile:path withTransferSyntax:[DCMTransferSyntax ExplicitVRLittleEndianTransferSyntax] quality:DCMLosslessQuality AET:@"Horos" atomically:YES];
+			[dcmObject writeToFile:path withTransferSyntax:[DCMTransferSyntax ExplicitVRLittleEndianTransferSyntax] quality:DCMLosslessQuality AET:@"SekhVet" atomically:YES];
 			[dcmObject release];
 		}
 		@catch (NSException *e)
@@ -197,7 +197,7 @@ OFBool compressFileFormat(DcmFileFormat fileformat, const char *fname, char *out
 			
 			unlink( outfname);
 			
-			[dcmObject writeToFile:outpath withTransferSyntax:[DCMTransferSyntax JPEG2000LossyTransferSyntax] quality: DCMHighQuality AET:@"Horos" atomically:YES];
+			[dcmObject writeToFile:outpath withTransferSyntax:[DCMTransferSyntax JPEG2000LossyTransferSyntax] quality: DCMHighQuality AET:@"SekhVet" atomically:YES];
 			[dcmObject release];
 			
 			printf("\n--- compressFileFormat EXS_JPEG2000\n");
@@ -219,7 +219,7 @@ OFBool compressFileFormat(DcmFileFormat fileformat, const char *fname, char *out
 			
 			unlink( outfname);
 			
-			[dcmObject writeToFile:outpath withTransferSyntax:[DCMTransferSyntax JPEG2000LosslessTransferSyntax] quality: DCMLosslessQuality AET:@"Horos" atomically:YES];
+			[dcmObject writeToFile:outpath withTransferSyntax:[DCMTransferSyntax JPEG2000LosslessTransferSyntax] quality: DCMLosslessQuality AET:@"SekhVet" atomically:YES];
 			[dcmObject release];
 			
 			printf("\n--- compressFileFormat EXS_JPEG2000LosslessOnly\n");

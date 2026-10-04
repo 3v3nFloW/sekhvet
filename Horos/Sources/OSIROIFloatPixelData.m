@@ -330,7 +330,7 @@
     NSUInteger bytesCopied;
     @synchronized(self) {
         bytesCopied = MIN(count, [[self floatData] length] / sizeof(float));
-        [[self floatData] getBytes:buffer length:[[self floatData] length]];
+        [[self floatData] getBytes:buffer length:bytesCopied * sizeof(float)]; // Sekhmet (DG): vorher ganze Datenlaenge, auch wenn count kleiner war (nach ThalesMMS/horos 32cc286b)
     }
     return bytesCopied;
 }

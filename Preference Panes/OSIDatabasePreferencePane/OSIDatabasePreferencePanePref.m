@@ -83,7 +83,7 @@
         
         if ([keyPath isEqualToString:@"values.horizontalHistory" ])
         {
-            NSRunCriticalAlertPanel( NSLocalizedString( @"Restart", nil), NSLocalizedString( @"Restart Horos to apply this change.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+            NSRunCriticalAlertPanel( NSLocalizedString( @"Restart", nil), NSLocalizedString( @"Restart SekhVet to apply this change.", nil), NSLocalizedString( @"OK", nil), nil, nil);
         }
         
         if ([keyPath isEqualToString:@"values.dbFontSize"])
@@ -272,6 +272,25 @@
 //	[freeSpaceSize selectItemWithTag:[[defaults stringForKey:@"AUTOCLEANINGSPACESIZE"] intValue]];
     
     
+    // SekhVet Paket BZ: Import aus anderen Datenbanken (Horos, OsiriX …) — rechts im Kasten "File Management",
+    // Ziel nil: AppController sekhmetShowOtherDatabases: ueber die Responder-Kette.
+    for( NSView *sub in [[self mainView] subviews])
+    {
+        if( [sub isKindOfClass: [NSBox class]] == NO || NSMinY( [sub frame]) < 600) continue; // der oberste Kasten
+        NSView *inhalt = [(NSBox*) sub contentView];
+        if( [inhalt viewWithTag: 7401]) break;
+        NSButton *b = [NSButton buttonWithTitle: NSLocalizedString( @"Import from Other Databases…", nil) target: nil action: NSSelectorFromString( @"sekhmetShowOtherDatabases:")];
+        [b setTag: 7401];
+        [b setFrame: NSMakeRect( 590, 129, 250, 28)];
+        [inhalt addSubview: b];
+        NSTextField *t = [NSTextField wrappingLabelWithString: NSLocalizedString( @"Copy studies from Horos, OsiriX, HorliX or Miele-LXIV into SekhVet — the original stays untouched.", nil)];
+        [t setFrame: NSMakeRect( 596, 70, 244, 56)];
+        [t setFont: [NSFont systemFontOfSize: [NSFont smallSystemFontSize]]];
+        [t setTextColor: [NSColor secondaryLabelColor]];
+        [inhalt addSubview: t];
+        break;
+    }
+
     self.newUsePatientBirthDateForUID = [[NSUserDefaults standardUserDefaults] boolForKey: @"UsePatientBirthDateForUID"];
     self.newUsePatientNameForUID = [[NSUserDefaults standardUserDefaults] boolForKey: @"UsePatientNameForUID"];
     self.newUsePatientIDForUID = [[NSUserDefaults standardUserDefaults] boolForKey: @"UsePatientIDForUID"];
@@ -478,7 +497,7 @@
 			
 			if (![[NSFileManager defaultManager] fileExistsAtPath:[[NSUserDefaults standardUserDefaults] stringForKey:@"DEFAULT_DATABASELOCATIONURL"] isDirectory:&isDir])
 			{
-				NSRunAlertPanel(@"Horos Database Location", @"This location is not valid. Select another location.", @"OK", nil, nil);
+				NSRunAlertPanel(@"SekhVet Database Location", @"This location is not valid. Select another location.", @"OK", nil, nil);
 				
 				[locationMatrix selectCellWithTag:0];
 			}
@@ -530,13 +549,13 @@
         {
             NSString	*location = oPanel.URL.path;
             
-            if( [[location lastPathComponent] isEqualToString:@"Horos Data"])
+            if( [[location lastPathComponent] isEqualToString: OsirixDataDirName])
             {
                 NSLog( @"%@", [location lastPathComponent]);
                 location = [location stringByDeletingLastPathComponent];
             }
             
-            if( [[location lastPathComponent] isEqualToString:@"DATABASE"] && [[[location stringByDeletingLastPathComponent] lastPathComponent] isEqualToString:@"Horos Data"])
+            if( ([[location lastPathComponent] isEqualToString:@"DATABASE.noindex"] || [[location lastPathComponent] isEqualToString:@"DATABASE"]) && [[[location stringByDeletingLastPathComponent] lastPathComponent] isEqualToString: OsirixDataDirName])
             {
                 NSLog( @"%@", [location lastPathComponent]);
                 location = [[location stringByDeletingLastPathComponent] stringByDeletingLastPathComponent];

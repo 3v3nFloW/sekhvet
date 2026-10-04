@@ -874,11 +874,11 @@
  filterValue: 
  filterKey:
 
- Example: osirix://?methodName=retrieve&serverName=Minipacs&filterKey=PatientID&filterValue=296228
+ Example: sekhvet://?methodName=retrieve&serverName=Minipacs&filterKey=PatientID&filterValue=296228
 
  Response: {error: "0"}
  
- osirix://?methodName=retrieve&serverName=LaTour&filterKey=StudyInstanceUID&filterValue=2.16.840.1.113669.632.20.121711.10000348708
+ sekhvet://?methodName=retrieve&serverName=LaTour&filterKey=StudyInstanceUID&filterValue=2.16.840.1.113669.632.20.121711.10000348708
  
  */
 -(NSDictionary*)Retrieve:(NSDictionary*)paramDict error:(NSError**)error
@@ -888,7 +888,7 @@
     
     if (!serverName.length)
     {
-        NSLog( @"****** XMLRPC server name is empty: %@", paramDict);
+        NSLog( @"****** XMLRPC server name is empty, keys: %@", [paramDict allKeys]); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
         ReturnWithCode(400);
     }
     
@@ -944,7 +944,7 @@
         }
         else
         {
-            NSLog( @"****** XMLRPC no images found corresponding to this filter: %@", paramDict);
+            NSLog( @"****** XMLRPC no images found corresponding to this filter, keys: %@", [paramDict allKeys]); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
             ReturnWithErrorValue(-3);
         }
     } @catch (NSException* e) {

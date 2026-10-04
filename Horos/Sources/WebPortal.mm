@@ -156,7 +156,8 @@ static NSString* DefaultWebPortalDatabasePath = nil;
     #ifdef MACAPPSTORE
 	DefaultWebPortalDatabasePath = [[NSString alloc] initWithString: [@"~/Library/Application Support/Horos App/WebUsers.sql" stringByExpandingTildeInPath]];
     #else
-    DefaultWebPortalDatabasePath = [[NSString alloc] initWithString: [@"~/Library/Application Support/Horos/WebUsers.sql" stringByExpandingTildeInPath]];
+    // SekhVet Paket CT: own folder. SekhVet no longer opens the web portal user database of a Horos installed on the same Mac (no migration, the Horos folder is neither read nor written).
+    DefaultWebPortalDatabasePath = [[NSString alloc] initWithString: [@"~/Library/Application Support/SekhVet/WebUsers.sql" stringByExpandingTildeInPath]];
     #endif
 	[NSUserDefaultsController.sharedUserDefaultsController addObserver:(id)self forValuesKey:OsirixWadoServiceEnabledDefaultsKey options:NSKeyValueObservingOptionInitial context:NULL];
 }
@@ -231,7 +232,7 @@ static NSString* DefaultWebPortalDatabasePath = nil;
             #ifdef MACAPPSTORE
 			if (NSUserDefaults.webPortalPrefersCustomWebPages) [dirsToScanForFiles addObject: [@"~/Library/Application Support/Horos App/WebServicesHTML" stringByExpandingTildeInPath]];
             #else
-            if (NSUserDefaults.webPortalPrefersCustomWebPages) [dirsToScanForFiles addObject: [@"~/Library/Application Support/Horos/WebServicesHTML" stringByExpandingTildeInPath]];
+            if (NSUserDefaults.webPortalPrefersCustomWebPages) [dirsToScanForFiles addObject: [@"~/Library/Application Support/SekhVet/WebServicesHTML" stringByExpandingTildeInPath]]; // SekhVet Paket CT: own folder
             #endif
             [dirsToScanForFiles addObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"WebServicesHTML"]];
 			webPortal.dirsToScanForFiles = dirsToScanForFiles;
@@ -400,7 +401,7 @@ static NSString* DefaultWebPortalDatabasePath = nil;
 
 -(void)restartIfRunning {
 	if (isAcceptingConnections) {
-		NSLog( @"----- cannot restart web server -> you have to restart Horos");
+		NSLog( @"----- cannot restart web server -> you have to restart SekhVet");
 //		[self stopAcceptingConnections];
 //		[self startAcceptingConnections];
 	}
@@ -554,7 +555,7 @@ static NSString* DefaultWebPortalDatabasePath = nil;
         [temporaryUsersTimer release];
         temporaryUsersTimer = nil;
         
-		NSLog( @"----- cannot stop web server -> you have to restart Horos");
+		NSLog( @"----- cannot stop web server -> you have to restart SekhVet");
 	}
 	
 }

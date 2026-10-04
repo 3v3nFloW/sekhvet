@@ -585,7 +585,7 @@
                                 <button verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" id="560">
                                     <rect key="frame" x="130" y="345" width="434" height="18"/>
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <buttonCell key="cell" type="check" title="Veterinäre Randbuchstaben (Cr/Cd, D/V) — Sekhmet" bezelStyle="regularSquare" imagePosition="left" alignment="left" scrollable="YES" lineBreakMode="clipping" inset="2" id="561">
+                                    <buttonCell key="cell" type="check" title="Veterinary orientation letters (Cr/Cd, D/V) instead of H/F, A/P" bezelStyle="regularSquare" imagePosition="left" alignment="left" scrollable="YES" lineBreakMode="clipping" inset="2" id="561">
                                         <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                                         <font key="font" metaFont="system"/>
                                     </buttonCell>

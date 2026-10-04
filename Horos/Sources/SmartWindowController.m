@@ -138,9 +138,9 @@
 - (IBAction)helpAction:(NSSegmentedControl*)sender {
     if ([sender selectedSegment] == 0)
     {
-        [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/OsiriXTables.pdf" error:nil];
-        [[NSFileManager defaultManager] copyItemAtPath: [[NSBundle mainBundle] pathForResource:@"OsiriXTables" ofType:@"pdf"] toPath: @"/tmp/OsiriXTables.pdf" error: nil];
-		[[NSWorkspace sharedWorkspace] openFile: @"/tmp/OsiriXTables.pdf" withApplication: nil andDeactivate: YES];
+        [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/SekhVetTables.pdf" error:nil];
+        [[NSFileManager defaultManager] copyItemAtPath: [[NSBundle mainBundle] pathForResource:@"OsiriXTables" ofType:@"pdf"] toPath: @"/tmp/SekhVetTables.pdf" error: nil];
+		[[NSWorkspace sharedWorkspace] openFile: @"/tmp/SekhVetTables.pdf" withApplication: nil andDeactivate: YES];
         
         [NSThread sleepForTimeInterval:1];
     }

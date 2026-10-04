@@ -1469,7 +1469,7 @@ Specular: 0.6, 2.0</string>
                 <slider verticalHuggingPriority="750" id="847">
                     <rect key="frame" x="38" y="6" width="95" height="17"/>
                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                    <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" tickMarkPosition="above" numberOfTickMarks="1" allowsTickMarkValuesOnly="YES" sliderType="linear" id="852">
+                    <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" maxValue="1" tickMarkPosition="above" numberOfTickMarks="2" allowsTickMarkValuesOnly="YES" sliderType="linear" id="852">
                         <font key="font" size="12" name="Helvetica"/>
                     </sliderCell>
                     <connections>

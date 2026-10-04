@@ -164,7 +164,7 @@
         NSThread.currentThread.supportsCancel = YES;
 		[storeSCU run: nil];
 	} @catch (NSException *ne) {
-		NSLog( @"Autorouting FAILED : %@ - %@", ne, [samePatientArray valueForKey: @"completePath"]);
+		NSLog( @"Autorouting FAILED : %@ - %d objects", ne, (int) samePatientArray.count); // SekhVet Paket CT: no file paths in the system log
 		
 		[self performSelectorOnMainThread:@selector(_routingErrorMessage:) withObject: [NSDictionary dictionaryWithObjectsAndKeys: ne, @"exception", server, @"server", nil] waitUntilDone: NO];
 		
@@ -174,7 +174,7 @@
 		// We will try again later...
 		
 		if ([[dict valueForKey: @"failureRetry"] intValue] > 0) {
-			NSLog( @"Autorouting for %@ : failure count: %d", [[samePatientArray objectAtIndex: 0] valueForKeyPath:@"series.study.name"], [[dict valueForKey: @"failureRetry"] intValue]);
+			NSLog( @"Autorouting for study %@ : failure count: %d", [[samePatientArray objectAtIndex: 0] valueForKeyPath:@"series.study.studyInstanceUID"], [[dict valueForKey: @"failureRetry"] intValue]); // SekhVet Paket CT: no patient name in the system log
 			@synchronized (_routingSendQueues) {
 				[_routingSendQueues addObject: [NSDictionary dictionaryWithObjectsAndKeys: 
                                                 [NSMutableArray arrayWithArray:[samePatientArray valueForKey:@"objectID"]], @"objectIDs",
@@ -587,6 +587,37 @@
 }
 
 
+// Sekhmet (DG): Uhrzeit einer Regel (NSDate, "21:00", "21:00:00", "9:00:00 PM", oder ein langer Datumstext der
+// Zeitauswahl) als Sekunden nach Mitternacht in der lokalen Zeit; -1, wenn nichts Lesbares darin steht
+static long SekhmetRoutingSecondsAfterMidnight( id value)
+{
+    if ([value isKindOfClass: [NSDate class]])
+    {
+        NSDateComponents *c = [[NSCalendar currentCalendar] components:(NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond) fromDate: value];
+        return c.hour * 3600 + c.minute * 60 + c.second;
+    }
+    if ([value isKindOfClass: [NSString class]] == NO || [value length] == 0)
+        return -1;
+    
+    NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern: @"(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*([AaPp]\\.?[Mm]\\.?)?" options: 0 error: NULL];
+    NSTextCheckingResult *m = [re firstMatchInString: value options: 0 range: NSMakeRange( 0, [value length])];
+    if (m == nil)
+        return -1;
+    
+    long h = [[value substringWithRange: [m rangeAtIndex: 1]] integerValue];
+    long mi = [[value substringWithRange: [m rangeAtIndex: 2]] integerValue];
+    long s = [m rangeAtIndex: 3].location != NSNotFound ? [[value substringWithRange: [m rangeAtIndex: 3]] integerValue] : 0;
+    if ([m rangeAtIndex: 4].location != NSNotFound)
+    {
+        BOOL pm = [[[value substringWithRange: [m rangeAtIndex: 4]] lowercaseString] hasPrefix: @"p"];
+        if (h == 12) h = 0;
+        if (pm) h += 12;
+    }
+    if (h > 23 || mi > 59 || s > 59)
+        return -1;
+    return h * 3600 + mi * 60 + s;
+}
+
 -(void)applyRoutingRules:(NSArray*)autoroutingRules toImages:(NSArray*)newImagesOriginal
 {
     if (!autoroutingRules)
@@ -596,11 +627,16 @@
     
     for (NSDictionary* routingRule in autoroutingRules)
     {
+        // Sekhmet (DG): jede Regel wendet nur sich selbst an. Vorher bekam -__applyRoutingRules: bei JEDER aktiven
+        // Regel die ganze Liste - bei zwei Regeln ging jedes Bild zweimal hinaus, bei fuenf fuenfmal; eine Regel mit
+        // Zeitplan schickte nach Ablauf auch die Bilder aller anderen Regeln noch einmal (nach ThalesMMS/horos e948e313)
+        NSArray *thisRule = [NSArray arrayWithObject: routingRule];
+        
         if (![routingRule valueForKey:@"activated"] || [[routingRule valueForKey:@"activated"] boolValue])
         {
             if ([routingRule valueForKey:@"scheduleType"] == nil || [[routingRule valueForKey:@"scheduleType"] intValue] == 0)
             {
-                [self __applyRoutingRules:autoroutingRules toImages:newImagesOriginal];
+                [self __applyRoutingRules:thisRule toImages:newImagesOriginal];
             }
             else
             {
@@ -609,13 +645,38 @@
                     int64_t delayInSeconds = 3600 * [[routingRule valueForKey:@"delayTime"] integerValue];
                     dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, delayInSeconds * NSEC_PER_SEC);
                     dispatch_after(popTime, dispatch_get_main_queue(),^{
-                        [self __applyRoutingRules:autoroutingRules toImages:newImagesOriginal];
+                        [self __applyRoutingRules:thisRule toImages:newImagesOriginal];
                     });
                 }
                 else if ([[routingRule valueForKey:@"scheduleType"] intValue] == 2 &&
                          [routingRule valueForKey:@"fromTime"] &&
                          [routingRule valueForKey:@"toTime"])
                 {
+                    // Sekhmet (DG): Zeitfenster in Sekunden nach Mitternacht. Vorher: der Tag fuer ein Fenster ueber
+                    // Mitternacht ging verloren (Ergebnis von dateByAddingTimeInterval: verworfen), nach dem Fenster
+                    // wurde |fromTime - jetzt| + 1 Tag gewartet, und die Zeiten wurden mit nur einem Format gelesen, das
+                    // weder die Zeitauswahl der Einstellungen noch das "21:00" einer neuen Regel trifft
+                    // (nach ThalesMMS/horos e948e313, eigene Umsetzung)
+                    long fromSeconds = SekhmetRoutingSecondsAfterMidnight( [routingRule valueForKey:@"fromTime"]);
+                    long toSeconds = SekhmetRoutingSecondsAfterMidnight( [routingRule valueForKey:@"toTime"]);
+                    if (fromSeconds >= 0 && toSeconds >= 0)
+                    {
+                        NSDateComponents *now = [[NSCalendar currentCalendar] components:(NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond) fromDate:[NSDate date]];
+                        long nowSeconds = now.hour * 3600 + now.minute * 60 + now.second;
+                        BOOL inside = (fromSeconds <= toSeconds) ? (nowSeconds >= fromSeconds && nowSeconds <= toSeconds)
+                                                                 : (nowSeconds >= fromSeconds || nowSeconds <= toSeconds);
+                        int64_t windowDelay = 0;
+                        if (inside == NO)
+                            windowDelay = (fromSeconds - nowSeconds + 86400) % 86400;
+                        
+                        dispatch_time_t windowTime = dispatch_time(DISPATCH_TIME_NOW, windowDelay * NSEC_PER_SEC);
+                        dispatch_after(windowTime, dispatch_get_main_queue(),^{
+                            [self __applyRoutingRules:thisRule toImages:newImagesOriginal];
+                        });
+                        continue;
+                    }
+                    NSLog( @"SekhVet routing: the time window of rule %@ cannot be read (%@ - %@)", [routingRule valueForKey:@"name"], [routingRule valueForKey:@"fromTime"], [routingRule valueForKey:@"toTime"]);
+                    
                     NSDateFormatter *dateFormatter = [[[NSDateFormatter alloc] init] autorelease];
                     //[dateFormatter setDefaultDate:[NSDate date]];
                     [dateFormatter setDateFormat: @"EEEE, dd MMMM yyyy HH:mm:ss zzzzzzzzz"];
@@ -679,12 +740,12 @@
                     
                     dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, delayInSeconds * NSEC_PER_SEC);
                     dispatch_after(popTime, dispatch_get_main_queue(),^{
-                        [self __applyRoutingRules:autoroutingRules toImages:newImagesOriginal];
+                        [self __applyRoutingRules:thisRule toImages:newImagesOriginal];
                     });
                 }
                 else
                 {
-                    [self __applyRoutingRules:autoroutingRules toImages:newImagesOriginal];
+                    [self __applyRoutingRules:thisRule toImages:newImagesOriginal];
                 }
             }
         }

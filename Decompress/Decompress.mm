@@ -104,6 +104,63 @@ void myunlink(const char * path) {
 */
 #define myunlink unlink
 
+#include <sys/stat.h>
+
+// Sekhmet (DC): Was dieses Hilfsprogramm zurueckgibt, landet in einem Ordner, in den auch andere schreiben - vor allem
+// INCOMING, wo gleichnamige Dateien aus verschiedenen Ordnern und Untersuchungen liegen. Vorher loeschte es eine dort
+// noch nicht importierte gleichnamige Datei, bevor es schrieb; jetzt bekommt das Ergebnis einen freien Namen daneben.
+// Scheitert Entpacken/Konvertieren, wird die Quelle nicht mehr geloescht, sondern nach "NOT READABLE" gelegt
+// (nach ThalesMMS/horos 9be3a442, eigene Umsetzung auf dem alten Decompress-Code)
+static NSString *SekhmetFreeDestination( NSString *destination)
+{
+    struct stat existing;
+    
+    if( lstat( [destination fileSystemRepresentation], &existing) != 0)
+        return destination;
+    
+    NSString *folder = [destination stringByDeletingLastPathComponent];
+    NSString *name = [destination lastPathComponent];
+    NSString *stem = [name stringByDeletingPathExtension];
+    NSString *extension = [name pathExtension];
+    
+    for( int attempt = 1; attempt < 1000; attempt++)
+    {
+        NSString *unique = [NSString stringWithFormat: @"%@-%d", stem, attempt];
+        if( extension.length)
+            unique = [unique stringByAppendingPathExtension: extension];
+        
+        NSString *candidate = [folder stringByAppendingPathComponent: unique];
+        if( lstat( [candidate fileSystemRepresentation], &existing) != 0)
+        {
+            NSLog( @"---- decompress: %@ is already in %@; this one is %@", name, [folder lastPathComponent], unique);
+            return candidate;
+        }
+    }
+    
+    return [folder stringByAppendingPathComponent: [NSString stringWithFormat: @"%@-%@", [[NSUUID UUID] UUIDString], name]];
+}
+
+static void SekhmetKeepUnreadable( NSString *file, NSString *destDirec)
+{
+    // Nur wenn das Ziel INCOMING ist, kennen wir den Datenbankordner und damit "NOT READABLE"; sonst bleibt die Datei,
+    // wo sie ist (vorher: geloescht)
+    if( destDirec == nil || [[destDirec lastPathComponent] isEqualToString: @"INCOMING.noindex"] == NO)
+    {
+        NSLog( @"---- decompress: %@ could not be converted; it is kept where it is", [file lastPathComponent]);
+        return;
+    }
+    
+    NSFileManager *manager = [NSFileManager defaultManager];
+    NSString *errorsDir = [[destDirec stringByDeletingLastPathComponent] stringByAppendingPathComponent: @"NOT READABLE"];
+    [manager createDirectoryAtPath: errorsDir withIntermediateDirectories: YES attributes: nil error: nil];
+    
+    NSString *target = SekhmetFreeDestination( [errorsDir stringByAppendingPathComponent: [file lastPathComponent]]);
+    if( [manager moveItemAtPath: file toPath: target error: nil])
+        NSLog( @"---- decompress: %@ could not be converted; it is kept in NOT READABLE", [file lastPathComponent]);
+    else
+        NSLog( @"---- decompress: %@ could not be converted, nor moved to NOT READABLE; it is kept where it is", [file lastPathComponent]);
+}
+
 // WHY THIS EXTERNAL APPLICATION FOR COMPRESS OR DECOMPRESSION?
 
 // Because if a file is corrupted, it will not crash the OsiriX application, but only this small task.
@@ -259,7 +316,7 @@ int main(int argc, const char *argv[])
 				NSString *curFileDest;
 				
 				if( destDirec)
-					curFileDest = [destDirec stringByAppendingPathComponent: [curFile lastPathComponent]];
+					curFileDest = SekhmetFreeDestination( [destDirec stringByAppendingPathComponent: [curFile lastPathComponent]]); // Sekhmet (DC)
 				else
 					curFileDest = [curFile stringByAppendingString: @" temp"];
 				
@@ -291,9 +348,27 @@ int main(int argc, const char *argv[])
 						NSLog( @"***** unzipFile exception: %@", e);
 					}
                     
-					[[NSFileManager defaultManager] moveItemAtPath: tempCurFileDest toPath: curFileDest error: nil];
-                    
-                    myunlink([curFile fileSystemRepresentation]);
+					// Sekhmet (DC): das Archiv nur loeschen, wenn unzip geklappt hat (0, oder 1 = nur Warnungen) und der Inhalt an
+					// seinem Platz ist; vorher ging ein ZIP auch bei gescheitertem Entpacken verloren (nach ThalesMMS/horos 9be3a442)
+					int unzipStatus = -1;
+					@try
+					{
+					    if( [t isRunning] == NO)
+					        unzipStatus = [t terminationStatus];
+					}
+					@catch ( NSException *e)
+					{
+					    NSLog( @"***** unzip terminationStatus exception: %@", e);
+					}
+					
+					if( (unzipStatus == 0 || unzipStatus == 1) && [[NSFileManager defaultManager] moveItemAtPath: tempCurFileDest toPath: curFileDest error: nil])
+					    myunlink([curFile fileSystemRepresentation]);
+					else
+					{
+					    NSLog( @"---- decompress: %@ could not be expanded (unzip %d)", [curFile lastPathComponent], unzipStatus);
+					    [[NSFileManager defaultManager] removeItemAtPath: tempCurFileDest error: nil];
+					    SekhmetKeepUnreadable( curFile, destDirec);
+					}
 				}
 				else
 				{
@@ -503,8 +578,7 @@ int main(int argc, const char *argv[])
                                             }
                                             else if( destDirec)
                                             {
-                                                myunlink([curFile fileSystemRepresentation]);
-                                                NSLog( @"failed to compress file: %@, the file is deleted", curFile);
+                                                SekhmetKeepUnreadable( curFile, destDirec); // Sekhmet (DC): vorher geloescht
                                             }
                                             else
                                                 NSLog( @"failed to compress file: %@", curFile);
@@ -522,8 +596,8 @@ int main(int argc, const char *argv[])
                                     if( destDirec)
                                     {
                                         myunlink([curFileDest fileSystemRepresentation]);
-                                        [[NSFileManager defaultManager] moveItemAtPath: curFile toPath: curFileDest error: nil];
-                                        myunlink([curFile fileSystemRepresentation]);
+                                        if( [[NSFileManager defaultManager] moveItemAtPath: curFile toPath: curFileDest error: nil] == NO) // Sekhmet (DC): vorher danach unlink, auch wenn das Verschieben scheiterte
+                                            NSLog( @"---- decompress: %@ could not be moved to %@; it is kept", [curFile lastPathComponent], [destDirec lastPathComponent]);
                                     }
                                 }
                             }
@@ -532,8 +606,8 @@ int main(int argc, const char *argv[])
                                 if( destDirec)
                                 {
                                     myunlink([curFileDest fileSystemRepresentation]);
-                                    [[NSFileManager defaultManager] moveItemAtPath: curFile toPath: curFileDest error: nil];
-                                    myunlink([curFile fileSystemRepresentation]);
+                                    if( [[NSFileManager defaultManager] moveItemAtPath: curFile toPath: curFileDest error: nil] == NO) // Sekhmet (DC): vorher danach unlink, auch wenn das Verschieben scheiterte
+                                        NSLog( @"---- decompress: %@ could not be moved to %@; it is kept", [curFile lastPathComponent], [destDirec lastPathComponent]);
                                 }
                             }
 						}
@@ -615,7 +689,7 @@ int main(int argc, const char *argv[])
 				NSString *curFileDest;
 				
 				if( destDirec)
-					curFileDest = [destDirec stringByAppendingPathComponent: [curFile lastPathComponent]];
+					curFileDest = SekhmetFreeDestination( [destDirec stringByAppendingPathComponent: [curFile lastPathComponent]]); // Sekhmet (DC)
 				else
 					curFileDest = [curFile stringByAppendingString: @" temp"];
 				
@@ -647,9 +721,27 @@ int main(int argc, const char *argv[])
 						NSLog( @"***** unzipFile exception: %@", e);
 					}
 					
-                    [[NSFileManager defaultManager] moveItemAtPath: tempCurFileDest toPath: curFileDest error: nil];
+                    // Sekhmet (DC): das Archiv nur loeschen, wenn unzip geklappt hat (0, oder 1 = nur Warnungen) und der Inhalt an
+                    // seinem Platz ist; vorher ging ein ZIP auch bei gescheitertem Entpacken verloren (nach ThalesMMS/horos 9be3a442)
+                    int unzipStatus = -1;
+                    @try
+                    {
+                        if( [t isRunning] == NO)
+                            unzipStatus = [t terminationStatus];
+                    }
+                    @catch ( NSException *e)
+                    {
+                        NSLog( @"***** unzip terminationStatus exception: %@", e);
+                    }
                     
-                    myunlink([curFile fileSystemRepresentation]);
+                    if( (unzipStatus == 0 || unzipStatus == 1) && [[NSFileManager defaultManager] moveItemAtPath: tempCurFileDest toPath: curFileDest error: nil])
+                        myunlink([curFile fileSystemRepresentation]);
+                    else
+                    {
+                        NSLog( @"---- decompress: %@ could not be expanded (unzip %d)", [curFile lastPathComponent], unzipStatus);
+                        [[NSFileManager defaultManager] removeItemAtPath: tempCurFileDest error: nil];
+                        SekhmetKeepUnreadable( curFile, destDirec);
+                    }
 				}
 				else
 				{
@@ -744,8 +836,7 @@ int main(int argc, const char *argv[])
 								
 								if( destDirec)
 								{
-                                    myunlink([curFile fileSystemRepresentation]);
-									NSLog( @"failed to decompress file: %@, the file is deleted", curFile);
+                                    SekhmetKeepUnreadable( curFile, destDirec); // Sekhmet (DC): vorher geloescht
 								}
 								else
 									NSLog( @"failed to decompress file: %@", curFile);
@@ -756,8 +847,8 @@ int main(int argc, const char *argv[])
 							if( destDirec)
 							{
                                 myunlink([curFileDest fileSystemRepresentation]);
-								[[NSFileManager defaultManager] moveItemAtPath: curFile toPath: curFileDest error: nil];
-                                myunlink([curFile fileSystemRepresentation]);
+								if( [[NSFileManager defaultManager] moveItemAtPath: curFile toPath: curFileDest error: nil] == NO) // Sekhmet (DC): vorher danach unlink, auch wenn das Verschieben scheiterte
+								    NSLog( @"---- decompress: %@ could not be moved to %@; it is kept", [curFile lastPathComponent], [destDirec lastPathComponent]);
 							}
 							status = NO;
 						}

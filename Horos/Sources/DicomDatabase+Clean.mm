@@ -307,7 +307,7 @@
 							}
 							
 							for (DicomStudy *study in toBeRemoved) {
-                                NSLog( @"Delete Study: %@ - %@", study.patientID, study.studyInstanceUID);
+                                NSLog( @"Delete Study: %@", study.studyInstanceUID); // SekhVet Paket CT: no patient ID in the system log
 								[self.managedObjectContext deleteObject:study];
 							}
 							
@@ -540,9 +540,14 @@ static BOOL _cleanForFreeSpaceLimitSoonReachedDisplayed = NO;
         }
         
         // sort studiesDates by date
+        // Sekhmet (DG): aelteste zuerst, Studien ohne Datum zuletzt. Vorher war eine Studie ohne Datum jeder anderen
+        // "gleich" - das ist keine Ordnung, die Sortierung konnte neuere Studien vor aeltere stellen und die Bereinigung
+        // loeschte dann nicht die aeltesten (nach ThalesMMS/horos e948e313)
         [studiesDates sortUsingComparator: ^NSComparisonResult(id a, id b) {
-            if ([a count] < 2 || [b count] < 2) return NSOrderedSame;
-            return [[a objectAtIndex:1] compare:[b objectAtIndex:1]];
+            BOOL hasA = [a count] >= 2, hasB = [b count] >= 2;
+            if (hasA && hasB) return [[a objectAtIndex:1] compare:[b objectAtIndex:1]];
+            if (hasA == hasB) return NSOrderedSame;
+            return hasA ? NSOrderedAscending : NSOrderedDescending;
         }];
         
         NSString* dataBaseDirPathSlashed = self.dataBaseDirPath;
@@ -569,7 +574,7 @@ static BOOL _cleanForFreeSpaceLimitSoonReachedDisplayed = NO;
                     continue;
                 }
                 
-                NSLog(@"Info: study [%@ - %@ - %@] is being deleted for space (added %@, last opened %@)", study.studyName, study.patientID, study.date, study.dateAdded, study.dateOpened);
+                NSLog(@"Info: study [%@] is being deleted for space (added %@, last opened %@)", study.studyInstanceUID, study.dateAdded, study.dateOpened); // SekhVet Paket CT: UID instead of description, patient ID and date
                 
                 // list images to be deleted
                 NSMutableArray* imagesToDelete = [NSMutableArray array];

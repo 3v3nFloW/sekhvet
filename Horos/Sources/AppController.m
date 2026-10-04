@@ -38,12 +38,10 @@
 //diskutil erasevolume HFS+ "ramdisk" `hdiutil attach -nomount ram://1165430`
 #import "SystemConfiguration/SCDynamicStoreCopySpecific.h"
 #import "SekhmetTesthaken.h" // SekhVet: Testhaken nur mit Build-Flag SEKHVET_TESTHAKEN=1
+#import "SekhmetUpdate.h" // SekhVet Paket CB: Update-Pruefung gegen GitHub
+#import "SekhmetUeberlagerung.h" // SekhVet Paket CJ: Ueberlagern
 #include <CoreFoundation/CoreFoundation.h>
 #include <ApplicationServices/ApplicationServices.h>
-
-#if defined(USEFEEDBACKREPORTER)
-#import <FeedbackReporter/FRFeedbackReporter.h>
-#endif
 
 #import "ToolbarPanel.h"
 #import "ThumbnailsListPanel.h"
@@ -64,7 +62,6 @@
 #import "BrowserControllerDCMTKCategory.h"
 #import "ViewerController.h"
 #import "XMLController.h"
-#import "SplashScreen.h"
 #import "NSFont_OpenGL.h"
 #import "DicomFile.h"
 #import "DCM.h"
@@ -90,7 +87,6 @@
 #import "BonjourPublisher.h"
 #ifndef MACAPPSTORE
 #import "Reports.h"
-//#import <ILCrashReporter/ILCrashReporter.h>
 #import "VRView.h"
 #endif
 #endif
@@ -213,238 +209,37 @@ const char *GetPrivateIP()
 	return privateIPstring;
 }
 
-int GetAllPIDsForProcessName(const char* ProcessName, 
-                             pid_t ArrayOfReturnedPIDs[], 
-                             const unsigned int NumberOfPossiblePIDsInArray, 
-                             unsigned int* NumberOfMatchesFound,
-                             int* SysctlError)
+// SekhVet Paket CT: YES if the process runs the same executable file as we do. Used before any signal is
+// sent to another process, so that a Horos or OsiriX running next to SekhVet is never hit.
+BOOL SekhVetPIDRunsOwnExecutable(pid_t pid);
+BOOL SekhVetPIDRunsOwnExecutable(pid_t pid)
 {
-    // --- Defining local variables for this function and initializing all to zero --- //
-    int mib[6] = {0,0,0,0,0,0}; //used for sysctl call.
-    int SuccessfullyGotProcessInformation;
-    size_t sizeOfBufferRequired = 0; //set to zero to start with.
-    int error = 0;
-    long NumberOfRunningProcesses = 0;
-    unsigned int Counter = 0;
-    struct kinfo_proc* BSDProcessInformationStructure = NULL;
-    pid_t CurrentExaminedProcessPID = 0;
-    char* CurrentExaminedProcessName = NULL;
-
-    // --- Checking input arguments for validity --- //
-    if (ProcessName == NULL) //need valid process name
+    static char ownPath[PROC_PIDPATHINFO_MAXSIZE] = {0};
+    
+    if (pid <= 0)
+        return NO;
+    
+    if (ownPath[0] == 0 && proc_pidpath(getpid(), ownPath, sizeof(ownPath)) <= 0)
     {
-        return(kInvalidArgumentsError);
-    }
-
-    if (ArrayOfReturnedPIDs == NULL) //need an actual array
-    {
-        return(kInvalidArgumentsError);
-    }
-
-    if (NumberOfPossiblePIDsInArray <= 0)
-    {
-        //length of the array must be larger than zero.
-        return(kInvalidArgumentsError);
-    }
-
-    if (NumberOfMatchesFound == NULL) //need an integer for return.
-    {
-        return(kInvalidArgumentsError);
+        ownPath[0] = 0;
+        return NO;
     }
     
-
-    //--- Setting return values to known values --- //
-
-    //initalizing PID array so all values are zero
-    memset(ArrayOfReturnedPIDs, 0, NumberOfPossiblePIDsInArray * sizeof(pid_t));
-        
-    *NumberOfMatchesFound = 0; //no matches found yet
-
-    if (SysctlError != NULL) //only set sysctlError if it is present
-    {
-        *SysctlError = 0;
-    }
-
-    //--- Getting list of process information for all processes --- //
+    char otherPath[PROC_PIDPATHINFO_MAXSIZE] = {0};
+    if (proc_pidpath(pid, otherPath, sizeof(otherPath)) <= 0)
+        return NO;
     
-    /* Setting up the mib (Management Information Base) which is an array of integers where each
-    * integer specifies how the data will be gathered.  Here we are setting the MIB
-    * block to lookup the information on all the BSD processes on the system.  Also note that
-    * every regular application has a recognized BSD process accociated with it.  We pass
-    * CTL_KERN, KERN_PROC, KERN_PROC_ALL to sysctl as the MIB to get back a BSD structure with
-    * all BSD process information for all processes in it (including BSD process names)
-    */
-    mib[0] = CTL_KERN;
-    mib[1] = KERN_PROC;
-    mib[2] = KERN_PROC_ALL;
-
-    /* Here we have a loop set up where we keep calling sysctl until we finally get an unrecoverable error
-    * (and we return) or we finally get a succesful result.  Note with how dynamic the process list can
-    * be you can expect to have a failure here and there since the process list can change between
-    * getting the size of buffer required and the actually filling that buffer.
-    */
-    SuccessfullyGotProcessInformation = FALSE;
-    
-    while (SuccessfullyGotProcessInformation == FALSE)
-    {
-        /* Now that we have the MIB for looking up process information we will pass it to sysctl to get the 
-        * information we want on BSD processes.  However, before we do this we must know the size of the buffer to 
-        * allocate to accomidate the return value.  We can get the size of the data to allocate also using the 
-        * sysctl command.  In this case we call sysctl with the proper arguments but specify no return buffer 
-        * specified (null buffer).  This is a special case which causes sysctl to return the size of buffer required.
-        *
-        * First Argument: The MIB which is really just an array of integers.  Each integer is a constant
-        *     representing what information to gather from the system.  Check out the man page to know what
-        *     constants sysctl will work with.  Here of course we pass our MIB block which was passed to us.
-        * Second Argument: The number of constants in the MIB (array of integers).  In this case there are three.
-        * Third Argument: The output buffer where the return value from sysctl will be stored.  In this case
-        *     we don't want anything return yet since we don't yet know the size of buffer needed.  Thus we will
-        *     pass null for the buffer to begin with.
-        * Forth Argument: The size of the output buffer required.  Since the buffer itself is null we can just
-        *     get the buffer size needed back from this call.
-        * Fifth Argument: The new value we want the system data to have.  Here we don't want to set any system
-        *     information we only want to gather it.  Thus, we pass null as the buffer so sysctl knows that 
-        *     we have no desire to set the value.
-        * Sixth Argument: The length of the buffer containing new information (argument five).  In this case
-        *     argument five was null since we didn't want to set the system value.  Thus, the size of the buffer
-        *     is zero or NULL.
-        * Return Value: a return value indicating success or failure.  Actually, sysctl will either return
-        *     zero on no error and -1 on error.  The errno UNIX variable will be set on error.
-        */ 
-        error = sysctl(mib, 3, NULL, &sizeOfBufferRequired, NULL, 0);
-
-        /* If an error occurred then return the accociated error.  The error itself actually is stored in the UNIX 
-        * errno variable.  We can access the errno value using the errno global variable.  We will return the 
-        * errno value as the sysctlError return value from this function.
-        */
-        if (error != 0) 
-        {
-            if (SysctlError != NULL)
-            {
-                *SysctlError = errno;  //we only set this variable if the pre-allocated variable is given
-            } 
-
-            return(kErrorGettingSizeOfBufferRequired);
-        }
-    
-        /* Now we successful obtained the size of the buffer required for the sysctl call.  This is stored in the 
-        * SizeOfBufferRequired variable.  We will malloc a buffer of that size to hold the sysctl result.
-        */
-        BSDProcessInformationStructure = (struct kinfo_proc*) malloc(sizeOfBufferRequired);
-
-        if (BSDProcessInformationStructure == NULL)
-        {
-            if (SysctlError != NULL)
-            {
-                *SysctlError = ENOMEM;  //we only set this variable if the pre-allocated variable is given
-            } 
-
-            return(kUnableToAllocateMemoryForBuffer); //unrecoverable error (no memory available) so give up
-        }
-    
-        /* Now we have the buffer of the correct size to hold the result we can now call sysctl
-        * and get the process information.  
-        *
-        * First Argument: The MIB for gathering information on running BSD processes.  The MIB is really 
-        *     just an array of integers.  Each integer is a constant representing what information to 
-        *     gather from the system.  Check out the man page to know what constants sysctl will work with.  
-        * Second Argument: The number of constants in the MIB (array of integers).  In this case there are three.
-        * Third Argument: The output buffer where the return value from sysctl will be stored.  This is the buffer
-        *     which we allocated specifically for this purpose.  
-        * Forth Argument: The size of the output buffer (argument three).  In this case its the size of the 
-        *     buffer we already allocated.  
-        * Fifth Argument: The buffer containing the value to set the system value to.  In this case we don't
-        *     want to set any system information we only want to gather it.  Thus, we pass null as the buffer
-        *     so sysctl knows that we have no desire to set the value.
-        * Sixth Argument: The length of the buffer containing new information (argument five).  In this case
-        *     argument five was null since we didn't want to set the system value.  Thus, the size of the buffer
-        *     is zero or NULL.
-        * Return Value: a return value indicating success or failure.  Actually, sysctl will either return 
-        *     zero on no error and -1 on error.  The errno UNIX variable will be set on error.
-        */ 
-        error = sysctl(mib, 3, BSDProcessInformationStructure, &sizeOfBufferRequired, NULL, 0);
-    
-        //Here we successfully got the process information.  Thus set the variable to end this sysctl calling loop
-        if (error == 0)
-        {
-            SuccessfullyGotProcessInformation = TRUE;
-        }
-        else 
-        {
-            /* failed getting process information we will try again next time around the loop.  Note this is caused
-            * by the fact the process list changed between getting the size of the buffer and actually filling
-            * the buffer (something which will happen from time to time since the process list is dynamic).
-            * Anyways, the attempted sysctl call failed.  We will now begin again by freeing up the allocated 
-            * buffer and starting again at the beginning of the loop.
-            */
-            free(BSDProcessInformationStructure); 
-        }
-    }//end while loop
-
-    // --- Going through process list looking for processes with matching names --- //
-
-    /* Now that we have the BSD structure describing the running processes we will parse it for the desired
-     * process name.  First we will the number of running processes.  We can determine
-     * the number of processes running because there is a kinfo_proc structure for each process.
-     */
-    NumberOfRunningProcesses = sizeOfBufferRequired / sizeof(struct kinfo_proc);  
-    
-    /* Now we will go through each process description checking to see if the process name matches that
-     * passed to us.  The BSDProcessInformationStructure has an array of kinfo_procs.  Each kinfo_proc has
-     * an extern_proc accociated with it in the kp_proc attribute.  Each extern_proc (kp_proc) has the process name
-     * of the process accociated with it in the p_comm attribute and the PID of that process in the p_pid attibute.
-     * We test the process name by compairing the process name passed to us with the value in the p_comm value.
-     * Note we limit the compairison to MAXCOMLEN which is the maximum length of a BSD process name which is used
-     * by the system. 
-     */
-    for (Counter = 0 ; Counter < NumberOfRunningProcesses ; Counter++)
-    {
-        //Getting PID of process we are examining
-        CurrentExaminedProcessPID = BSDProcessInformationStructure[Counter].kp_proc.p_pid; 
-    
-        //Getting name of process we are examining
-        CurrentExaminedProcessName = BSDProcessInformationStructure[Counter].kp_proc.p_comm; 
-        
-        if ((CurrentExaminedProcessPID > 0) //Valid PID
-           && ((strncmp(CurrentExaminedProcessName, ProcessName, MAXCOMLEN) == 0))) //name matches
-        {	
-            // --- Got a match add it to the array if possible --- //
-            if ((*NumberOfMatchesFound + 1) > NumberOfPossiblePIDsInArray)
-            {
-                //if we overran the array buffer passed we release the allocated buffer give an error.
-                free(BSDProcessInformationStructure);
-                return(kPIDBufferOverrunError);
-            }
-        
-            //adding the value to the array.
-            ArrayOfReturnedPIDs[*NumberOfMatchesFound] = CurrentExaminedProcessPID;
-            
-            //incrementing our number of matches found.
-            *NumberOfMatchesFound = *NumberOfMatchesFound + 1;
-        }
-    }//end looking through process list
-
-    free(BSDProcessInformationStructure); //done with allocated buffer so release.
-
-    if (*NumberOfMatchesFound == 0)
-    {
-        //didn't find any matches return error.
-        return(kCouldNotFindRequestedProcess);
-    }
-    else
-    {
-        //found matches return success.
-        return(kSuccess);
-    }
+    return strcmp(ownPath, otherPath) == 0;
 }
 
-static int GetAllPIDsForProcessNameUsingLibproc(const char* processName,
-                                                pid_t returnedPIDs[],
-                                                const unsigned int returnedPIDsCapacity,
-                                                unsigned int* matchesFound,
-                                                int* processListError)
+// SekhVet Paket CT: replaces GetAllPIDsForProcessName / GetAllPIDsForProcessNameUsingLibproc, which matched by
+// process NAME ("Horos") and therefore also found a real Horos.
+static int GetAllPIDsForOwnExecutableUsingLibproc(pid_t returnedPIDs[],
+                                                  const unsigned int returnedPIDsCapacity,
+                                                  unsigned int* matchesFound,
+                                                  int* processListError)
 {
-    if (processName == NULL || returnedPIDs == NULL || returnedPIDsCapacity == 0 || matchesFound == NULL)
+    if (returnedPIDs == NULL || returnedPIDsCapacity == 0 || matchesFound == NULL)
         return kInvalidArgumentsError;
 
     memset(returnedPIDs, 0, returnedPIDsCapacity * sizeof(pid_t));
@@ -483,11 +278,7 @@ static int GetAllPIDsForProcessNameUsingLibproc(const char* processName,
         if (pids[index] <= 0)
             continue;
 
-        char currentProcessName[MAXCOMLEN + 1] = {0};
-        if (proc_name(pids[index], currentProcessName, sizeof(currentProcessName)) <= 0)
-            continue;
-
-        if (strncmp(currentProcessName, processName, MAXCOMLEN) == 0)
+        if (SekhVetPIDRunsOwnExecutable(pids[index]))
         {
             if (*matchesFound >= returnedPIDsCapacity)
             {
@@ -721,12 +512,6 @@ void exceptionHandler(NSException *exception)
 
 
 
-@interface AppController ()
-
-- (BOOL) setupCrashReporter;
-
-@end
-
 @interface AppController (Dummy)
 
 - (void)AddCurrentWLWW:(id)dummy;
@@ -940,6 +725,31 @@ void exceptionHandler(NSException *exception)
 	checkForPreferencesUpdate = b;
 }
 
+// SekhVet Paket CT: runs once per installation, before the defaults are registered.
+// Since 1.0 the DICOM listener and its C-FIND / C-GET services are OFF on a fresh install. An installation that
+// already existed (STARTCOUNT is written on every launch) and never stored these switches was running with the
+// old default (on): that value is stored now, so existing setups keep receiving. Existing installations are also
+// not asked the update question again.
++ (void) sekhvetMigrateDefaultsOnce
+{
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSString *domain = [[NSBundle mainBundle] bundleIdentifier];
+    NSDictionary *stored = domain ? [d persistentDomainForName: domain] : nil;
+    
+    if( [stored objectForKey: @"SekhVetDefaultsMigratedCT"]) return;
+    
+    if( [stored objectForKey: @"STARTCOUNT"]) // existing installation
+    {
+        for( NSString *key in @[@"STORESCP", @"activateCFINDSCP", @"activateCGETSCP"])
+            if( [stored objectForKey: key] == nil)
+                [d setBool: YES forKey: key];
+        
+        [d setBool: YES forKey: @"SekhVetUpdateConsentAsked"];
+    }
+    
+    [d setBool: YES forKey: @"SekhVetDefaultsMigratedCT"];
+}
+
 + (void) cleanOsiriXSubProcesses
 {
 	const int kPIDArrayLength = 100;
@@ -948,9 +758,12 @@ void exceptionHandler(NSException *exception)
     unsigned int NumberOfMatches;
     int Counter, Error;
 	
+    // SekhVet Paket CT: only processes that run OUR executable are stopped (forked listener children in the
+    // multi-process listener mode). The old code matched by process name and could send SIGTERM to a Horos
+    // running next to SekhVet; it also killed every process named "CrashReporter" (crash reporter removed).
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"] == NO)
     {
-        Error = GetAllPIDsForProcessNameUsingLibproc( [[[NSProcessInfo processInfo] processName] UTF8String], MyArray, kPIDArrayLength, &NumberOfMatches, NULL);
+        Error = GetAllPIDsForOwnExecutableUsingLibproc( MyArray, kPIDArrayLength, &NumberOfMatches, NULL);
         
         if (Error == 0)
         {
@@ -962,31 +775,36 @@ void exceptionHandler(NSException *exception)
                     kill( MyArray[ Counter], 15);
                     
                     char dir[ 1024];
-                    sprintf( dir, "%s-%d", "/tmp/lock_process", MyArray[ Counter]);
+                    snprintf( dir, sizeof( dir), "%s-%d", "/tmp/lock_process", MyArray[ Counter]);
                     unlink( dir);
                 }
             } 
         }
     }
-    
-    Error = GetAllPIDsForProcessNameUsingLibproc( "CrashReporter", MyArray, kPIDArrayLength, &NumberOfMatches, NULL);
-	
-	if (Error == 0)
-    {
-        for (Counter = 0 ; Counter < NumberOfMatches ; Counter++)
-        {
-			if( MyArray[ Counter] != getpid())
-			{
-				NSLog( @"Child Process to kill (CrashReporter): %d (PID)", MyArray[ Counter]);
-				kill( MyArray[ Counter], 15);
-			}
-        }
-    }
 }
 
+// SekhVet Paket CT: a random identifier per installation. It replaces "<Mac serial number>|<login name>",
+// which was broadcast to the local network in the Bonjour TXT records. It is only compared for equality
+// (to recognise our own Bonjour service), so the format does not matter.
 +(NSString*)UID
 {
-    return [NSString stringWithFormat:@"%@|%@", [N2Shell serialNumber], NSUserName()];
+    static NSString *uid = nil;
+    
+    @synchronized( [AppController class])
+    {
+        if( uid == nil)
+        {
+            uid = [[NSUserDefaults standardUserDefaults] stringForKey: @"SekhVetInstallUUID"];
+            
+            if( uid.length == 0)
+            {
+                uid = [[NSUUID UUID] UUIDString];
+                [[NSUserDefaults standardUserDefaults] setObject: uid forKey: @"SekhVetInstallUUID"];
+            }
+        }
+    }
+    
+    return uid;
 }
 
 + (void) setUSETOOLBARPANEL: (BOOL) b
@@ -1205,38 +1023,20 @@ void exceptionHandler(NSException *exception)
     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_WEB_PAGE]];
 }
 
--(IBAction)help:(id)sender
-{
-    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_LEARNING]];
-}
-
--(IBAction)openHorosSupport:(id)sender
-{
-    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_SUPPORT_PAGE]];
-}
-
--(IBAction)openCommunityPage:(id)sender
-{
-    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_COMMUNITY]];
-}
-
+// SekhVet Paket CT: help:, openHorosSupport:, openCommunityPage: and sendEmail: (Horos support pages) are removed.
 -(IBAction)openBugReportPage:(id)sender
 {
     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_BUG_REPORT_PAGE]];
 }
 
--(IBAction)sendEmail:(id)sender
-{
-    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"mailto:"URL_EMAIL]];
-}
-
 -(IBAction) osirix64bit:(id)sender
 {
+    // SekhVet Paket CT: there is no "64-bit" download page any more; the callers still exist, so this opens the SekhVet project page.
     if( sender)
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_VIEWER@"/Horos-64bit.html"]];
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_VIEWER]];
     else
     {
-        NSArray* urls = [NSArray arrayWithObject: [NSURL URLWithString:URL_HOROS_VIEWER@"/Horos-64bit.html"]];
+        NSArray* urls = [NSArray arrayWithObject: [NSURL URLWithString:URL_HOROS_VIEWER]];
         
         [[NSWorkspace sharedWorkspace] openURLs:urls withAppBundleIdentifier: nil options: NSWorkspaceLaunchWithoutActivation additionalEventParamDescriptor: nil launchIdentifiers: nil];
     }
@@ -1284,7 +1084,7 @@ void exceptionHandler(NSException *exception)
 		c = [c substringToIndex: 16];
 	
     if( c.length == 0)
-        c = @"HOROS";
+        c = @"SEKHVET"; // SekhVet Paket CT
     
 	[[NSUserDefaults standardUserDefaults] setObject: c forKey:@"AETITLE"];
 }
@@ -2126,6 +1926,17 @@ void exceptionHandler(NSException *exception)
 {
 	NSLog( @"startDICOMBonjour");
 
+	// SekhVet Paket CT: announce the DICOM node only while the listener is switched on - never a port nobody listens on.
+	// (Checked again here because this runs 5 s after restartSTORESCP.)
+	[BonjourDICOMService stop];
+	BonjourDICOMService = nil;
+	
+	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"STORESCP"] == NO || [[NSUserDefaults standardUserDefaults] boolForKey: @"publishDICOMBonjour"] == NO)
+		return;
+	
+	if( isSessionInactive && [[NSUserDefaults standardUserDefaults] boolForKey: @"RunListenerOnlyIfActive"]) // listener stopped for this login session
+		return;
+
 	BonjourDICOMService = [[NSNetService alloc] initWithDomain:@"" type:@"_dicom._tcp." name: [[NSUserDefaults standardUserDefaults] stringForKey: @"AETITLE"] port:[[[NSUserDefaults standardUserDefaults] stringForKey: @"AEPORT"] intValue]];
 	
 	NSString* description = [NSUserDefaults bonjourSharingName];
@@ -2277,7 +2088,8 @@ void exceptionHandler(NSException *exception)
 	[BonjourDICOMService stop];
 	BonjourDICOMService = nil;
 	
-	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"publishDICOMBonjour"])
+	// SekhVet Paket CT: only with the listener on (the announced port is AEPORT of the plain listener)
+	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"publishDICOMBonjour"] && [[NSUserDefaults standardUserDefaults] boolForKey: @"STORESCP"])
 	{
 		//Start DICOM Bonjour 
 		[NSTimer scheduledTimerWithTimeInterval: 5 target: self selector: @selector(startDICOMBonjour:) userInfo: nil repeats: NO];
@@ -2383,18 +2195,19 @@ void exceptionHandler(NSException *exception)
 	return;
 }
 
-// Manage osirix URL : osirix://
+// Manage the SekhVet URL scheme : sekhvet://
+// SekhVet Paket CT: horos:// and osirix:// are no longer claimed (Info.plist), so links meant for a Horos or OsiriX on the same Mac stay with them.
 
 - (void)getUrl:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent
 {
 	NSString *str = [[event paramDescriptorForKeyword:keyDirectObject] stringValue];
 	NSURL *url = [NSURL URLWithString: str];
 		
-	if( [[url scheme] isEqualToString: @"osirix"] || [[url scheme] isEqualToString: @"horos"] )
+	if( [[[url scheme] lowercaseString] isEqualToString: @"sekhvet"])
 	{
 		if( [[NSUserDefaults standardUserDefaults] boolForKey: @"httpXMLRPCServer"] == NO)
 		{
-			int result = NSRunInformationalAlertPanel(NSLocalizedString(@"URL scheme", nil), NSLocalizedString(@"SekhVet URL scheme [horos:// , osirix://] is currently not activated!\r\rShould I activate it now? Restart is necessary.", nil), NSLocalizedString(@"No",nil), NSLocalizedString(@"Activate & Restart",nil), nil);
+			int result = NSRunInformationalAlertPanel(NSLocalizedString(@"URL scheme", nil), NSLocalizedString(@"The SekhVet URL scheme [sekhvet://] is currently not activated!\r\rShould I activate it now? Restart is necessary.", nil), NSLocalizedString(@"No",nil), NSLocalizedString(@"Activate & Restart",nil), nil);
 			
 			if( result == NSAlertAlternateReturn)
 			{
@@ -2675,12 +2488,12 @@ static BOOL firstCall = YES;
 	[[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"hideListenerError"];
 	[[NSUserDefaults standardUserDefaults] synchronize];
 	
-	[[NSFileManager defaultManager] createFileAtPath: @"/tmp/kill_all_storescu" contents: [NSData data] attributes: nil];
+	[[NSFileManager defaultManager] createFileAtPath: @"/tmp/kill_all_storescu_sekhvet" contents: [NSData data] attributes: nil];
 	[[NSRunLoop currentRunLoop] runUntilDate: [NSDate dateWithTimeIntervalSinceNow: 3]];
 	
 	[wait close];
 	
-	unlink( "/tmp/kill_all_storescu");
+	unlink( "/tmp/kill_all_storescu_sekhvet");
 	
 	[[NSUserDefaults standardUserDefaults] setBool: hideListenerError_copy forKey: @"hideListenerError"];
 	[[NSUserDefaults standardUserDefaults] removeObjectForKey: @"copyHideListenerError"];
@@ -2689,7 +2502,7 @@ static BOOL firstCall = YES;
 
 - (void) applicationWillTerminate: (NSNotification*) aNotification
 {
-	unlink( "/tmp/kill_all_storescu");
+	unlink( "/tmp/kill_all_storescu_sekhvet");
 	
 #ifndef OSIRIX_LIGHT
     [DICOMTLS eraseKeys];
@@ -2942,7 +2755,7 @@ static BOOL initialized = NO;
 				NSLog(@"Number of processors: %d / %d", processors, (int) [[NSProcessInfo processInfo] processorCount]);
                 NSLog(@"Number of screens: %d", (int) [[NSScreen screens] count]);
 				NSLog(@"Main screen backingScaleFactor: %f", (float) [[NSScreen mainScreen] backingScaleFactor]);
-                NSLog(@"Horos version: %@ - %@ - %@", [[[NSBundle mainBundle] infoDictionary] objectForKey:(NSString *)kCFBundleVersionKey], [[[NSBundle mainBundle] infoDictionary] objectForKey: @"CFBundleShortVersionString"], bits);
+                NSLog(@"SekhVet version: %@ - %@ - %@", [[[NSBundle mainBundle] infoDictionary] objectForKey:(NSString *)kCFBundleVersionKey], [[[NSBundle mainBundle] infoDictionary] objectForKey: @"CFBundleShortVersionString"], bits);
                 NSLog(@"OpenJPEG %d.%d.%d", OPJ_VERSION_MAJOR, OPJ_VERSION_MINOR, OPJ_VERSION_BUILD);                
                 NSArray *components = [[[NSBundle mainBundle] pathForResource: @"Localizable" ofType: @"strings"] pathComponents];
                 if( components.count > 3)
@@ -2972,6 +2785,7 @@ static BOOL initialized = NO;
 				
 				// ** REGISTER DEFAULTS DICTIONARY
                 
+				[AppController sekhvetMigrateDefaultsOnce]; // SekhVet Paket CT: must run before the defaults are registered
 				[[NSUserDefaults standardUserDefaults] registerDefaults: [DefaultsOsiriX getDefaults]];
                 
                 
@@ -2984,6 +2798,9 @@ static BOOL initialized = NO;
                     {
                         for( NSString *k in [[[NSUserDefaults standardUserDefaults] dictionaryRepresentation] allKeys])
                             [[NSUserDefaults standardUserDefaults] removeObjectForKey: k];
+                        
+                        // SekhVet Paket CT: after a reset this is a fresh install - do not treat it as an existing one at the next start (see sekhvetMigrateDefaultsOnce)
+                        [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SekhVetDefaultsMigratedCT"];
                         
                         [[NSUserDefaults standardUserDefaults] synchronize];
                     }
@@ -3065,7 +2882,7 @@ static BOOL initialized = NO;
                 if ([dataBasePath hasPrefix:@"/Volumes/"] || dataBasePath == nil) {
                     NSString* volumePath = [[[dataBasePath componentsSeparatedByString:@"/"] subarrayWithRange:NSMakeRange(0,3)] componentsJoinedByString:@"/"];
                     if (![[NSFileManager defaultManager] fileExistsAtPath:volumePath]) {
-                        NSPanel* dialog = [NSPanel alertWithTitle:@"Horos Data"
+                        NSPanel* dialog = [NSPanel alertWithTitle:@"SekhVet Data"
                                                           message:[NSString stringWithFormat:NSLocalizedString(@"SekhVet is configured to use the database located at %@. This volume is currently not available, most likely because it hasn't yet been mounted by the system, or because it is not plugged in or is turned off, or because you don't have write permissions for this location. SekhVet will wait for a few minutes, then give up and switch to a database in the current user's home directory.", nil), [[NSUserDefaults standardUserDefaults] stringForKey: @"DATABASELOCATIONURL"]]
                                                     defaultButton:@"Quit"
                                                   alternateButton:@"Continue"
@@ -3082,7 +2899,7 @@ static BOOL initialized = NO;
                             if ([[NSFileManager defaultManager] fileExistsAtPath:volumePath]) // the volume has become available, we can close the dialog
                                 break;
                             if ([NSDate timeIntervalSinceReferenceDate] > endTime) { // time's out, we close the dialog
-                                NSLog(@"Warning: after waiting for 10 minutes, Horos is switching to the default database location because %@ is still not available", volumePath);
+                                NSLog(@"Warning: after waiting for 10 minutes, SekhVet is switching to the default database location because %@ is still not available", volumePath);
                                 break;
                             }
                         }
@@ -3107,7 +2924,7 @@ static BOOL initialized = NO;
                 if ([dataBaseDataPath hasPrefix:@"/Volumes/"]) {
                     NSString* volumePath = [[[dataBaseDataPath componentsSeparatedByString:@"/"] subarrayWithRange:NSMakeRange(0,3)] componentsJoinedByString:@"/"];
                     if (![[NSFileManager defaultManager] fileExistsAtPath:volumePath]) {
-                        NSPanel* dialog = [NSPanel alertWithTitle:@"Horos Data"
+                        NSPanel* dialog = [NSPanel alertWithTitle:@"SekhVet Data"
                                                           message:[NSString stringWithFormat:NSLocalizedString(@"SekhVet is configured to use the database with data located at %@. This volume is currently not available, most likely because it hasn't yet been mounted by the system, or because it is not plugged in or is turned off, or because you don't have write permissions for this location. SekhVet will wait for a few minutes, then give up and ignore this highly dangerous situation.", nil), dataBaseDataPath]
                                                     defaultButton:@"Quit"
                                                   alternateButton:@"Continue"
@@ -3124,7 +2941,7 @@ static BOOL initialized = NO;
                             if ([[NSFileManager defaultManager] fileExistsAtPath:volumePath]) // the volume has become available, we can close the dialog
                                 break;
                             if ([NSDate timeIntervalSinceReferenceDate] > endTime) { // time's out, we close the dialog
-                                NSLog(@"Warning: after waiting for 10 minutes, Horos is switching to the default database location because %@ is still not available", volumePath);
+                                NSLog(@"Warning: after waiting for 10 minutes, SekhVet is switching to the default database location because %@ is still not available", volumePath);
                                 break;
                             }
                         }
@@ -3326,31 +3143,91 @@ static BOOL initialized = NO;
     return YES;
 }
 
+// Sekhmet (P8, nach ThalesMMS/horos 4d46ba7): Eine Studie kommt in vielen Runden an, und jede Runde meldete
+// sich mit einer neuen Kennung - Dutzende Mitteilungen pro Studie, die die Mitteilungszentrale alle behielt.
+// Jetzt hat jede Art (name) eine Kennung, eine Mitteilung ersetzt die vorige ihrer Art, ein Schub wird
+// hoechstens alle SekhmetNotificationInterval s mit dem neuesten Text zugestellt, und nur die erste nach
+// SekhmetNotificationQuietSound s Ruhe macht einen Ton.
+static const NSTimeInterval SekhmetNotificationInterval = 10, SekhmetNotificationQuietSound = 60;
+
 - (void) notificationTitle:(NSString*) title description:(NSString*) description name:(NSString*) name
 {
 #ifndef OSIRIX_LIGHT
 #ifndef MACAPPSTORE
+    if (![NSThread isMainThread])
+    {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self notificationTitle: title description: description name: name]; });
+        return;
+    }
+    static NSMutableDictionary *delivered = nil, *pending = nil;
+    if (!delivered) { delivered = [[NSMutableDictionary alloc] init]; pending = [[NSMutableDictionary alloc] init]; }
+    NSString *kind = name.length ? name : @"sekhvet";
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    NSNumber *last = [delivered objectForKey: kind];
+    NSTimeInterval wait = last ? last.doubleValue + SekhmetNotificationInterval - now : 0;
+    if (wait > 0)
+    {
+        // SekhVet Paket CT: a different text is never dropped. Within the interval only identical title+text is
+        // coalesced; different texts of one kind are delivered together, one per line, in the order they came.
+        NSMutableArray *queue = [pending objectForKey: kind];
+        BOOL scheduled = queue != nil;
+        if (!queue) { queue = [NSMutableArray array]; [pending setObject: queue forKey: kind]; }
+        NSArray *entry = @[title ?: @"", description ?: @""];
+        if (![queue containsObject: entry])
+            [queue addObject: entry];
+        if (!scheduled)
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                NSArray *entries = [pending objectForKey: kind]; // ARC: die lokale Variable haelt das Array ueber removeObjectForKey hinaus
+                [pending removeObjectForKey: kind];
+                [delivered setObject: @([NSDate timeIntervalSinceReferenceDate]) forKey: kind];
+                if (entries.count == 0) return;
+                NSString *lastTitle = [[entries lastObject] objectAtIndex: 0];
+                NSMutableArray *lines = [NSMutableArray array];
+                for (NSArray *e in entries)
+                {
+                    NSString *t = [e objectAtIndex: 0], *d = [e objectAtIndex: 1];
+                    if (t.length == 0 || [t isEqualToString: lastTitle]) [lines addObject: d];
+                    else [lines addObject: [NSString stringWithFormat: @"%@: %@", t, d]];
+                }
+                [self sekhmetDeliverNotificationTitle: lastTitle description: [lines componentsJoinedByString: @"\n"] name: kind sound: NO];
+            });
+        return;
+    }
+    [delivered setObject: @(now) forKey: kind];
+    [self sekhmetDeliverNotificationTitle: title description: description name: kind
+                                    sound: !last || now - last.doubleValue >= SekhmetNotificationQuietSound];
+#endif
+#endif
+}
+
+- (void) sekhmetDeliverNotificationTitle:(NSString*) title description:(NSString*) description name:(NSString*) name sound:(BOOL) sound
+{
+#ifndef OSIRIX_LIGHT
+#ifndef MACAPPSTORE
+    NSString *identifier = [@"vet.kappa1.sekhvet.notification." stringByAppendingString: name];
     if (@available(macOS 10.14, *))
     {
         UNMutableNotificationContent *notification = [[UNMutableNotificationContent alloc] init];
         notification.title = title;
         notification.body = description;
         notification.categoryIdentifier = name;
-        notification.sound = [UNNotificationSound defaultSound];
+        notification.threadIdentifier = name;
+        if (sound) notification.sound = [UNNotificationSound defaultSound];
         
         UNNotificationTrigger* trigger = nil; // deliver immediately
-        UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier: [[NSUUID UUID] UUIDString] content: notification trigger: trigger];
+        UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier: identifier content: notification trigger: trigger];
         UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
         [center addNotificationRequest:request withCompletionHandler:^(NSError * _Nullable error) {
             if (error) {
-                NSLog(@"User Notification failed for title=[%@] description=[%@] error=[%@]", title, [description stringByReplacingOccurrencesOfString: @"\r" withString: @"\n"], error.localizedDescription);
+                NSLog(@"User Notification failed for name=[%@] error=[%@]", name, error.localizedDescription); // Sekhmet (P6): Text kann Patientennamen enthalten
             }
         }];
     } else {
         NSUserNotification *notification = [[NSUserNotification alloc] init];
+        [notification setIdentifier: identifier];
         [notification setTitle: title];
         [notification setInformativeText: description];
-        [notification setSoundName: NSUserNotificationDefaultSoundName];
+        if (sound) [notification setSoundName: NSUserNotificationDefaultSoundName];
         [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification: notification];
     }
 #endif
@@ -3391,6 +3268,21 @@ static BOOL initialized = NO;
 	
 	dcmtkQRSCP = nil;
 	dcmtkQRSCPTLS = nil;
+	
+	// SekhVet Paket CT: the listener is stopped, so stop announcing it; restartSTORESCP announces it again
+	if( [NSThread isMainThread])
+	{
+		[BonjourDICOMService stop];
+		BonjourDICOMService = nil;
+	}
+	else
+		dispatch_async( dispatch_get_main_queue(), ^{
+			if( [dcmtkQRSCP running] == NO)
+			{
+				[BonjourDICOMService stop];
+				BonjourDICOMService = nil;
+			}
+		});
 }
 
 - (void) switchHandler:(NSNotification*) notification
@@ -3401,7 +3293,7 @@ static BOOL initialized = NO;
 		
 		if( [[NSUserDefaults standardUserDefaults] boolForKey:@"RunListenerOnlyIfActive"])
 		{
-			NSLog( @"----- Horos : session deactivation: STOP DICOM LISTENER FOR THIS SESSION");
+			NSLog( @"----- SekhVet : session deactivation: STOP DICOM LISTENER FOR THIS SESSION");
 			
 			[self killDICOMListenerWait: YES];
 			
@@ -3416,7 +3308,7 @@ static BOOL initialized = NO;
 		
 		if( [[NSUserDefaults standardUserDefaults] boolForKey:@"RunListenerOnlyIfActive"])
 		{
-			NSLog( @"----- Horos : session activation: START DICOM LISTENER FOR THIS SESSION");
+			NSLog( @"----- SekhVet : session activation: START DICOM LISTENER FOR THIS SESSION");
 			
 			// [[BrowserController currentBrowser] loadDatabase: [[BrowserController currentBrowser] currentDatabasePath]]; // TODO: hmm
 			
@@ -3471,6 +3363,11 @@ static BOOL initialized = NO;
     [[SekhmetNorberg shared] deleteDIInFrontViewer: sender];
 }
 
+- (IBAction) sekhmetHipSwapSides:(id) sender // SekhVet Paket CS: R <-> L of the hip measurement (image shown mirrored)
+{
+    [[SekhmetNorberg shared] swapSidesInFrontViewer: sender];
+}
+
 - (IBAction) sekhmetDIRiskToggle:(id) sender // SekhVet Paket BE: risk level in the DI label (option)
 {
     BOOL on = ![SekhmetNorberg showsRisk];
@@ -3482,13 +3379,6 @@ static BOOL initialized = NO;
 {
     [[SekhmetDICOMweb shared] showWindow: sender];
     [[[SekhmetDICOMweb shared] window] makeKeyAndOrderFront: sender];
-}
-
-- (IBAction) sekhmetStow:(id) sender
-{
-    [[SekhmetDICOMweb shared] showWindow: sender];
-    [[[SekhmetDICOMweb shared] window] makeKeyAndOrderFront: sender];
-    [[SekhmetDICOMweb shared] stow: sender];
 }
 
 - (IBAction) sekhmetShowImport:(id) sender
@@ -3592,6 +3482,12 @@ static void sekhmetRotateFrames( NSArray *ordered)
     [key makeKeyAndOrderFront: self];
 }
 
+// SekhVet Paket BZ: Import aus anderen Datenbanken (auch aus Einstellungen > Database, Ziel nil ueber die Responder-Kette)
+- (IBAction) sekhmetShowOtherDatabases:(id) sender
+{
+    [[SekhmetDatenbankImport shared] zeigen: sender];
+}
+
 - (void) sekhmetInstallMenu
 {
     NSMenu *sek = [[NSMenu alloc] initWithTitle: NSLocalizedString( @"Vet Tools", nil)]; // Paket F: App-Menue heisst SekhVet, darum eigener Name
@@ -3600,8 +3496,8 @@ static void sekhmetRotateFrames( NSArray *ordered)
     [[sek addItemWithTitle: NSLocalizedString( @"Opening Protocols (which series open)…", nil) action: @selector(sekhmetShowOpeningPanel:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket AU
     [[sek addItemWithTitle: NSLocalizedString( @"Apply Hanging Protocol to Open Viewers", nil) action: @selector(sekhmetApplyOrientation:) keyEquivalent: @""] setTarget: self];
     [[sek addItemWithTitle: NSLocalizedString( @"Display (Screen Area, Annotations, MPR)…", nil) action: @selector(sekhmetShowDisplayPanel:) keyEquivalent: @""] setTarget: self];
-    [[sek addItemWithTitle: NSLocalizedString( @"Swap / Rotate Windows (MPR with their 2D series, else 2D series)", nil) action: @selector(sekhmetSwapMPRWindows:) keyEquivalent: @"h"] setTarget: self]; // SekhVet Paket BW-2: Cmd-H (Erweiterung von "h" = horizontal spiegeln)
-    // SekhVet Paket BW-2: Cmd-H gehoert jetzt dem MPR-Tausch -- "Hide SekhVet" (MainMenu.xib) gibt das Kuerzel ab, "Hide Others" (Opt-Cmd-H) bleibt
+    [[sek addItemWithTitle: NSLocalizedString( @"Swap / Rotate Windows (MPR with their 2D series, else 2D series)", nil) action: @selector(sekhmetSwapMPRWindows:) keyEquivalent: @"h"] setTarget: self]; // SekhVet Paket BW-2: Cmd-H
+    // SekhVet Paket BW-2: Cmd-H belongs to the window swap (documented in the manual, 5.17) -- "Hide SekhVet" (MainMenu.xib) gives up the shortcut, "Hide Others" (Opt-Cmd-H) stays
     NSMenuItem *appItem = [[[NSApp mainMenu] itemArray] firstObject];
     for( NSMenuItem *mi in [[appItem submenu] itemArray])
         if( [mi action] == @selector(hide:) && [[mi keyEquivalent] isEqualToString: @"h"] && ([mi keyEquivalentModifierMask] & NSEventModifierFlagOption) == 0)
@@ -3611,13 +3507,15 @@ static void sekhmetRotateFrames( NSArray *ordered)
     [[sek addItemWithTitle: NSLocalizedString( @"Delete Norberg Measurement", nil) action: @selector(sekhmetNorbergDelete:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket W
     [[sek addItemWithTitle: NSLocalizedString( @"Distraction Index (PennHIP) — Place / Reset", nil) action: @selector(sekhmetDI:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket BD
     [[sek addItemWithTitle: NSLocalizedString( @"Delete Distraction Index", nil) action: @selector(sekhmetDIDelete:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket BD
+    [[sek addItemWithTitle: NSLocalizedString( @"Hip Measurement: Exchange Sides R ↔ L", nil) action: @selector(sekhmetHipSwapSides:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket CS
     NSMenuItem *diRisk = [sek addItemWithTitle: NSLocalizedString( @"Show DI Risk Level (< 0.30 low · 0.30–0.70 moderate · > 0.70 high)", nil) action: @selector(sekhmetDIRiskToggle:) keyEquivalent: @""]; // SekhVet Paket BE
     [diRisk setTarget: self];
     [diRisk setState: [SekhmetNorberg showsRisk] ? NSControlStateValueOn : NSControlStateValueOff];
     [sek addItem: [NSMenuItem separatorItem]];
     [[sek addItemWithTitle: NSLocalizedString( @"DICOMweb Query (QIDO-RS / WADO-RS)…", nil) action: @selector(sekhmetShowDICOMweb:) keyEquivalent: @""] setTarget: self];
     [[sek addItemWithTitle: NSLocalizedString( @"Import Image / PDF as DICOM…", nil) action: @selector(sekhmetShowImport:) keyEquivalent: @""] setTarget: self];
-    [[sek addItemWithTitle: NSLocalizedString( @"Send Selected Studies via STOW-RS…", nil) action: @selector(sekhmetStow:) keyEquivalent: @""] setTarget: self];
+    [[sek addItemWithTitle: NSLocalizedString( @"Import from Other Databases (Horos, OsiriX …)…", nil) action: @selector(sekhmetShowOtherDatabases:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket BZ
+    [sek addItem: [SekhmetDICOMweb sendMenuItemWithTitle: NSLocalizedString( @"Send Selected Studies via DICOMweb", nil)]]; // SekhVet Paket CH: je Knoten ein Eintrag
     [sek addItemWithTitle: NSLocalizedString( @"Rename Patient (DICOM)…", nil) action: @selector(sekhmetRenamePatient:) keyEquivalent: @""]; // SekhVet Paket BC: Ziel nil = Datenbankfenster ueber die Responder-Kette
     [sek addItem: [NSMenuItem separatorItem]]; // SekhVet Paket F
     [[sek addItemWithTitle: NSLocalizedString( @"Send Feedback…", nil) action: @selector(feedback:) keyEquivalent: @""] setTarget: [SekhmetAbout shared]]; // SekhVet Paket AZ
@@ -3628,12 +3526,18 @@ static void sekhmetRotateFrames( NSArray *ordered)
     [item setSubmenu: sek];
     NSMenu *main = [NSApp mainMenu];
     [main insertItem: item atIndex: MAX( 0, [main numberOfItems] - 1)];
+    [SekhmetDICOMweb performSelector: @selector(startAutoRefreshIfConfigured) withObject: nil afterDelay: 20]; // SekhVet Paket DN: Auto-Refresh lief beim Beenden
 #if SEKHVET_TESTHAKEN
     if( sekhvetTesthaken( "SEKHVET_IMPORT_TEST")) [SekhmetImport performSelector: @selector(debugImportFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test von Paket G
+    if( sekhvetTesthaken( "SEKHVET_DBIMPORT_TEST")) [SekhmetDatenbankImport performSelector: @selector(debugDatenbankImportFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket BZ
     if( sekhvetTesthaken( "SEKHVET_RENAME_TEST")) [SekhmetRename performSelector: @selector(debugRenameFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket BC
     if( sekhvetTesthaken( "SEKHVET_STOW_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugStowFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test STOW-RS
     if( sekhvetTesthaken( "SEKHVET_WADO_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugWadoFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test WADO-RS-Stream
     if( sekhvetTesthaken( "SEKHVET_SPINE_TEST")) NSLog( @"SekhVet Wirbel-Labels Selbsttest: %@", [SekhmetSpine debugSelfTest]);
+    if( sekhvetTesthaken( "SEKHVET_OVERLAY_TEST")) NSLog( @"SekhVet Overlay self-test: %@", [SekhmetUeberlagerung debugSelfTest]); // SekhVet Paket CJ
+    if( sekhvetTesthaken( "SEKHVET_OVERLAY_E2E_TEST")) [SekhmetUeberlagerung performSelector: @selector(debugE2E) withObject: nil afterDelay: 60]; // SekhVet Paket CJ
+    if( sekhvetTesthaken( "SEKHVET_SUBTRAKTION_E2E_TEST")) [SekhmetUeberlagerung performSelector: @selector(debugSubtraktionE2E) withObject: nil afterDelay: 60]; // SekhVet Paket CX
+    if( sekhvetTesthaken( "SEKHVET_MPR_OVERLAY_E2E_TEST")) [SekhmetUeberlagerung performSelector: @selector(debugMPROverlayE2E) withObject: nil afterDelay: 60]; // SekhVet Paket DA
     if( sekhvetTesthaken( "SEKHVET_SPINE_E2E_TEST")) [SekhmetSpine performSelector: @selector(debugE2E) withObject: nil afterDelay: 60]; // SekhVet Paket BR
     if( sekhvetTesthaken( "SEKHVET_NORBERG_TEST")) NSLog( @"SekhVet Norberg self-test: %@", [SekhmetNorberg debugSelfTest]); // SekhVet Paket U
     if( sekhvetTesthaken( "SEKHVET_USCAL_TEST")) NSLog( @"SekhVet US calibration self-test: %@", [SekhmetUSKalibrierung debugSelfTestWithDirectory: [NSString stringWithUTF8String: sekhvetTesthaken( "SEKHVET_USCAL_TEST")]]); // SekhVet Paket BH
@@ -3652,11 +3556,37 @@ static void sekhmetRotateFrames( NSArray *ordered)
 #endif // SEKHVET_TESTHAKEN
 }
 
+// SekhVet Paket CT: the question about the daily update check. It is asked once, on a fresh install, after the
+// medical disclaimer has been accepted. Existing installs are marked as asked by sekhvetMigrateDefaultsOnce
+// and keep their setting. Headless test runs skip the disclaimer and therefore this question as well.
+- (void) sekhvetAskUpdateConsentIfNeeded
+{
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    
+    if( [d boolForKey: @"SekhVetUpdateConsentAsked"]) return;
+    if( [d integerForKey: @"SekhmetDisclaimerAccepted"] < 1) return;
+#if SEKHVET_TESTHAKEN                               // test build only: never block a headless test run
+    for( NSString *k in [[NSProcessInfo processInfo] environment])
+        if( [k hasPrefix: @"SEKHVET_"]) return;
+#endif
+    
+    NSAlert *a = [[NSAlert alloc] init];
+    [a setAlertStyle: NSAlertStyleInformational];
+    [a setMessageText: NSLocalizedString( @"Check for updates?", nil)];
+    [a setInformativeText: NSLocalizedString( @"SekhVet can check GitHub once a day for a new version and tell you about it. Nothing is installed automatically; you download and install updates yourself.", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Check for Updates", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Don't Check", nil)];
+    
+    [d setBool: ([a runModal] == NSAlertFirstButtonReturn) forKey: @"CheckHorosUpdates"];
+    [d setBool: YES forKey: @"SekhVetUpdateConsentAsked"];
+}
+
 - (void) applicationDidFinishLaunching:(NSNotification*) aNotification
 {
-	unlink( "/tmp/kill_all_storescu");
+	unlink( "/tmp/kill_all_storescu_sekhvet");
     [self sekhmetInstallMenu]; // Sekhmet-Menue vor "Help"
     [SekhmetAbout showDisclaimerIfNeeded]; // SekhVet Paket AA: Hinweis beim ersten Start
+    [self sekhvetAskUpdateConsentIfNeeded]; // SekhVet Paket CT: after the disclaimer, only on a fresh install
     [SekhmetContribute showReminderIfNeeded]; // SekhVet Paket AR: zurueckhaltende Beitrags-Erinnerung
 	
     [[[NSWorkspace sharedWorkspace] notificationCenter]
@@ -3677,6 +3607,7 @@ static void sekhmetRotateFrames( NSArray *ordered)
     //
     if (@available(macOS 10.14, *)) {
         UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+        [center removeAllDeliveredNotifications]; // Sekhmet (P8): fruehere Versionen hinterliessen eine Mitteilung je Import-Runde
         [center requestAuthorizationWithOptions:(UNAuthorizationOptionSound | UNAuthorizationOptionAlert)
                               completionHandler:^(BOOL granted, NSError * _Nullable error) {
             if (!error) {
@@ -3713,9 +3644,6 @@ static void sekhmetRotateFrames( NSArray *ordered)
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"] == NO)
 		NSLog( @"----- %@", NSLocalizedString( @"DICOM Listener is multi-processes mode.", nil));
 	
-	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"])
-		[[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"checkForUpdatesPlugins"];
-	
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"USEALWAYSTOOLBARPANEL2"];
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"syncPreviewList"];
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SeriesListVisible"];
@@ -3724,15 +3652,8 @@ static void sekhmetRotateFrames( NSArray *ordered)
     
 	#ifndef MACAPPSTORE
 	#ifndef OSIRIX_LIGHT
-	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"checkForUpdatesPlugins"])
-		[NSThread detachNewThreadSelector:@selector(checkForUpdates:) toTarget:pluginManager withObject:pluginManager];
-	
-    
-    // If Horos crashed before...
-    NSString *HorosCrashed = @"/tmp/HorosCrashed";
-    
-    if( [[NSFileManager defaultManager] fileExistsAtPath: HorosCrashed]) // SekhVet Paket BN: marker only, no update check
-        [[NSFileManager defaultManager] removeItemAtPath: HorosCrashed error: nil];
+    // SekhVet Paket CT: no plugin update check at start (it fetched a list over plain http from horosproject.org), and the unused /tmp/HorosCrashed marker is gone.
+    [SekhmetUpdate pruefenNachStart]; // SekhVet Paket CB: still, hoechstens alle 24 h, nur mit Haekchen in General
     
 	#endif
 	#endif
@@ -3904,14 +3825,6 @@ static void sekhmetRotateFrames( NSArray *ordered)
         [[QueryController currentQueryController] showWindow: self];
     }
 #endif
-    
-#if defined(USEFEEDBACKREPORTER)
-    //dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.f * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [FRFeedbackReporter sharedReporter];
-        });
-    //});
-#endif
 }
 
 - (void) checkForOsirixMimeType
@@ -3930,7 +3843,7 @@ static void sekhmetRotateFrames( NSArray *ordered)
 	
 	NSMutableDictionary *mutableDict = [NSMutableDictionary dictionaryWithDictionary: dict];
 	
-	NSDictionary *handlerForOsiriX = [NSDictionary dictionaryWithObjectsAndKeys: @BUNDLE_IDENTIFIER, @"LSHandlerRoleAll", @"dicom", @"LSHandlerURLScheme", nil];
+	NSDictionary *handlerForOsiriX = [NSDictionary dictionaryWithObjectsAndKeys: ([[NSBundle mainBundle] bundleIdentifier] ?: @BUNDLE_IDENTIFIER), @"LSHandlerRoleAll", @"dicom", @"LSHandlerURLScheme", nil]; // SekhVet Paket CT: the real bundle identifier, not the one of Horos
 	
 	[mutableDict setObject: [[dict objectForKey: @"LSHandlers"] arrayByAddingObject: handlerForOsiriX] forKey: @"LSHandlers"];
 	
@@ -4147,9 +4060,7 @@ static void sekhmetRotateFrames( NSArray *ordered)
         [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"MagneticWindows"];
         [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SekhmetPropagateMigrated"];
     }
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self setupCrashReporter];
-    });
+    // SekhVet Paket CT: the Horos crash reporter (FeedbackReporter) is no longer built in; macOS keeps the crash logs.
     
     ////////////////////////////
     
@@ -4208,60 +4119,6 @@ static void sekhmetRotateFrames( NSArray *ordered)
 		
 	}
 	
-    /*
-	#ifndef OSIRIX_LIGHT
-	#ifndef MACAPPSTORE
-    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO)
-    {
-        @try
-        {
-            ILCrashReporter *reporter = [ILCrashReporter defaultReporter];
-            
-            NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-            
-            
-            if( [d valueForKey: @"crashReporterSMTPServer"])
-            {
-                reporter.SMTPServer = [d valueForKey: @"crashReporterSMTPServer"];
-                int port = [d integerForKey: @"crashReporterSMTPPort"];
-                reporter.SMTPPort = port? port : 25;
-                // if these are empty, set them to empty
-                reporter.SMTPUsername = [d valueForKey: @"crashReporterSMTPUsername"];
-                reporter.SMTPPassword = [d valueForKey: @"crashReporterSMTPPassword"];
-            }
-            
-            if( [d valueForKey: @"crashReporterFromAddress"])
-            {
-                reporter.fromAddress = [d valueForKey: @"crashReporterFromAddress"];
-            }
-            
-            NSString *reportAddr = @"horoscrashreport@gmail.com";
-            
-            if( [d valueForKey: @"crashReporterToAddress"])
-            {
-                reportAddr = [d valueForKey: @"crashReporterToAddress"];
-            }
-            
-            reporter.automaticReport = [d boolForKey: @"crashReporterAutomaticReport"];
-            
-            
-            NSLog(@"%@",reporter.SMTPServer);
-            NSLog(@"%@",reporter.SMTPUsername);
-            NSLog(@"%@",reporter.SMTPPassword);
-            NSLog(@"%@",reporter.fromAddress);
-            
-            
-            [reporter launchReporterForCompany:@"Horos Developers" reportAddr: reportAddr];
-        }
-        @catch (NSException *e)
-        {
-            NSLog( @"**** Exception ILCrashReporter: %@", e);
-        }
-    }
-	#endif
-	#endif
-	*/
-     
 	[PluginManager setMenus: filtersMenu :roisMenu :othersMenu :dbMenu];
     
 	appController = self;
@@ -4317,48 +4174,7 @@ static void sekhmetRotateFrames( NSArray *ordered)
 	long startCount = [[NSUserDefaults standardUserDefaults] integerForKey: @"STARTCOUNT"];
 	[[NSUserDefaults standardUserDefaults] setInteger: startCount+1 forKey: @"STARTCOUNT"];
 	
-	if (startCount == 0) // Replaces FIRSTTIME.
-	{
-		switch( NSRunInformationalAlertPanel( NSLocalizedString(@"SekhVet Updates", nil), NSLocalizedString( @"Would you like to activate automatic checking for updates?", nil), NSLocalizedString( @"Yes", nil), NSLocalizedString( @"No", nil), nil))
-		{
-			case 0:
-				[[NSUserDefaults standardUserDefaults] setObject: @"NO" forKey: @"CheckHorosUpdates"];
-			break;
-		}
-	}
-	else
-	{
-		if (![[NSUserDefaults standardUserDefaults] boolForKey: @"SURVEYDONE5"])
-		{
-//			if ([[NSUserDefaults standardUserDefaults] integerForKey: @"STARTCOUNT2"] > 20)
-//			{
-//				switch( NSRunInformationalAlertPanel(@"Horos", @"Thank you for using Horos!\rDo you agree to answer a small survey to improve Horos?", @"Yes, sure!", @"Maybe next time", nil))
-//				{
-//					case 1:
-//					{
-//						Survey		*survey = [[Survey alloc] initWithWindowNibName:@"Survey"];
-//						[[survey window] center];
-//						[survey showWindow:self];
-//					}
-//						break;
-//				}
-//			}
-			
-//			if( [[NSCalendarDate dateWithYear:2009 month:10 day:14 hour:12 minute:0 second:0 timeZone:[NSTimeZone timeZoneWithAbbreviation:@"EST"]] timeIntervalSinceNow] > 0 &&
-//				[[NSCalendarDate dateWithYear:2009 month:9 day:1 hour:12 minute:0 second:0 timeZone:[NSTimeZone timeZoneWithAbbreviation:@"EST"]] timeIntervalSinceNow] < 0)
-//			{
-//				Survey *survey = [[Survey alloc] initWithWindowNibName:@"Survey"];
-//				[[survey window] center];
-//				[survey showWindow: self];
-//			}
-		}
-		else
-		{
-//			[self about:self];
-//			//fade out Splash window automatically 
-//			[NSTimer scheduledTimerWithTimeInterval:2.0 target:splashController selector:@selector(windowShouldClose:) userInfo:nil repeats:0]; 
-		}
-	}
+	// SekhVet Paket CT: the update question moved to applicationDidFinishLaunching (after the medical disclaimer), see sekhvetAskUpdateConsentIfNeeded.
 	
 		
 	//Checks for Bonjour enabled dicom servers. Most likely other copies of Horos
@@ -4416,8 +4232,6 @@ static void sekhmetRotateFrames( NSArray *ordered)
     }
 	
 //	[self checkForOsirixMimeType];
-	
-// 	*(long*)0 = 0xDEADBEEF;	// Test for ILCrashReporter
 	
 //	[html2pdf pdfFromURL: @"http://zimbra.latour.ch"];
 
@@ -4539,36 +4353,7 @@ static void sekhmetRotateFrames( NSArray *ordered)
 	{
 		NSRunAlertPanel( NSLocalizedString( @"DICOM Listener Error", nil), NSLocalizedString( @"SekhVet listener cannot start. Is the Port valid? Is there another process using this Port?\r\rSee Listener - Preferences.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 	}
-	
-	if( [msg isEqualToString:@"UPTODATE"])
-	{
-		NSRunAlertPanel( NSLocalizedString( @"SekhVet is up-to-date", nil), NSLocalizedString( @"You have the most recent version of SekhVet.", nil), NSLocalizedString( @"OK", nil), nil, nil);
-	}
-	
-	if( [msg isEqualToString:@"ERROR"])
-	{
-		NSRunAlertPanel( NSLocalizedString( @"No Internet connection", nil), NSLocalizedString( @"Unable to check latest version available.", nil), NSLocalizedString( @"OK", nil), nil, nil);
-	}
-	
-    if( [msg isEqualToString: @"UPDATECRASH"])
-    {
-        NSRunInformationalAlertPanel(NSLocalizedString(@"SekhVet crashed", nil), NSLocalizedString(@"SekhVet crashed... You are running an outdated version of SekhVet ! This bug is probably corrected in the last version !", nil), NSLocalizedString(@"OK",nil), nil, nil);
-        
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_UPDATE_CRASH]];
-    }
-    
-	if( [msg isEqualToString:@"SEKHVET"]) // SekhVet Paket T
-	{
-		NSRunInformationalAlertPanel( NSLocalizedString( @"SekhVet updates", nil), NSLocalizedString( @"SekhVet has no automatic update feed yet. New builds are handed out directly by Kappa1 GmbH; the source code is on GitHub (About SekhVet).", nil), NSLocalizedString( @"OK", nil), nil, nil);
-	}
-
-	if( [msg isEqualToString:@"UPDATE"])
-	{
-		int button = NSRunAlertPanel( NSLocalizedString( @"New Version Available", nil), NSLocalizedString( @"A new version of SekhVet is available. Would you like to download the new version now?", nil), NSLocalizedString( @"Download", nil), NSLocalizedString( @"Continue", nil), nil);
-		
-		if (NSOKButton == button)
-			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_UPDATE]];
-	}
+	// SekhVet Paket CT: the branches of the old Horos update feed (UPTODATE, ERROR, UPDATECRASH, SEKHVET, UPDATE) are gone - only "LISTENER" is ever sent; updates are handled by SekhmetUpdate.
 }
 
 - (id) splashScreen
@@ -4592,18 +4377,11 @@ static void sekhmetRotateFrames( NSArray *ordered)
 
 - (IBAction) checkForUpdates: (id) sender
 {
-	// SekhVet Paket T/BN: there is no update feed. Only the menu item lands here and shows a note;
-	// nothing runs at launch or after a crash (the Horos feed would always report a newer version).
-	[self performSelectorOnMainThread: @selector(displayUpdateMessage:) withObject: @"SEKHVET" waitUntilDone: YES];
+	// SekhVet Paket CB: GitHub-Releases statt Horos-Feed; der Menuepunkt prueft sofort und meldet auch "aktuell".
+	[SekhmetUpdate pruefen: YES];
 }
 #endif
 #endif
-
-- (void) URL: (NSURL*) sender resourceDidFailLoadingWithReason: (NSString*) reason
-{
-    if (verboseUpdateCheck)
-        NSRunAlertPanel( NSLocalizedString( @"No connection available", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, reason);
-}
 
 //———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 #pragma mark-
@@ -5940,100 +5718,5 @@ static NSMutableDictionary* _receivingDict = nil;
     sound = nil;
 }
 
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-#pragma mark -
-#pragma FeedbackReporter
-
-
-- (void) crash
-{
-    NSLog(@"crash");
-    char *c = 0;
-    *c = 0;
-}
-
-
-- (BOOL) setupCrashReporter
-{
-    NSLog(@"Unicode test: مرحبا - 你好 - שלום");
-    
-#if defined(USEFEEDBACKREPORTER)
-    [[FRFeedbackReporter sharedReporter] setDelegate:(id<FRFeedbackReporterDelegate>) self];
-
-    if ([[FRFeedbackReporter sharedReporter] reportIfCrash] == YES)
-    {
-        NSLog(@"Crash found.");
-        return YES;
-    }
-#endif
-    
-    return NO;
-}
-
-- (NSString *) feedbackDisplayName
-{
-    return @"Horos";
-}
-
-- (NSDictionary *) customParametersForFeedbackReport
-{
-    NSMutableDictionary *dict = [NSMutableDictionary dictionary];
-    
-    return dict;
-}
-
-- (NSMutableDictionary*) anonymizePreferencesForFeedbackReport:(NSMutableDictionary *)preferences
-{
-    return preferences;
-}
-
-- (NSString*) smtpServerForFeedbackReport
-{
-    return @"smtp.gmail.com";
-}
-
-- (unsigned int) smtpPortForFeedbackRerport
-{
-    return 465;
-}
-
-- (NSString*) smtpUsername
-{
-    return @"horoscrashreport@gmail.com";
-}
-
-- (NSString*) smtpPassword
-{
-    return @"wmN-7eh-47N-AxJ";
-}
-
-- (NSString*) mailSenderTitle
-{
-    return @"Horos";
-}
-
-- (NSString*) mailSubject
-{
-    return @"Horos Crash Report";
-}
-
-- (NSString*) mailTextBody
-{
-    return @"See attached XML file";
-}
-
-/*
- - (NSString *)targetUrlForFeedbackReport
-{
-    NSString *targetUrlFormat = @"http://horosproject.org/crashreport.php?project=%@&version=%@";
-    NSString *project = [[[NSBundle mainBundle] infoDictionary] valueForKey: @"CFBundleExecutable"];
-    NSString *version = [[[NSBundle mainBundle] infoDictionary] valueForKey: @"CFBundleVersion"];
-    
-    return [NSString stringWithFormat:targetUrlFormat, project, version];
-}
-*/
 
 @end

@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "DicomStudy.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 #import "DicomStudy+Report.h"
 #import "DicomSeries.h"
 #import "DicomImage.h"
@@ -692,7 +693,7 @@ static NSRecursiveLock *dbModifyLock = nil;
 
 - (void) archiveWindowsStateAsDICOMSR
 {
-    NSLog( @"--- Windows State -> DICOM SR : %@", self.name);
+    NSLog( @"--- Windows State -> DICOM SR : study %@", self.studyInstanceUID); // SekhVet Paket CT: no patient name in the system log
     
     NSData *windowsState = self.windowsState;
     
@@ -795,7 +796,7 @@ static NSRecursiveLock *dbModifyLock = nil;
             {
                 SRAnnotation *r = nil;
                 
-                NSLog( @"--- Report -> DICOM SR : %@", self.name);
+                NSLog( @"--- Report -> DICOM SR : %@", self.studyInstanceUID); // Sekhmet (P6): keine Patientendaten im System-Log
                 
                 if( [self.reportURL hasPrefix: @"http://"] || [self.reportURL hasPrefix: @"https://"])
                     r = [[[SRAnnotation alloc] initWithURLReport: self.reportURL path: dstPath forImage: [[[self.series anyObject] valueForKey:@"images"] anyObject]] autorelease];
@@ -1359,7 +1360,37 @@ static NSRecursiveLock *dbModifyLock = nil;
         return [NSNumber numberWithDouble: [self.date timeIntervalSinceDate: self.dateOfBirth]];
 }
 
+// Sekhmet (P3, nach ThalesMMS/horos 4d46ba7): die Datenbankliste fragt bei jedem Neuzeichnen fuer jede
+// sichtbare Zeile nach dem Alter, jedes Mal eine Kalenderrechnung. Das Ergebnis haengt nur von den
+// Eingaben und der Zeitzone ab (beim Alter "heute" auch von der Uhrzeit) - also zwischenspeichern.
+static NSCache *SekhmetDicomStudyAgeCache(void)
+{
+    static NSCache *cache = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        cache = [[NSCache alloc] init];
+        cache.countLimit = 4096;
+    });
+    return cache;
+}
+
 + (NSString*) yearOldAcquisition:(NSDate*) acquisitionDate FromDateOfBirth: (NSDate*) dateOfBirth
+{
+    if( dateOfBirth && acquisitionDate)
+    {
+        NSString *key = [NSString stringWithFormat: @"acquisition|%.6f|%.6f|%@", [dateOfBirth timeIntervalSinceReferenceDate], [acquisitionDate timeIntervalSinceReferenceDate], [[NSTimeZone defaultTimeZone] name]];
+        NSString *age = [SekhmetDicomStudyAgeCache() objectForKey: key];
+        if( age == nil)
+        {
+            age = [self sekhmetComputeYearOldAcquisition: acquisitionDate FromDateOfBirth: dateOfBirth];
+            if( age) [SekhmetDicomStudyAgeCache() setObject: age forKey: key];
+        }
+        return age;
+    }
+    else return @"";
+}
+
++ (NSString*) sekhmetComputeYearOldAcquisition:(NSDate*) acquisitionDate FromDateOfBirth: (NSDate*) dateOfBirth
 {
     if( dateOfBirth && acquisitionDate)
     {
@@ -1394,6 +1425,23 @@ static NSRecursiveLock *dbModifyLock = nil;
 }
 
 + (NSString*) yearOldFromDateOfBirth: (NSDate*) dateOfBirth
+{
+    if( dateOfBirth)
+    {
+        // Gemessen an "jetzt": fuer die Minute gueltig, mehr kann ein Neuzeichnen nicht hinterher sein.
+        NSString *key = [NSString stringWithFormat: @"today|%.6f|%.0f|%@", [dateOfBirth timeIntervalSinceReferenceDate], floor( [NSDate timeIntervalSinceReferenceDate] / 60.), [[NSTimeZone defaultTimeZone] name]];
+        NSString *age = [SekhmetDicomStudyAgeCache() objectForKey: key];
+        if( age == nil)
+        {
+            age = [self sekhmetComputeYearOldFromDateOfBirth: dateOfBirth];
+            if( age) [SekhmetDicomStudyAgeCache() setObject: age forKey: key];
+        }
+        return age;
+    }
+    else return @"";
+}
+
++ (NSString*) sekhmetComputeYearOldFromDateOfBirth: (NSDate*) dateOfBirth
 {
     if( dateOfBirth)
     {
@@ -1726,6 +1774,31 @@ static NSRecursiveLock *dbModifyLock = nil;
 - (NSArray*)imageSeries
 {
     return [self imageSeriesContainingPixels: NO];
+}
+
+// Sekhmet (P3, nach ThalesMMS/horos 4d46ba7): was [[self imageSeries] count] sagt, ohne die Serien vorher
+// zu sortieren - die Datenbankliste zeigt es in jeder Zeile.
+- (NSUInteger)numberOfImageSeries
+{
+    NSUInteger count = 0;
+    
+    [self.managedObjectContext lock];
+    @try {
+        for (DicomSeries* series in self.series)
+            @try {
+                if ([DicomStudy displaySeriesWithSOPClassUID:series.seriesSOPClassUID andSeriesDescription:series.name containingOnlyPixels: NO])
+                    count++;
+            } @catch (...) {
+            }
+    }
+    @catch (NSException* e) {
+        N2LogExceptionWithStackTrace(e);
+    }
+    @finally {
+        [self.managedObjectContext unlock];
+    }
+    
+    return count;
 }
 
 - (NSArray*)keyObjectSeries
@@ -2165,7 +2238,7 @@ static NSRecursiveLock *dbModifyLock = nil;
                         
                         if( d)
                         {
-                            NSArray *o = [NSUnarchiver unarchiveObjectWithData: d];
+                            NSArray *o = [SekhmetRestrictedUnarchiver unarchiveROIsWithData: d]; // Sekhmet (DE)
                             
                             if( [o count])
                             {
@@ -2183,7 +2256,7 @@ static NSRecursiveLock *dbModifyLock = nil;
             
             if( [r count])
             {
-                NSArray *o = [NSUnarchiver unarchiveObjectWithData: [SRAnnotation roiFromDICOM: [[found lastObject] valueForKey: @"completePathResolved"]]];
+                NSArray *o = [SekhmetRestrictedUnarchiver unarchiveROIsWithData: [SRAnnotation roiFromDICOM: [[found lastObject] valueForKey: @"completePathResolved"]]]; // Sekhmet (DE)
                 [r addObjectsFromArray: o];
                 
                 [SRAnnotation archiveROIsAsDICOM: r toPath: [[found lastObject] valueForKey: @"completePathResolved"] forImage: image];
@@ -2268,7 +2341,7 @@ static NSRecursiveLock *dbModifyLock = nil;
     
     for (DicomImage *roi in [self.roiSRSeries images])
     {
-        NSArray *robjs = [NSUnarchiver unarchiveObjectWithData:[SRAnnotation roiFromDICOM:[roi completePath]]];
+        NSArray *robjs = [SekhmetRestrictedUnarchiver unarchiveROIsWithData:[SRAnnotation roiFromDICOM:[roi completePath]]]; // Sekhmet (DE)
         if (!robjs.count) continue;
         
         NSInteger it = [roi.comment rangeOfString:@"-" options:NSLiteralSearch+NSBackwardsSearch].location;

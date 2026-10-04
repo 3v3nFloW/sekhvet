@@ -96,6 +96,14 @@
 	self.windowCenterX = c.windowCenterX;
 	self.windowCenterY = c.windowCenterY;
 	self.previewImage = c.previewImage;
+	// Sekhmet (DF): auch Index, 4D-Zustand und Filmbild, Rollwinkel, LOD und forceUpdate - eine Kopie ohne movieIndexIn4D
+	// schickte ein 4D-Volumen beim Undo im MPR auf das erste Bild zurueck (nach ThalesMMS/horos e948e313)
+	self.index = c.index;
+	self.is4D = c.is4D;
+	self.movieIndexIn4D = c.movieIndexIn4D;
+	self.rollAngle = c.rollAngle;
+	self.LOD = c.LOD;
+	self.forceUpdate = c.forceUpdate;
 	return self;
 }
 

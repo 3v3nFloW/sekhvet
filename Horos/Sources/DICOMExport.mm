@@ -76,6 +76,15 @@ static float deg2rad = M_PI / 180.0f;
 	}
 }
 
+- (void) beginSeriesWithNumber: (long) no
+{
+	exportSeriesNumber = no;
+	exportInstanceNumber = 1;
+	
+	[exportSeriesUID release];
+	exportSeriesUID = [[DCMObject newSeriesInstanceUID] retain];
+}
+
 - (id)init
 {
 	self = [super init];
@@ -99,7 +108,7 @@ static float deg2rad = M_PI / 180.0f;
 		
 		#ifndef OSIRIX_LIGHT
 		exportSeriesUID = [[DCMObject newSeriesInstanceUID] retain];
-		exportSeriesDescription = [@"OsiriX SC" retain];
+		exportSeriesDescription = [@"SekhVet SC" retain];
 		#endif
 		
 		spacingX = 0;
@@ -826,7 +835,7 @@ static float deg2rad = M_PI / 180.0f;
                     else
                         delete dataset->remove( DCM_MediaStorageSOPClassUID);
                     
-					dataset->putAndInsertString( DCM_ManufacturersModelName, "Horos");
+					dataset->putAndInsertString( DCM_ManufacturersModelName, "SekhVet");
 					dataset->putAndInsertString( DCM_InstanceNumber, [[NSString stringWithFormat: @"%d", exportInstanceNumber++] UTF8String]);
 					dataset->putAndInsertString( DCM_AcquisitionNumber, "1");
 					

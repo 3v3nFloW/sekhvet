@@ -60,31 +60,8 @@ enum
     return NO;
 }
 
-+ (void) performStartupO2HTasks:(BrowserController*) browserController
-{
-    //Check if user already said NO or YES before
-    NSNumber* o2h_migration_user_action = [[NSUserDefaults standardUserDefaults] objectForKey:@"O2H_MIGRATION_USER_ACTION"];
-
-    if (o2h_migration_user_action != nil && [o2h_migration_user_action integerValue] == MIGRATION_DENIED)
-        return;
-    
-    if (o2h_migration_user_action != nil && [o2h_migration_user_action integerValue] == MIGRATION_ACCEPTED)
-        return;
-    
-    //Open Assistant if OsiriX is installed
-    if ([O2HMigrationAssistant isOsiriXInstalled])
-    {
-        //Launch the assistant
-        O2HMigrationAssistant* migrationAssistant = [[O2HMigrationAssistant alloc] initWithWindowNibName:@"O2HMigrationAssistant"];
-        migrationAssistant.browserController = browserController;
-        
-        if ([NSApp isHidden])
-            [[migrationAssistant window] makeKeyAndOrderFront:self];
-        else
-            [NSApp runModalForWindow:[migrationAssistant window]];
-    }
-}
-
+// SekhVet Paket CS: +performStartupO2HTasks: removed -- it had no caller left. The first-start dialog was
+// replaced by SekhmetDatenbankImport (startHinweis); only +isOsiriXInstalled is still used (BrowserController).
 
 - (void)windowDidLoad {
     [super windowDidLoad];

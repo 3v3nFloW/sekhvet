@@ -166,11 +166,18 @@ progressCallback(
 	[node addChild:responseIdentifiers];
 }
 
+// Sekhmet: ohne gemeldete Unteroperationen war das 1.0/0 * 0 = NaN als Fortschritt (nach ThalesMMS/horos 4d46ba7)
+static void SekhmetSetRetrieveProgress(long done, long total)
+{
+    if( total > 0)
+        [[NSThread currentThread] setProgress: (double) done / (double) total];
+}
+
 static void
 moveCallback(void *callbackData, T_DIMSE_C_MoveRQ *request,
     int responseCount, T_DIMSE_C_MoveRSP *response)
 {
-	[[NSThread currentThread] setProgress:1.0/(response->NumberOfCompletedSubOperations+response->NumberOfFailedSubOperations+response->NumberOfWarningSubOperations+response->NumberOfRemainingSubOperations)*(response->NumberOfCompletedSubOperations+response->NumberOfFailedSubOperations+response->NumberOfWarningSubOperations)];
+	SekhmetSetRetrieveProgress( response->NumberOfCompletedSubOperations+response->NumberOfFailedSubOperations+response->NumberOfWarningSubOperations, response->NumberOfCompletedSubOperations+response->NumberOfFailedSubOperations+response->NumberOfWarningSubOperations+response->NumberOfRemainingSubOperations);
     return;
 }
 
@@ -179,7 +186,7 @@ static void
 getCallback(void *callbackData, T_DIMSE_C_GetRQ *request,
     int responseCount, T_DIMSE_C_GetRSP *response)
 {
-	[[NSThread currentThread] setProgress:1.0/(response->NumberOfCompletedSubOperations+response->NumberOfFailedSubOperations+response->NumberOfWarningSubOperations+response->NumberOfRemainingSubOperations)*(response->NumberOfCompletedSubOperations+response->NumberOfFailedSubOperations+response->NumberOfWarningSubOperations)];
+	SekhmetSetRetrieveProgress( response->NumberOfCompletedSubOperations+response->NumberOfFailedSubOperations+response->NumberOfWarningSubOperations, response->NumberOfCompletedSubOperations+response->NumberOfFailedSubOperations+response->NumberOfWarningSubOperations+response->NumberOfRemainingSubOperations);
 	return;
 }
 
@@ -765,7 +772,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                             dataset->putAndInsertString( tag.getXTag(), string);
                         }
                         else
-                            NSLog( @"**** DICOM C-FIND with unknown value: %@ : %@", key, value);
+                            NSLog( @"**** DICOM C-FIND with unknown value for key: %@", key); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
                     }
                 }
             }
@@ -902,7 +909,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 //			[dicom writeToFile: [path stringByAppendingFormat: @"WADO-%d-%d.dcm", wadoUnique, wadoUniqueThreadID] atomically: YES];
 //			[dicom release];
 //			
-//			if( [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"])
+//			if( [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu_sekhvet"])
 //				break;
 //			
 //			if( [[dict valueForKey: @"mainThread"] isCancelled])
@@ -973,9 +980,9 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 {
 #ifndef NDEBUG
 	if( [self isKindOfClass:[DCMTKSeriesQueryNode class]])
-		NSLog( @"------ WADO download : starting... %@ %@", study.theDescription, study.patientID);
+		NSLog( @"------ WADO download : starting... (study)"); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
 	else
-		NSLog( @"------ WADO download : starting... %@ %@", self.theDescription, self.patientID);
+		NSLog( @"------ WADO download : starting... (series)"); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
 #endif
     
 	NSString *protocol = [[_extraParameters valueForKey: @"WADOhttps"] intValue] ? @"https" : @"http";
@@ -996,8 +1003,9 @@ subOpCallback(void * /*subOpCallbackData*/ ,
     
 	@try
 	{
-		if( [protocol isEqualToString: @"https"])
-			[NSURLRequest setAllowsAnyHTTPSCertificate:YES forHost:[[NSURL URLWithString: baseURL] host]];
+		// Sekhmet (DC): HTTPS wird normal geprueft, siehe WADODownload.m (nach ThalesMMS/horos e948e313)
+		// if( [protocol isEqualToString: @"https"])
+		// 	[NSURLRequest setAllowsAnyHTTPSCertificate:YES forHost:[[NSURL URLWithString: baseURL] host]];
 	}
 	@catch (NSException *e)
 	{
@@ -1924,7 +1932,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
     
     while( 1) @autoreleasepool // Infinite loop
     {
-        BOOL abortAssociations = [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"];
+        BOOL abortAssociations = [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu_sekhvet"];
         
         NSArray *copyArray = nil;
         
@@ -2287,7 +2295,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
                 [NSThread detachNewThreadSelector: @selector(requestAssociationThread:) toTarget: self withObject: dict];
 				[NSThread sleepForTimeInterval: 0.05];
 				
-				while( [wait aborted] == NO && _abortAssociation == NO && [NSThread currentThread].isCancelled == NO && [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"] == NO)
+				while( [wait aborted] == NO && _abortAssociation == NO && [NSThread currentThread].isCancelled == NO && [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu_sekhvet"] == NO)
 				{
 					[wait run];
 					[NSThread sleepForTimeInterval: 0.05];
@@ -2299,7 +2307,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
                     }
 				}
 				
-				if( [wait aborted] || _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"])
+				if( [wait aborted] || _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu_sekhvet"])
 				{
 					_abortAssociation = YES;
 					cond = DUL_NETWORKCLOSED;
@@ -2385,7 +2393,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 						[NSThread detachNewThreadSelector: @selector(cFindThread:) toTarget: self withObject: dict];
 						[NSThread sleepForTimeInterval: 0.05];
 						
-						while( [wait aborted] == NO && _abortAssociation == NO && [NSThread currentThread].isCancelled == NO && [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"] == NO)
+						while( [wait aborted] == NO && _abortAssociation == NO && [NSThread currentThread].isCancelled == NO && [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu_sekhvet"] == NO)
 						{
 							[wait run];
 							[NSThread sleepForTimeInterval: 0.05];
@@ -2397,7 +2405,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
                             }
 						}
 						
-						if( [wait aborted] || _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"])
+						if( [wait aborted] || _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu_sekhvet"])
 						{
 							_abortAssociation = YES;
 							cond = DUL_NETWORKCLOSED;
@@ -2934,6 +2942,8 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
     T_DIMSE_C_GetRQ    req;
     T_DIMSE_C_GetRSP   rsp;
     DIC_US              msgId = assoc->nextMsgID++;
+    bzero( &req, sizeof( req)); // Sekhmet: rsp blieb bei fruehem Abbruch uninitialisiert (nach ystarrev/horos 6547f705)
+    bzero( &rsp, sizeof( rsp));
     DcmDataset          *rspIds = NULL;
     DcmDataset          *statusDetail = NULL;
     MyCallbackInfo      callbackData;

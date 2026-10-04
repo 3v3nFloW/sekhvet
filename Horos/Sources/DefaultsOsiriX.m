@@ -770,7 +770,7 @@ static NSHost *currentHost = nil;
 	NSMutableDictionary *aServer = [[NSMutableDictionary alloc] init];
     [aServer setObject:@"1" forKey:@"Activated"];
 	[aServer setObject:@"127.0.0.1" forKey: @"Address"];
-	[aServer setObject:@"Horos" forKey: @"AETitle"];
+	[aServer setObject:@"SEKHVET" forKey: @"AETitle"]; // SekhVet Paket CT
 	[aServer setObject:@"4444" forKey: @"Port"];
 	[aServer setObject:[NSNumber numberWithInt:0] forKey:@"TransferSyntax"];
 	[aServer setObject:NSLocalizedString(@"This is an example", nil) forKey:@"Description"];
@@ -784,7 +784,7 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:serversValues forKey:@"OSIRIXSERVERS"];
 	
 	//routing calendars
-	[defaultValues setObject:[NSMutableArray arrayWithObject:@"Osirix"] forKey:@"ROUTING CALENDARS"];
+	[defaultValues setObject:[NSMutableArray arrayWithObject:@"SekhVet"] forKey:@"ROUTING CALENDARS"]; // SekhVet Paket CT
 	
 	// ** AETITLE
 	if( [defaultValues objectForKey:@"AETITLE"] == nil)
@@ -804,9 +804,9 @@ static NSHost *currentHost = nil;
 	}
     
     if( [defaultValues objectForKey:@"AETITLE"] == nil)
-        [defaultValues setObject:@"OSIRIX" forKey:@"AETITLE"];
+        [defaultValues setObject:@"SEKHVET" forKey:@"AETITLE"]; // SekhVet Paket CT
     
-	[defaultValues setObject:@"11113" forKey:@"AEPORT"]; // Sachmet: 11112 gehoert dem taeglichen Horos auf demselben Rechner
+	[defaultValues setObject:@"11113" forKey:@"AEPORT"]; // SekhVet: 11113, so that the DICOM default port 11112 stays free for another viewer on the same Mac
 
 	[defaultValues setObject:@"1" forKey:@"points3DcolorRed"];
 	[defaultValues setObject:@"0" forKey:@"points3DcolorGreen"];
@@ -895,14 +895,14 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"+xi" forKey:@"AETransferSyntax"];
 	[defaultValues setObject:@"" forKey:@"STORESCPEXTRA"];
 	[defaultValues setObject:@"0" forKey:@"ROITEXTIFSELECTED"];
-	[defaultValues setObject:@"1" forKey: @"STORESCP"];
+	[defaultValues setObject:@"0" forKey: @"STORESCP"]; // SekhVet Paket CT: DICOM listener off on a fresh install (Preferences > Listener); existing installs keep "on", see +[AppController sekhvetMigrateDefaultsOnce]
 	[defaultValues setObject:@"1" forKey: @"DCMPRINT_Interval"];
 	[defaultValues setObject:@"3" forKey: @"LISTENERCHECKINTERVAL"];
 	[defaultValues setObject:@"1" forKey: @"AUTOTILING"];
 	[defaultValues setObject:@"1" forKey: @"USEALWAYSTOOLBARPANEL2"];
 	[defaultValues setObject:@"1" forKey: @"VetOrientationLetters"]; // Sekhmet: A->V, P->D, S->Cr, I->Cd
 	[defaultValues setObject: @"1" forKey: @"moveToApplicationsFolderAlertSuppress"]; // SekhVet: LetsMove-Dialog (Release, App nicht in /Applications) nie zeigen
-	[defaultValues setObject: @"3" forKey: @"SekhmetAnnotationBackground"]; // Sekhmet: 0 Horos, 1 Kontur, 2 Kasten, 3 beide (Paket N: Vorgabe 3)
+	[defaultValues setObject: @"1" forKey: @"SekhmetAnnotationBackground"]; // Sekhmet: 0 Horos, 1 Kontur, 2 Kasten, 3 beide (Paket CK: Vorgabe 1, 30.09.2026; Paket N hatte 3)
 	[defaultValues setObject: @"2" forKey: @"SekhmetAppearance"]; // SekhVet Paket N: 0 System, 1 Hell, 2 Dunkel
 	[defaultValues setObject: @"sekhvet@kappa1.vet" forKey: @"SekhmetFeedbackAddress"]; // SekhVet Paket AZ: Ziel von "Send Feedback…" (16.09.26)
 	[defaultValues setObject: @"https://github.com/3v3nFloW/sekhvet" forKey: @"SekhmetSourceURL"]; // SekhVet Paket F: LGPL-Quelltext
@@ -930,7 +930,7 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"0" forKey:@"CheckForMultipleVolumesInSeries"];
 	[defaultValues setObject:@"3000" forKey:@"MAXWindowSize"];
 	[defaultValues setObject:@"1" forKey:@"ScreenCaptureSmartCropping"];
-	[defaultValues setObject:@"1" forKey:@"checkForUpdatesPlugins"];
+	[defaultValues setObject:@"0" forKey:@"checkForUpdatesPlugins"]; // SekhVet Paket CT: no plugin update check (the key is no longer read at start)
     [defaultValues setObject:@"0" forKey:@"DoNotDeleteCrashingPlugins"];
 	[defaultValues setObject:@"1" forKey:@"magnifyingLens"];
 	[defaultValues setObject:@"14" forKey:@"LabelFONTSIZE"]; // SekhVet Paket N: 12 -> 14
@@ -1096,7 +1096,7 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject: @"0" forKey: @"AUTOCLEANINGDELETEORIGINAL"];
 	[defaultValues setObject: @"0" forKey: @"COMMENTSAUTOFILL"];
 	[defaultValues setObject: @"http://list.dicom.dcm/DICOMNodes.plist" forKey: @"syncDICOMNodesURL"];
-	[defaultValues setObject: @"http://list.dicom.dcm/OsiriXDB.plist" forKey: @"syncOsiriXDBURL"];
+	[defaultValues setObject: @"http://list.dicom.dcm/SekhVetDB.plist" forKey: @"syncOsiriXDBURL"];
 	[defaultValues setObject: @"1" forKey: @"BurnOsirixApplication"];
 	[defaultValues setObject: @"1" forKey: @"BurnHtml"];
 	[defaultValues setObject: @"0" forKey: @"BurnSupplementaryFolder"];
@@ -1119,18 +1119,18 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject: @"1" forKey: @"DICOMSENDALLOWED"];
 	[defaultValues setObject: @"14.0" forKey: @"FONTSIZE"];
 	[defaultValues setObject: @"2" forKey: @"REPORTSMODE"];
-	[defaultValues setObject: URL_HOROS_VIEWER@"/internet.dcm" forKey: @"LASTURL"];
+	[defaultValues setObject: @"" forKey: @"LASTURL"]; // SekhVet Paket CT: no preset URL (was a file on horosproject.org)
 	[defaultValues setObject: @"0" forKey: @"MAPPERMODEVR"];
-	[defaultValues setObject: @"1" forKey: @"STARTCOUNT"];
+	[defaultValues setObject: @"0" forKey: @"STARTCOUNT"]; // SekhVet Paket CT: counts real launches (was preset to 1, so "first start" was never seen)
 	[defaultValues setObject: @"1" forKey: @"editingLevel"];
-	[defaultValues setObject: @"1" forKey: @"publishDICOMBonjour"];
+	[defaultValues setObject: @"1" forKey: @"publishDICOMBonjour"]; // SekhVet Paket CT: unchanged (1), but the service is only announced while the DICOM listener (STORESCP) is on, see -[AppController restartSTORESCP]
 	[defaultValues setObject: @"1" forKey: @"searchDICOMBonjour"];
 	[defaultValues setObject: @"1" forKey: @"autorotate3D"];
 	[defaultValues setObject: @"1" forKey: @"preferencesModificationsEnabled"];
 	[defaultValues setObject: @"0" forKey: @"Compression Mode for Export"];
 	[defaultValues setObject: @"0" forKey: @"ORIGINALSIZE"];
 	[defaultValues setObject: @"1" forKey: @"Scroll Wheel Reversed"];
-	[defaultValues setObject: @"Horos" forKey: @"ALBUMNAME"];
+	[defaultValues setObject: @"SekhVet" forKey: @"ALBUMNAME"]; // SekhVet Paket CT
 	[defaultValues setObject: @"1" forKey: @"DisplayCrossReferenceLines"];
 	[defaultValues setObject: @"0" forKey: @"AlwaysScaleToFit"];
 	[defaultValues setObject:@"0" forKey: @"VRDefaultViewSize"];
@@ -1151,8 +1151,8 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"1" forKey:@"UseJPEGColorSpace"];
 	[defaultValues setObject:@"0" forKey:@"displayCobbAngle"];
 	[defaultValues setObject:@"0" forKey:@"onlyDisplayImagesOfSamePatient"];
-	[defaultValues setObject:@"1" forKey:@"activateCGETSCP"];
-    [defaultValues setObject:@"1" forKey:@"activateCFINDSCP"];
+	[defaultValues setObject:@"0" forKey:@"activateCGETSCP"]; // SekhVet Paket CT: C-GET / C-FIND SCP off on a fresh install; existing installs keep "on"
+    [defaultValues setObject:@"0" forKey:@"activateCFINDSCP"];
 	[defaultValues setObject:@"0" forKey:@"notificationsEmails"];
 	[defaultValues setObject:@"0" forKey:@"validateFilesBeforeImporting"];
 	[defaultValues setObject:@"10" forKey:@"defaultFrameRate"];

@@ -6,12 +6,12 @@
 # Braucht einen Bau MIT Testhaken (-xcconfig SekhVet/SekhVet-Testhaken.xcconfig).
 # Erwartet: Schritt 2 "- L1 L1-L2 L2 L2-L3 L3 -" in jeder Serie, Schritt 4 "- T13 T13-L1 L1 L1-L2 L2 -", Schritt 6 "Liste 0 ... weg".
 PID_PAT=${1:?PatientID angeben}
-APP=~/Projects/horos-vet/build/Build/Products/Release/Horos.app/Contents/MacOS/Horos
+APP=~/Projects/horos-vet/build/Build/Products/Release/Horos.app/Contents/MacOS/SekhVet
 LOG=/tmp/sekhvet-spine-e2e.log
 
 curl -s -m 5 -X POST http://127.0.0.1:8085/ -d '<?xml version="1.0"?><methodCall><methodName>KillOsiriX</methodName><params></params></methodCall>' >/dev/null 2>&1
 sleep 3
-pgrep -f "horos-vet/build.*MacOS/Horos" >/dev/null && { pkill -f "horos-vet/build.*MacOS/Horos"; sleep 3; }
+pgrep -f "horos-vet/build.*MacOS/SekhVet" >/dev/null && { pkill -f "horos-vet/build.*MacOS/SekhVet"; sleep 3; }
 defaults write vet.kappa1.sekhvet.horos CloseAllWindowsBeforeXMLRPCOpen -bool NO
 
 rm -f $LOG

@@ -144,9 +144,9 @@ extern const char *GetPrivateIP(void);
             //            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(connectionOpened:) name:N2ConnectionListenerOpenedConnectionNotification object:_listener];
             [_listener setThreadPerConnection:YES];
             if (_listener)
-                NSLog(@"Horos database shared on port %d", [_listener port]);
+                NSLog(@"SekhVet database shared on port %d", [_listener port]);
             else
-                NSLog(@"Warning: unable to share Horos database");
+                NSLog(@"Warning: unable to share SekhVet database");
         }
         
         if (!activate && _listener) {
@@ -170,14 +170,14 @@ extern const char *GetPrivateIP(void);
     
     NSMutableDictionary* txtrec = [NSMutableDictionary dictionary];
 #define EitherOr(a, b) (a? a : b)
-    [txtrec setObject: EitherOr([[NSUserDefaults standardUserDefaults] stringForKey:@"AETITLE"], @"OSIRIX") forKey:@"AETitle"];
-    [txtrec setObject: EitherOr([[NSUserDefaults standardUserDefaults] stringForKey: @"AEPORT"], @"11112") forKey:@"port"];
+    [txtrec setObject: EitherOr([[NSUserDefaults standardUserDefaults] stringForKey:@"AETITLE"], @"SEKHVET") forKey:@"AETitle"]; // SekhVet Paket CT
+    [txtrec setObject: EitherOr([[NSUserDefaults standardUserDefaults] stringForKey: @"AEPORT"], @"11113") forKey:@"port"]; // SekhVet Paket CT: the SekhVet default port
 #undef EitherOr
     if ([AppController UID])
         [txtrec setObject:[AppController UID] forKey:@"UID"];
     
     if( [_bonjour setTXTRecordData:[NSNetService dataFromTXTRecordDictionary:txtrec]] == NO)
-        NSLog(@"Warning: Horos Bonjour net service setTXTRecordData FAILED");
+        NSLog(@"Warning: SekhVet Bonjour net service setTXTRecordData FAILED");
     
     if (_listener)
         [_bonjour publish];
@@ -190,14 +190,14 @@ extern const char *GetPrivateIP(void);
 
 - (void)netService:(NSNetService*)sender didNotPublish:(NSDictionary*)errorDict
 {
-    NSLog(@"Warning: Horos Bonjour net service did not publish, %@", errorDict);
+    NSLog(@"Warning: SekhVet Bonjour net service did not publish, %@", errorDict);
     [_bonjour release];
     _bonjour = nil;
 }
 
 - (void) netServiceDidStop:(NSNetService *)sender
 {
-    NSLog(@"Horos Bonjour net service did stop");
+    NSLog(@"SekhVet Bonjour net service did stop");
 }
 
 

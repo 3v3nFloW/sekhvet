@@ -250,7 +250,7 @@ extern "C"
 				[dictionary setObject: [object valueForKey:@"port"] forKey:@"port"];
 				[dictionary setObject: [object valueForKey:@"transferSyntax"] forKey:@"transferSyntax"];
 				
-				FILE * pFile = fopen ("/tmp/kill_all_storescu", "r");
+				FILE * pFile = fopen ("/tmp/kill_all_storescu_sekhvet", "r");
 				if( pFile)
 					fclose (pFile);
 				else
@@ -325,7 +325,7 @@ extern "C"
                 [dictionary setObject: [object valueForKey:@"transferSyntax"] forKey:@"transferSyntax"];
                 [dictionary setObject: [[object extraParameters] valueForKey: @"retrieveMode"] forKey: @"retrieveMode"];
                  
-                FILE * pFile = fopen ("/tmp/kill_all_storescu", "r");
+                FILE * pFile = fopen ("/tmp/kill_all_storescu_sekhvet", "r");
                 if( pFile)
                     fclose (pFile);
                 else
@@ -439,7 +439,7 @@ extern "C"
                     if( [s rangeOfString:@"*"].location != NSNotFound && [s stringByReplacingOccurrencesOfString: @"*" withString:@""].length <= 2)
                     {
                         [keysToBeRemoved addObject: key];
-                        NSLog( @"---- too small query (%@) -> removed: %@", key, s);
+                        NSLog( @"---- too small query (%@) -> removed", key); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
                     }
                     
                     s = [s stringByReplacingOccurrencesOfString: @"*" withString:@""];
@@ -515,19 +515,19 @@ extern "C"
     
     if( usePatientName && study.name.length == 0)
     {
-        NSLog( @"****** QR: usePatientName == YES && study.name.length == 0 : %@", study);
+        NSLog( @"****** QR: usePatientName == YES && study.name.length == 0"); // Sekhmet (P6): keine Patientendaten im System-Log
         return 0;
     }
     
     if( usePatientBirthDate && study.dateOfBirth == nil)
     {
-        NSLog( @"****** QR: usePatientBirthDate == YES && study.dateOfBirth == 0 : %@", study);
+        NSLog( @"****** QR: usePatientBirthDate == YES && study.dateOfBirth == 0"); // SekhVet Paket CT: no patient data in the system log
         return 0;
     }
     
     if( usePatientID && study.patientID.length == 0)
     {
-        NSLog( @"****** QR: usePatientID && study.patientID.length == 0 : %@", study);
+        NSLog( @"****** QR: usePatientID && study.patientID.length == 0"); // Sekhmet (P6): keine Patientendaten im System-Log
         return 0;
     }
     
@@ -538,7 +538,7 @@ extern "C"
     }
     
 #ifndef NDEBUG
-    NSLog( @"------- queryStudiesForPatient: %@", study.name);
+    NSLog( @"------- queryStudiesForPatient"); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
 #endif
     
     NSMutableDictionary *filters = [NSMutableDictionary dictionary];
@@ -2459,7 +2459,7 @@ extern "C"
                     
                     currentQueryKey = [NSString stringWithUTF8String:tag.getTagName()];
                     
-                    NSLog( @"DICOM Q&R with custom field: %@ : %@", currentQueryKey, customValue);
+                    NSLog( @"DICOM Q&R with custom field: %@", currentQueryKey); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
                     
                     if( showError && [customValue cStringUsingEncoding: [NSString encodingForDICOMCharacterSet: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"]]] == nil)
                     {
@@ -2977,7 +2977,7 @@ extern "C"
 	
 	NSSavePanel *panel = [NSSavePanel savePanel];
     panel.allowedFileTypes = @[@"txt"];
-    panel.nameFieldStringValue = NSLocalizedString(@"Horos Database List", nil);
+    panel.nameFieldStringValue = NSLocalizedString(@"SekhVet Database List", nil);
 		
     [panel beginWithCompletionHandler:^(NSInteger result) {
         if (result != NSFileHandlingPanelOKButton)
@@ -3149,7 +3149,7 @@ extern "C"
                 {
                     if( [[study valueForKey: @"accessionNumber"] isEqualToString: [item valueForKey: @"accessionNumber"]])
                     {
-                        NSLog( @"--- Identical AccessionNumber: %@ - %d images", item, [[item valueForKey: @"numberImages"] intValue]);
+                        NSLog( @"--- Identical AccessionNumber - %d images", [[item valueForKey: @"numberImages"] intValue]); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
                         
                         addItem = NO;
                         break;
@@ -3288,7 +3288,7 @@ extern "C"
 			NSLog( @"Will auto-retrieve these items:");
 			for( id item in selectedItems)
 			{
-				NSLog( @"%@ %@ %@ %@", [item valueForKey:@"theDescription"], [item valueForKey:@"patientID"], [item valueForKey:@"accessionNumber"], [item valueForKey:@"date"]);
+				NSLog( @"%@ %@", [item valueForKey:@"modality"], [item valueForKey:@"date"]); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
 			}
 			NSLog( @"______________________________________________");
 			
@@ -3753,6 +3753,66 @@ extern "C"
 	[yearOldBirth setStringValue: yearOld];
 }
 
+// SekhVet Paket CT: shown when a retrieve is started while the DICOM listener is off
+- (void) sekhvetListenerOffAlert
+{
+	static BOOL showing = NO;
+	
+	if( showing) return;
+	showing = YES;
+	
+	NSRunCriticalAlertPanel( NSLocalizedString( @"DICOM Listener is off", nil), NSLocalizedString( @"Retrieve with C-MOVE needs the DICOM listener: the PACS sends the images to SekhVet.\r\rSwitch it on in Preferences > Listener (\"Activate DICOM listener\") and restart SekhVet, then retrieve again. Nodes set to C-GET or WADO in Preferences > Locations retrieve without the listener.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+	
+	showing = NO;
+}
+
+// Sekhmet (DC): ein Abruf, der endet - wie auch immer -, ist nicht mehr "in transfer". Ein in previousAutoRetrieve
+// liegengebliebener Eintrag liess jeden weiteren Abruf der Studie still bei "Already in transfer" enden, bis zum
+// Neustart (nach ThalesMMS/horos 5572fd1c)
+- (void) forgetRetrieveInTransfer:(NSArray*) items
+{
+	@synchronized( previousAutoRetrieve)
+	{
+		for( DCMTKQueryNode *object in items)
+		{
+			@try
+			{
+				[previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
+			}
+			@catch (NSException * e)
+			{
+				NSLog( @"performRetrieve previousAutoRetrieve removeObjectForKey exception: %@", e);
+			}
+		}
+	}
+}
+
+// Sekhmet (DC): nur C-MOVE braucht den eigenen Listener (die Gegenstelle schickt an ihn). C-GET speichert auf der
+// eigenen Verbindung, WADO ist HTTP. Fehlt retrieveMode, gilt C-MOVE, ausser das alte CGET-Haekchen ist gesetzt -
+// wie in DCMNetServiceDelegate (nach ThalesMMS/horos RetrieveListenerRequirement.swift)
++ (BOOL) sekhmetListenerRequiredForEveryNode:(NSArray*) nodes
+{
+	if( nodes.count == 0)
+		return NO;
+	
+	for( DCMTKQueryNode *node in nodes)
+	{
+		NSDictionary *server = [node respondsToSelector: @selector(extraParameters)] ? [node extraParameters] : nil;
+		id stored = [server objectForKey: @"retrieveMode"];
+		int mode = CMOVERetrieveMode;
+		
+		if( [stored isKindOfClass: [NSNumber class]] || ([stored isKindOfClass: [NSString class]] && [stored length]))
+			mode = [stored intValue];
+		else if( [[server objectForKey: @"CGET"] boolValue])
+			mode = CGETRetrieveMode;
+		
+		if( mode != CMOVERetrieveMode)
+			return NO;
+	}
+	
+	return YES;
+}
+
 - (void) performRetrieve:(NSArray*) array
 {
     if ( [[BrowserController currentBrowser] database] == nil) // During SB rebuild
@@ -3762,9 +3822,14 @@ extern "C"
 	
     [NSThread currentThread].name = NSLocalizedString( @"Retrieving images...", nil);
     
-	if( [[AppController sharedAppController] isStoreSCPRunning] == NO)
+	if( [[AppController sharedAppController] isStoreSCPRunning] == NO && [QueryController sekhmetListenerRequiredForEveryNode: array])
 	{
-		NSLog( @"----- isStoreSCPRunning == NO, cannot retrieve");
+		NSLog( @"----- isStoreSCPRunning == NO, every node retrieves with C-MOVE, cannot retrieve");
+		[self forgetRetrieveInTransfer: array]; // Sekhmet (DC)
+		// SekhVet Paket CT: the listener is off on a fresh install - say so instead of doing nothing
+		if( autoQuery == NO)
+			[self performSelectorOnMainThread: @selector(sekhvetListenerOffAlert) withObject: nil waitUntilDone: NO];
+		[pool release];
 		return;
 	}
 	
@@ -3899,7 +3964,7 @@ extern "C"
 			
 			@try
 			{
-				FILE * pFile = fopen ("/tmp/kill_all_storescu", "r");
+				FILE * pFile = fopen ("/tmp/kill_all_storescu_sekhvet", "r");
 				if( pFile)
 					fclose (pFile);
 				else
@@ -3913,7 +3978,7 @@ extern "C"
 			@catch (NSException * e)
 			{
                 NSLog( @"dictionary: %@", d);
-                NSLog( @"object: %@, %@", object, [object uid]);
+                NSLog( @"object: %@, %@", [object className], [object uid]); // Sekhmet (P6): keine Patientendaten im System-Log (nach ThalesMMS/horos 4d46ba7)
 				N2LogExceptionWithStackTrace( e);
 			}
 			
@@ -3925,25 +3990,10 @@ extern "C"
 			[NSThread currentThread].progress = (float) ++i / (float) [moveArray count];
 			if( [NSThread currentThread].isCancelled)
 			{
-				[[NSFileManager defaultManager] createFileAtPath: @"/tmp/kill_all_storescu" contents: [NSData data] attributes: nil];
+				[[NSFileManager defaultManager] createFileAtPath: @"/tmp/kill_all_storescu_sekhvet" contents: [NSData data] attributes: nil];
 				[NSThread sleepForTimeInterval: 3];
-				unlink( "/tmp/kill_all_storescu");
+				unlink( "/tmp/kill_all_storescu_sekhvet");
 				break;
-			}
-		}
-		
-		@synchronized( previousAutoRetrieve)
-		{
-			for( DCMTKQueryNode *object in [moveArray valueForKey: @"query"])
-			{
-				@try
-				{
-					[previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
-				}
-				@catch (NSException * e)
-				{
-					NSLog( @"performRetrieve previousAutoRetrieve removeObjectForKey exception: %@", e);
-				}
 			}
 		}
 		
@@ -3951,7 +4001,7 @@ extern "C"
 		
 		if( [[self window] isVisible])
 		{
-			FILE * pFile = fopen( "/tmp/kill_all_storescu", "r");
+			FILE * pFile = fopen( "/tmp/kill_all_storescu_sekhvet", "r");
 			if( pFile)
 				fclose (pFile);
 			else
@@ -3967,6 +4017,8 @@ extern "C"
 	{
 		N2LogExceptionWithStackTrace( e);
 	}
+	
+	[self forgetRetrieveInTransfer: array]; // Sekhmet (DC): auch nach Exception oder ohne moveArray-Eintrag
 	
 	[array release];
 	

@@ -122,6 +122,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     NSString                *selectedAlbumName;
     
     NSArray							*outlineViewArray, *originalOutlineViewArray;
+    NSSet                           *originalOutlineViewStudies; // Sekhmet (P3): originalOutlineViewArray als Menge, fuer containsObject: beim Zeichnen
     NSArray							*matrixViewArray;
     
     NSString						*_searchString;
@@ -251,6 +252,8 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     BOOL                            ROIsAndKeyImagesCacheSameSeries, ROIsImagesCacheSameSeries;
     
     BOOL                            _computingNumberOfStudiesForAlbums;
+    NSTimeInterval                  _sekhmetLastImportListRefresh, _sekhmetLastImportAlbumsRefresh; // Sekhmet (P4)
+    BOOL                            _sekhmetImportListRefreshPending, _sekhmetImportAlbumsRefreshPending;
     
     IBOutlet NSTableView* _activityTableView;
     id _activityHelper;

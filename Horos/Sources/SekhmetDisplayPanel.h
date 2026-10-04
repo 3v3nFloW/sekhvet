@@ -8,10 +8,11 @@
 
 #import <Cocoa/Cocoa.h>
 
-extern NSString* const SekhmetScreenAreasKey;        // Dict: "<Bildschirmindex>" -> NSNumber Modus
-extern NSString* const SekhmetScreenAreaRectsKey;    // Dict: "<Bildschirmindex>" -> "x y w h" (relativ zur sichtbaren Flaeche)
+extern NSString* const SekhmetScreenAreasKey;        // Dict: "id<NSScreenNumber>" und "<Bildschirmindex>" -> NSNumber Modus (SekhVet Paket CS: Displaynummer zuerst, Index als Rueckfall)
+extern NSString* const SekhmetScreenAreaRectsKey;    // Dict: gleiche Schluessel -> "x y w h" (relativ zur sichtbaren Flaeche)
 extern NSString* const SekhmetAnnotationBackgroundKey; // 0 Horos, 1 Kontur, 2 Kasten, 3 beide
 extern NSString* const SekhmetMPRSyncKey;
+extern NSString* const SekhmetMPRSyncSettingDidChangeNotification; // SekhVet Paket CS: MPR-Sync umgeschaltet (Toolbar-Knopf oder Panel) -> alle Anzeigen des Schalters folgen
 extern NSString* const SekhmetTile3DWindowsKey;
 extern NSString* const SekhmetAppearanceKey;        // SekhVet Paket N: 0 System, 1 Hell, 2 Dunkel
 extern NSString* const SekhmetModalityColorsKey;    // SekhVet Paket N: BOOL
@@ -40,6 +41,11 @@ enum {
     NSButton *modalityColorsButton;
     NSTextField *fontSizeField;
     NSColorWell *textColorWell, *boxColorWell;
+    NSPopUpButton *lineThicknessPopup, *regionThicknessPopup, *arrowThicknessPopup; // SekhVet Paket CD
+    NSButton *measureLoupeButton;                                                    // SekhVet Paket CD
+    NSButton *navigatorButton;                                                       // SekhVet Paket DO: Messungen-Navigator
+    NSPopUpButton *loupeSizePopup;                                                   // SekhVet Paket CF
+    NSTextField *overlayNextField, *overlayPrevField;                                // SekhVet Paket CJ
 }
 
 + (NSImage*) swapMPRIcon; // SekhVet Paket BW-2: zwei Fenster mit Doppelpfeil (Template) fuer "Swap MPR"
@@ -51,13 +57,12 @@ enum {
 + (NSInteger) indexForMode:(NSInteger) m;
 + (void) setMode:(NSInteger) mode forScreen:(NSScreen*) screen;
 + (NSInteger) modeForScreen:(NSScreen*) screen;
-+ (void) placeWindow:(NSWindow*) w nearWindow:(NSWindow*) ref centered:(BOOL) centered;
++ (void) placeWindow:(NSWindow*) w nearWindow:(NSWindow*) ref centered:(BOOL) centered;   // in die Viewer-Flaeche des Bildschirms von ref (oben links oder mittig), nur wenn w noch nicht sichtbar
 + (void) applyAppearance;                                        // SekhVet Paket N: NSApp.appearance aus SekhmetAppearance
-+ (NSColor*) modalityColorForModality:(NSString*) modality;     // SekhVet Paket N: Zeilentoenung (alpha 0.22) oder nil   // in die Viewer-Flaeche des Bildschirms von ref (oben links oder mittig), nur wenn w noch nicht sichtbar
++ (NSColor*) modalityColorForModality:(NSString*) modality;     // SekhVet Paket N: Zeilentoenung (alpha 0.22) oder nil
 
 @end
 
-// SekhVet Paket F: About-Fenster mit Lizenzhinweis (LGPL 3.0, Horos/OsiriX) und Links (Spenden, VoiceInk, Quelltext)
 // SekhVet Paket BB: Skalenstriche eines Reglers nach Bildzahl setzen; ab SEKHMET_SLIDER_MAX_TICKS
 // Bildern gibt es keine. Grund: AppKit (macOS 26) legt je Strich ein Rechteck an und baut den
 // Regler dabei zweimal neu - bei 1700 Bildern rund eine halbe Sekunde auf dem Hauptthread,
@@ -67,6 +72,7 @@ enum {
 #define SEKHMET_SLIDER_MAX_TICKS 100
 void SekhmetSliderSetTickMarks(NSSlider* slider, NSInteger count);
 
+// SekhVet Paket F: About-Fenster mit Lizenzhinweis (LGPL 3.0, Horos/OsiriX) und Links (Spenden, VoiceInk, Quelltext)
 @interface SekhmetAbout : NSWindowController
 + (SekhmetAbout*) shared;
 + (void) openURLKey:(NSString*) key;   // oeffnet die URL aus den Defaults; leer -> Hinweis, wie man sie setzt

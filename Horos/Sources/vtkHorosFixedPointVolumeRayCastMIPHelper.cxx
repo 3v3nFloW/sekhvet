@@ -49,6 +49,7 @@
 
 =========================================================================*/
 #include "vtkHorosFixedPointVolumeRayCastMIPHelper.h"
+#include "vtkHorosFixedPointVolumeRayCastMapper.h"
 
 #include <vtkImageData.h>
 #include <vtkCommand.h>
@@ -64,13 +65,13 @@
 
 
 
-static int vtkMeanIPMode = 0;
-
+// Sekhmet (P2): der prozessweite Schalter ist abgeloest; Mean steht jetzt je Mapper
+// (vtkHorosFixedPointVolumeRayCastMapper::MeanIPMode, gesetzt in VRView setMode:/setBlendingMode:).
+// Die Funktion bleibt als leere Huelle fuer Plugins, die sie noch aufrufen.
 extern "C"
 {
     void setvtkMeanIPMode( int m)
     {
-        vtkMeanIPMode = m;
     }
 }
 
@@ -276,6 +277,13 @@ void vtkFixedPointMIPHelperGenerateImageIndependentNN(
   VTKKWRCHelper_InitializeMIPMultiNN();
   VTKKWRCHelper_SpaceLeapSetupMulti();
 
+  // Sekhmet (DG): Mean auch fuer Farb-/Mehrkomponentenvolumen. Der Mean-Fix aus Build 119 (je Mapper) deckte nur die
+  // einkomponentigen Schleifen ab; eine Farbserie zeigte im Mean-Modus MIP bzw. minIP (nach ThalesMMS/horos #786)
+  vtkHorosFixedPointVolumeRayCastMapper *horosMapper = dynamic_cast<vtkHorosFixedPointVolumeRayCastMapper*>( mapper);
+  int meanIP = horosMapper ? horosMapper->MeanIPMode : 0;
+  double meanSum[4] = { 0, 0, 0, 0 };
+  long meanHits = 0;
+
   int maxValueDefined = 0;
   unsigned short maxIdx[4];
 
@@ -286,11 +294,24 @@ void vtkFixedPointMIPHelperGenerateImageIndependentNN(
       mapper->FixedPointIncrement( pos, dir );
       }
     VTKKWRCHelper_CroppingCheckNN( pos );
-    VTKKWRCHelper_MIPSpaceLeapPopulateMulti( maxIdx,
-                                             mapper->GetFlipMIPComparison() )
+    if ( !meanIP )
+      {
+      VTKKWRCHelper_MIPSpaceLeapPopulateMulti( maxIdx,
+                                               mapper->GetFlipMIPComparison() )
+      }
 
     mapper->ShiftVectorDown( pos, spos );
     dptr = data +  spos[0]*inc[0] + spos[1]*inc[1] + spos[2]*inc[2];
+
+    if ( meanIP )
+      {
+      for ( c = 0; c < components; c++ )
+        {
+        meanSum[c] += *(dptr+c);
+        }
+      meanHits++;
+      continue;
+      }
 
     if ( !maxValueDefined )
       {
@@ -316,6 +337,16 @@ void vtkFixedPointMIPHelperGenerateImageIndependentNN(
           }
         }
       }
+    }
+
+  if ( meanIP && meanHits )   // Sekhmet (DG)
+    {
+    for ( c = 0; c < components; c++ )
+      {
+      maxValue[c] = static_cast<T>( meanSum[c] / meanHits );
+      maxIdx[c] = static_cast<unsigned short>((maxValue[c] + shift[c])*scale[c]);
+      }
+    maxValueDefined = 1;
     }
 
   imagePtr[0] = imagePtr[1] = imagePtr[2] = imagePtr[3] = 0;
@@ -350,7 +381,8 @@ void vtkFixedPointMIPHelperGenerateImageOneSimpleTrilin(
   VTKKWRCHelper_InitializeMIPOneTrilin();
   VTKKWRCHelper_SpaceLeapSetup();
 
-  int meanIP = vtkMeanIPMode;
+  vtkHorosFixedPointVolumeRayCastMapper *horosMapper = dynamic_cast<vtkHorosFixedPointVolumeRayCastMapper*>( mapper);
+  int meanIP = horosMapper ? horosMapper->MeanIPMode : 0;
   int maxValueDefined = 0;
   unsigned short maxIdx=0;
   unsigned int maxScalar = 0;
@@ -432,7 +464,7 @@ void vtkFixedPointMIPHelperGenerateImageOneSimpleTrilin(
     
     if( meanIP)
     {
-        maxValue = total / hits;
+        maxValue = hits ? total / hits : 0; // Sekhmet: Strahl ohne Treffer
         maxIdx = static_cast<unsigned short>(maxValue);
         maxValueDefined = 1;
         
@@ -650,6 +682,12 @@ void vtkFixedPointMIPHelperGenerateImageIndependentTrilin(
   VTKKWRCHelper_InitializationAndLoopStartTrilin();
   VTKKWRCHelper_InitializeMIPMultiTrilin();
 
+  // Sekhmet (DG): Mean auch hier (siehe NN oben) (nach ThalesMMS/horos #786)
+  vtkHorosFixedPointVolumeRayCastMapper *horosMapper = dynamic_cast<vtkHorosFixedPointVolumeRayCastMapper*>( mapper);
+  int meanIP = horosMapper ? horosMapper->MeanIPMode : 0;
+  double meanSum[4] = { 0, 0, 0, 0 };
+  long meanHits = 0;
+
   int maxValueDefined = 0;
   for ( k = 0; k < numSteps; k++ )
     {
@@ -680,6 +718,16 @@ void vtkFixedPointMIPHelperGenerateImageIndependentTrilin(
     VTKKWRCHelper_ComputeWeights(pos);
     VTKKWRCHelper_InterpolateScalarComponent( val, c, components );
 
+    if ( meanIP )   // Sekhmet (DG)
+      {
+      for ( c = 0; c < components; c++ )
+        {
+        meanSum[c] += val[c];
+        }
+      meanHits++;
+      continue;
+      }
+
     if ( !maxValueDefined )
       {
       for ( c= 0; c < components; c++ )
@@ -699,6 +747,15 @@ void vtkFixedPointMIPHelperGenerateImageIndependentTrilin(
           }
         }
       }
+    }
+
+  if ( meanIP && meanHits )   // Sekhmet (DG)
+    {
+    for ( c = 0; c < components; c++ )
+      {
+      maxValue[c] = static_cast<unsigned short>( meanSum[c] / meanHits );
+      }
+    maxValueDefined = 1;
     }
 
   imagePtr[0] = imagePtr[1] = imagePtr[2] = imagePtr[3] = 0;

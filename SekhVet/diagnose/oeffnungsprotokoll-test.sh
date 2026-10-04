@@ -1,17 +1,17 @@
 #!/bin/zsh
 # SekhVet Paket AU — Oeffnungsprotokoll headless.
-# Aufruf: /tmp/sekh_test80.sh <Namensteil> [black]
+# Aufruf: oeffnungsprotokoll-test.sh <Namensteil> [black]   (Paket CS: der Kopf nannte noch den alten Ort /tmp/sekh_test80.sh)
 #   ohne "black": eingebaute Vorgabeprotokolle (Luecken ruecken auf)
 #   mit  "black": Testprotokoll 2x2 mit Luecke in der MITTE, Luecken als schwarze Kachel
 NEEDLE=${1:?Namensteil der Studie angeben}
 MODE=${2:-plain}
-APP=~/Projects/horos-vet/build/Build/Products/Release/Horos.app/Contents/MacOS/Horos
+APP=~/Projects/horos-vet/build/Build/Products/Release/Horos.app/Contents/MacOS/SekhVet
 LOG=/tmp/sekhvet-test80.log
 DOM=vet.kappa1.sekhvet.horos
 
 curl -s -m 5 -X POST http://127.0.0.1:8085/ -d '<?xml version="1.0"?><methodCall><methodName>KillOsiriX</methodName><params></params></methodCall>' >/dev/null 2>&1
 sleep 3
-pgrep -f "horos-vet/build.*MacOS/Horos" >/dev/null && { pkill -f "horos-vet/build.*MacOS/Horos"; sleep 3; }
+pgrep -f "horos-vet/build.*MacOS/SekhVet" >/dev/null && { pkill -f "horos-vet/build.*MacOS/SekhVet"; sleep 3; }
 
 defaults write $DOM CloseAllWindowsBeforeXMLRPCOpen -bool NO
 defaults delete $DOM SekhmetOpeningProtocols 2>/dev/null

@@ -40,11 +40,14 @@
 #include "options.h"
 
 #import "ToolbarPanel.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 #import "DicomDatabase.h"
 #import "SekhmetImport.h"
 #import "SekhmetOpening.h" // SekhVet
 #import "SekhmetDisplayPanel.h" // SekhVet Paket BB: SekhmetSliderSetTickMarks
 #import "SekhmetRename.h" // SekhVet Paket BC: Patient umbenennen
+#import "SekhmetSequenz.h" // SekhVet Paket CA: Sequenz-Plaketten
+#import "SekhmetDICOMweb.h" // SekhVet Paket CH: Senden per DICOMweb im Kontextmenue
 #import "DicomDatabase+Routing.h"
 #import "DicomDatabase+Clean.h"
 #import "DicomDatabase+DCMTK.h"
@@ -141,7 +144,7 @@
 #import "WADOXML.h"
 #import "DicomDir.h"
 #import "CPRVolumeData.h"
-#import "O2HMigrationAssistant.h"
+
 #import "ICloudDriveDetector.h"
 #import "NSException+N2.h"
 
@@ -220,6 +223,9 @@ NSString* asciiString(NSString* str)
 -(void)observeScrollerStyleDidChangeNotification:(NSNotification*)n;
 -(void)removeAlbumObject:(DicomAlbum*)album;
 
+-(NSPredicate*)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions;
+-(BOOL)searchIncludesSeriesDescriptions;
+
 -(void)saveLoadAlbumsSortDescriptors;
 
 @end
@@ -260,6 +266,37 @@ static NSString* BrowserControllerClassHelperContext = @"BrowserControllerClassH
 
 @end
 
+// Sekhmet (DG): Abrufe, die ihre Bilder sofort brauchen, setzen ListenerCompressionSettings voruebergehend auf 0. Jeder
+// sicherte bisher selbst den Wert und setzte ihn zurueck - zwei gleichzeitig (Vergleichsabrufe laufen auf bis zu fuenf
+// Threads) konnten die 0 des anderen sichern und sie fuer immer stehen lassen. Jetzt sichert nur der erste und stellt
+// nur der letzte zurueck (nach ThalesMMS/horos 32cc286b ListenerCompressionSuspension)
+static int sekhmetListenerCompressionHolders = 0;
+static NSInteger sekhmetListenerCompressionSaved = 0;
+static NSObject *sekhmetListenerCompressionLock = nil;
+
+static void SekhmetSuspendListenerCompression( void)
+{
+    static dispatch_once_t once;
+    dispatch_once( &once, ^{ sekhmetListenerCompressionLock = [[NSObject alloc] init]; });
+    @synchronized( sekhmetListenerCompressionLock)
+    {
+        if( sekhmetListenerCompressionHolders++ == 0)
+        {
+            sekhmetListenerCompressionSaved = [[NSUserDefaults standardUserDefaults] integerForKey: @"ListenerCompressionSettings"];
+            [[NSUserDefaults standardUserDefaults] setInteger: 0 forKey: @"ListenerCompressionSettings"]; //No time for decompression....
+        }
+    }
+}
+
+static void SekhmetResumeListenerCompression( void)
+{
+    @synchronized( sekhmetListenerCompressionLock)
+    {
+        if( sekhmetListenerCompressionHolders > 0 && --sekhmetListenerCompressionHolders == 0)
+            [[NSUserDefaults standardUserDefaults] setInteger: sekhmetListenerCompressionSaved forKey: @"ListenerCompressionSettings"];
+    }
+}
+
 @implementation BrowserController
 
 +(void)initializeBrowserControllerClass
@@ -276,6 +313,9 @@ static NSString*	ExportROIAndKeyImagesToolbarItemIdentifier	= @"ExportROIAndKeyI
 static NSString*	AnonymizerToolbarItemIdentifier		= @"Anonymizer.pdf";
 static NSString*	QueryToolbarItemIdentifier			= @"QueryRetrieve.pdf";
 static NSString*	SekhmetDICOMwebToolbarItemIdentifier = @"SekhmetDICOMweb"; // SekhVet Paket R
+static NSString*	SekhmetDICOMwebSendToolbarItemIdentifier = @"SekhmetDICOMwebSend"; // SekhVet Paket CZ
+static NSString*	SekhmetReportPilotToolbarItemIdentifier = @"SekhmetReportPilot"; // SekhVet privat: ReportPilot (nur mit Einstellung SekhVetReportPilot)
+static BOOL sekhmetReportPilotAktiv( void); // SekhVet privat, unten bei der Aktion
 static NSString*	SendToolbarItemIdentifier			= @"Send.pdf";
 static NSString*	ViewerToolbarItemIdentifier			= @"Viewer.pdf";
 //static NSString*	CDRomToolbarItemIdentifier			= @"cd.icns";
@@ -330,7 +370,7 @@ static volatile BOOL waitForRunningProcess = NO;
         else
             [comparativeTable setRowHeight: 24];
         [_activityTableView setRowHeight: 34];
-        [oMatrix setCellSize: NSMakeSize( 105 * 0.8, 113 * 0.8)];
+        [oMatrix setCellSize: NSMakeSize( 105 * 0.8, 125 * 0.8)]; // SekhVet Paket CA: 113 -> 125
     }
     
     if( mode == 0) // Regular
@@ -343,7 +383,7 @@ static volatile BOOL waitForRunningProcess = NO;
         else
             [comparativeTable setRowHeight: 29];
         [_activityTableView setRowHeight: 38];
-        [oMatrix setCellSize: NSMakeSize( 105, 113)];
+        [oMatrix setCellSize: NSMakeSize( 105, 125)]; // SekhVet Paket CA: 113 -> 125
     }
     
     if( mode == 1) // Large
@@ -356,7 +396,7 @@ static volatile BOOL waitForRunningProcess = NO;
         else
             [comparativeTable setRowHeight: 43];
         [_activityTableView setRowHeight: 48];
-        [oMatrix setCellSize: NSMakeSize( 105 * 1.3, 113 * 1.3)];
+        [oMatrix setCellSize: NSMakeSize( 105 * 1.3, 125 * 1.3)]; // SekhVet Paket CA: 113 -> 125
     }
 }
 
@@ -1628,8 +1668,7 @@ static NSConditionLock *threadLock = nil;
         [lastROIsImagesSelectedFiles release]; lastROIsImagesSelectedFiles = nil;
         [lastKeyImagesSelectedFiles release]; lastKeyImagesSelectedFiles = nil;
         
-        [self outlineViewRefresh];
-        [self refreshAlbums];
+        [self _sekhmetRefreshDatabaseDisplayAfterImport];
         
         [self checkIfLocalStudyHasMoreOrSameNumberOfImagesOfADistantStudy: [[notification.userInfo valueForKey: OsirixAddToDBNotificationImagesArray] valueForKeyPath: @"series.study"]];
     }
@@ -1638,6 +1677,54 @@ static NSConditionLock *threadLock = nil;
 -(void)_refreshDatabaseDisplay
 {
     [self outlineViewRefresh];
+    [self refreshAlbums];
+}
+
+// Sekhmet (P4, nach ThalesMMS/horos 4d46ba7): Jede Import-Runde meldete sich hier und baute die ganze
+// Studienliste neu auf und startete eine Album-Zaehlung - beim DICOMweb-Abruf (Instanz einzeln nach
+// INCOMING) Dutzende Male pro Studie. Jetzt: erste Meldung einer ruhigen Phase sofort, danach die Liste
+// hoechstens alle SekhmetImportListRefreshInterval s, die Alben alle SekhmetImportAlbumsRefreshInterval s;
+// eine nachlaufende Aktualisierung zeigt die letzte Runde eines Schubs.
+static const NSTimeInterval SekhmetImportListRefreshInterval = 3, SekhmetImportAlbumsRefreshInterval = 20;
+
+-(void)_sekhmetRefreshDatabaseDisplayAfterImport
+{
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if( _sekhmetImportListRefreshPending == NO)
+    {
+        NSTimeInterval wait = _sekhmetLastImportListRefresh + SekhmetImportListRefreshInterval - now;
+        if( wait <= 0)
+            [self _sekhmetImportListRefreshFire];
+        else
+        {
+            _sekhmetImportListRefreshPending = YES;
+            [self performSelector:@selector(_sekhmetImportListRefreshFire) withObject:nil afterDelay:wait inModes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
+        }
+    }
+    if( _sekhmetImportAlbumsRefreshPending == NO)
+    {
+        NSTimeInterval wait = _sekhmetLastImportAlbumsRefresh + SekhmetImportAlbumsRefreshInterval - now;
+        if( wait <= 0)
+            [self _sekhmetImportAlbumsRefreshFire];
+        else
+        {
+            _sekhmetImportAlbumsRefreshPending = YES;
+            [self performSelector:@selector(_sekhmetImportAlbumsRefreshFire) withObject:nil afterDelay:wait inModes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
+        }
+    }
+}
+
+-(void)_sekhmetImportListRefreshFire
+{
+    _sekhmetImportListRefreshPending = NO;
+    _sekhmetLastImportListRefresh = [NSDate timeIntervalSinceReferenceDate];
+    [self outlineViewRefresh];
+}
+
+-(void)_sekhmetImportAlbumsRefreshFire
+{
+    _sekhmetImportAlbumsRefreshPending = NO;
+    _sekhmetLastImportAlbumsRefresh = [NSDate timeIntervalSinceReferenceDate];
     [self refreshAlbums];
 }
 
@@ -2258,8 +2345,8 @@ static NSConditionLock *threadLock = nil;
                 
             case ask:
                 switch (NSRunInformationalAlertPanel(
-                                                     NSLocalizedString(@"Horos Database", nil),
-                                                     NSLocalizedString(@"Should I copy these files in Horos Database folder, or only copy links to these files?", nil),
+                                                     NSLocalizedString(@"SekhVet Database", nil),
+                                                     NSLocalizedString(@"Should I copy these files in SekhVet Database folder, or only copy links to these files?", nil),
                                                      NSLocalizedString(@"Copy Files", nil),
                                                      NSLocalizedString(@"Cancel", nil),
                                                      NSLocalizedString(@"Copy Links", nil)))
@@ -2911,6 +2998,16 @@ static NSConditionLock *threadLock = nil;
         [searchInEntireDBResult setHidden: YES];
 }
 
+// Sekhmet (P3, nach ThalesMMS/horos 4d46ba7): die Studien vor dem Hinzufuegen der uebrigen Studien
+// derselben Patienten; fett gezeichnet, also fuer jede sichtbare Zeile gefragt -> Menge statt Array.
+- (void) sekhmetRememberOriginalOutlineViewArray: (NSArray*) array
+{
+    [originalOutlineViewArray release];
+    originalOutlineViewArray = [array retain];
+    [originalOutlineViewStudies release];
+    originalOutlineViewStudies = array ? [[NSSet alloc] initWithArray: array] : nil;
+}
+
 - (NSString*) outlineViewRefresh		// This function creates the 'root' array for the outlineView
 {
     @synchronized (self)
@@ -2930,7 +3027,7 @@ static NSConditionLock *threadLock = nil;
         NSLog( @"******* We HAVE TO be in main thread !");
     
     NSError				*error =nil;
-    NSPredicate			*predicate = nil, *subPredicate = nil;
+    NSPredicate			*predicate = nil, *distantPredicate = nil, *subPredicate = nil;
     NSString			*description = [NSString string];
     NSIndexSet			*selectedRowIndexes =  [databaseOutline selectedRowIndexes];
     NSMutableArray		*previousObjects = [NSMutableArray array];
@@ -3004,6 +3101,7 @@ static NSConditionLock *threadLock = nil;
             description = [description stringByAppendingFormat:NSLocalizedString(@" / Time Interval: since: %@", nil), [[NSUserDefaults dateTimeFormatter] stringFromDate: timeIntervalStart]];
         }
         predicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: subPredicate, predicate, nil]];
+        distantPredicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: subPredicate, distantPredicate, nil]];
         filtered = YES;
     }
     
@@ -3018,6 +3116,7 @@ static NSConditionLock *threadLock = nil;
         description = [description stringByAppendingFormat: NSLocalizedString(@" / Modality: %@", nil), self.modalityFilter];
         
         predicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: subPredicate, predicate, nil]];
+        distantPredicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: subPredicate, distantPredicate, nil]];
         filtered = YES;
     }
     
@@ -3028,15 +3127,33 @@ static NSConditionLock *threadLock = nil;
     if( self.filterPredicate)
     {
         predicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: self.filterPredicate, predicate, nil]];
+
+        // A study-level PACS query has no series objects to evaluate. Keep its
+        // in-memory predicate limited to study fields while allowing the local
+        // Core Data search to include the Study -> Series relationship.
+        NSPredicate *distantFilterPredicate = self.filterPredicate;
+        if( _searchString.length)
+        {
+            NSPredicate *searchPredicate = [self createFilterPredicateIncludingSeriesDescriptions: NO];
+            if( searchPredicate)
+                distantFilterPredicate = searchPredicate;
+        }
+        distantPredicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: distantFilterPredicate, distantPredicate, nil]];
+
         description = [description stringByAppendingString: self.filterPredicateDescription];
         filtered = YES;
     }
     
     if( testPredicate)
+    {
         predicate = testPredicate;
+        distantPredicate = testPredicate;
+    }
     
     if( predicate == nil)
         predicate = [NSPredicate predicateWithValue: YES];
+    if( distantPredicate == nil)
+        distantPredicate = [NSPredicate predicateWithValue: YES];
     
     //	[_database lock];
     error = nil;
@@ -3057,9 +3174,23 @@ static NSConditionLock *threadLock = nil;
                     // Entire DB Result
                     
                     distantEntireDBResultCount = 0;
-                    localEntireDBResultCount = [[[_database objectsForEntity:_database.studyEntity predicate:nil error:&error] filteredArrayUsingPredicate: self.filterPredicate] count];
+                    if( [self searchIncludesSeriesDescriptions])
+                        localEntireDBResultCount = [_database countObjectsForEntity:_database.studyEntity predicate:self.filterPredicate error:&error];
+                    else
+                        localEntireDBResultCount = [[[_database objectsForEntity:_database.studyEntity predicate:nil error:&error] filteredArrayUsingPredicate: self.filterPredicate] count];
                     
                     [self refreshEntireDBResult];
+                }
+            }
+            else if( [self searchIncludesSeriesDescriptions] && testPredicate == nil)
+            {
+                outlineViewArray = [_database objectsForEntity:_database.studyEntity predicate:predicate error:&error];
+                
+                if( outlineViewArray == nil) // SekhVet Paket CT: if Core Data cannot run the combined predicate (series description + date + modality) in SQL, filter in memory instead of showing an empty list
+                {
+                    NSLog( @"**** series description search: SQL fetch failed (error code %ld), filtering in memory", (long) error.code); // the error text can contain the search string
+                    error = nil;
+                    outlineViewArray = [[_database objectsForEntity:_database.studyEntity predicate:nil error:&error] filteredArrayUsingPredicate:predicate];
                 }
             }
             else
@@ -3100,7 +3231,7 @@ static NSConditionLock *threadLock = nil;
                 NSArray *filteredAlbumDistantStudies = nil;
                 @synchronized( smartAlbumDistantArraySync)
                 {
-                    filteredAlbumDistantStudies = [smartAlbumDistantArray filteredArrayUsingPredicate: predicate];
+                    filteredAlbumDistantStudies = [smartAlbumDistantArray filteredArrayUsingPredicate: distantPredicate];
                 }
                 
                 // Merge local and distant studies
@@ -3213,7 +3344,10 @@ static NSConditionLock *threadLock = nil;
     }
     else sortDescriptors = [databaseOutline sortDescriptors];
     
-    if( filtered == YES && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count < 500)
+    // A description/all-fields search that inspects Series must remain an
+    // exact result set. Adding every other study for each matching patient
+    // makes unrelated studies appear to match the entered description.
+    if( filtered == YES && [self searchIncludesSeriesDescriptions] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count < 500)
     {
         @try
         {
@@ -3246,8 +3380,7 @@ static NSConditionLock *threadLock = nil;
                     studyIndex++;
                 }
                 
-                [originalOutlineViewArray release];
-                originalOutlineViewArray = [outlineViewArray retain];
+                [self sekhmetRememberOriginalOutlineViewArray: outlineViewArray];
                 outlineViewArray = copyOutlineViewArray;
             }
             else
@@ -3256,8 +3389,7 @@ static NSConditionLock *threadLock = nil;
                 for (id obj in outlineViewArray)
                     [patientPredicateArray addObject: [NSPredicate predicateWithFormat:@"(patientUID BEGINSWITH[cd] %@)", [obj valueForKey:@"patientUID"]]];
                 predicate = [NSCompoundPredicate orPredicateWithSubpredicates: patientPredicateArray];
-                [originalOutlineViewArray release];
-                originalOutlineViewArray = [outlineViewArray retain];
+                [self sekhmetRememberOriginalOutlineViewArray: outlineViewArray];
                 outlineViewArray = [[_database objectsForEntity:_database.studyEntity predicate:predicate] sortedArrayUsingDescriptors:sortDescriptors];
             }
         }
@@ -3268,8 +3400,7 @@ static NSConditionLock *threadLock = nil;
     }
     else
     {
-        [originalOutlineViewArray release];
-        originalOutlineViewArray = nil;
+        [self sekhmetRememberOriginalOutlineViewArray: nil];
         
         outlineViewArray = [outlineViewArray sortedArrayUsingDescriptors: sortDescriptors];
     }
@@ -3320,6 +3451,8 @@ static NSConditionLock *threadLock = nil;
     return exception;
 }
 
+extern BOOL SekhVetPIDRunsOwnExecutable(pid_t pid); // AppController.m
+
 - (void) searchDeadProcesses
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
@@ -3340,7 +3473,8 @@ static NSConditionLock *threadLock = nil;
                     
                     int pid = [[s stringByReplacingOccurrencesOfString: @"lock_process-" withString: @""] intValue];
                     
-                    if( pid)
+                    // SekhVet Paket CT: only a process that runs our own executable is stopped - the lock file may belong to a Horos running next to SekhVet
+                    if( pid && SekhVetPIDRunsOwnExecutable( pid))
                     {
                         NSLog( @"****** kill pid %@", s);
                         kill( pid, 15);
@@ -3387,14 +3521,9 @@ static NSConditionLock *threadLock = nil;
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
     @try
     {
-        if (_computingNumberOfStudiesForAlbums)
-        {
-            [self performSelectorOnMainThread:@selector(delayedRefreshAlbums) withObject:nil waitUntilDone:NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
-            return;
-        }
-        
-        _computingNumberOfStudiesForAlbums = YES;
-        
+        // Sekhmet (P4): refreshAlbums setzt _computingNumberOfStudiesForAlbums schon auf dem Main Thread,
+        // bevor dieser Thread existiert. Vorher setzte ihn erst der Thread, und mehrere gleichzeitig
+        // gestartete Zaehlungen fanden ihn alle noch frei (nach ThalesMMS/horos 4d46ba7).
         [NSThread currentThread].name = NSLocalizedString( @"Compute Albums...", nil);
         [[ThreadsManager defaultManager] addThreadAndStart: [NSThread currentThread]];
         
@@ -3586,7 +3715,10 @@ static NSConditionLock *threadLock = nil;
         else
         {
             if ([[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO || [self.window isVisible]) // Server Mode: dont refresh albums
+            {
+                _computingNumberOfStudiesForAlbums = YES; // Sekhmet (P4): vor dem Thread, siehe _computeNumberOfStudiesForAlbumsThread
                 [NSThread detachNewThreadSelector:@selector(_computeNumberOfStudiesForAlbumsThread) toTarget:self withObject: nil];
+            }
         }
     }
 }
@@ -4070,8 +4202,8 @@ static NSConditionLock *threadLock = nil;
             return NSLocalizedString( @"Comments", nil);
             break;
             
-        case 4:			// Study Description
-            return NSLocalizedString( @"Study Description", nil);
+        case 4:			// Description
+            return NSLocalizedString( @"Description", nil);
             break;
             
         case 5:			// Modality
@@ -4123,7 +4255,7 @@ static NSConditionLock *threadLock = nil;
                 [d setObject: [curSearchString stringByAppendingString:@"*"] forKey: @"Comments"];
                 break;
                 
-            case 4:			// Study Description
+            case 4:			// PACS study-level queries can only search Study Description here
                 [d setObject: [curSearchString stringByAppendingString:@"*"] forKey: @"StudyDescription"];
                 break;
                 
@@ -5051,8 +5183,8 @@ static NSConditionLock *threadLock = nil;
                 [self.database lock];
                 @try {
                     [animationSlider setEnabled:NO];
+                    [animationSlider setNumberOfTickMarks:0];
                     [animationSlider setMaxValue:0];
-                    [animationSlider setNumberOfTickMarks:1];
                     [animationSlider setIntValue:0];
                     
                     [matrixViewArray release];
@@ -5493,7 +5625,7 @@ static NSConditionLock *threadLock = nil;
                         [study setValue: [destStudy valueForKey:@"patientUID"]  forKey: @"patientUID"];
                         [study setValue: destStudy.name  forKey: @"name"];
                         
-                        NSLog( @"---- Patient Unify: %@ %@ -> %@ %@", [study valueForKey:@"accessionNumber"], study.patientID, [destStudy valueForKey:@"accessionNumber"], destStudy.patientID);
+                        NSLog( @"---- Patient Unify: %@ -> %@", study.studyInstanceUID, destStudy.studyInstanceUID); // Sekhmet (P6): keine Patientendaten im System-Log
                     }
                 }
             }
@@ -5660,7 +5792,7 @@ static NSConditionLock *threadLock = nil;
             }
         }
         
-        NSLog(@"MERGING STUDIES: %@", destStudy);
+        NSLog(@"MERGING STUDIES into study %@", [destStudy valueForKey: @"studyInstanceUID"]); // SekhVet Paket CT: no patient data in the system log
         
         NSInteger row = 0;
         for( NSInteger x = 0; x < [selectedRows count] ; x++)
@@ -5820,7 +5952,7 @@ static NSConditionLock *threadLock = nil;
                     {
                         if( [study.imageSeries count] == 0)
                         {
-                            NSLog( @"Delete Study: %@ - %@", study.patientID, study.studyInstanceUID);
+                            NSLog( @"Delete Study: %@", study.studyInstanceUID); // Sekhmet (P6): keine Patientendaten im System-Log
                             
                             [database.managedObjectContext deleteObject:study];
                         }
@@ -6457,13 +6589,25 @@ static NSConditionLock *threadLock = nil;
         {
             if( [item valueForKey:@"reportURL"])
             {
-                DicomStudy *study = (DicomStudy*) item;
-                DicomImage *report = [study reportImage];
-                
-                if( [report valueForKey: @"date"])
-                    return [report valueForKey: @"date"];
-                else
-                    return nil;
+                // Sekhmet (P3, nach ThalesMMS/horos 4d46ba7): Datum des juengsten Berichtsbilds, ohne
+                // [study reportImage] - das fuehrt doppelte Berichtsserien zusammen und speichert, und
+                // das darf das Zeichnen einer Zeile nicht tun. Gleicher Filter wie reportSRSeries.
+                NSDate *latest = nil;
+                for( DicomSeries *series in [item valueForKey: @"series"])
+                {
+                    if( [[series valueForKey:@"id"] intValue] != 5003 ||
+                       [[series valueForKey:@"name"] isEqualToString: @"OsiriX Report SR"] == NO ||
+                       [DCMAbstractSyntaxUID isStructuredReport:[series valueForKey:@"seriesSOPClassUID"]] == NO)
+                        continue;
+                    
+                    for( DicomImage *image in [series valueForKey: @"images"])
+                    {
+                        NSDate *date = [image valueForKey: @"date"];
+                        if( date && (latest == nil || [date compare: latest] == NSOrderedDescending))
+                            latest = date;
+                    }
+                }
+                return latest;
             }
             else return nil;
         }
@@ -6553,6 +6697,9 @@ static NSConditionLock *threadLock = nil;
     
     if( [[tableColumn identifier] isEqualToString:@"noSeries"])
     {
+        if( [item isKindOfClass: [DicomStudy class]]) // Sekhmet (P3): zaehlen ohne die Serien vorher zu sortieren
+            return [NSString stringWithFormat: @"%d", (int) [(DicomStudy*) item numberOfImageSeries]];
+        
         if( [item valueForKey:@"imageSeries"])
             return [NSString stringWithFormat: @"%d", (int) [[item valueForKey:@"imageSeries"] count]];
         else
@@ -6745,7 +6892,7 @@ static NSConditionLock *threadLock = nil;
             }
             else if( originalOutlineViewArray)
             {
-                if( [originalOutlineViewArray containsObject: item]) [cell setFont: [NSFont boldSystemFontOfSize: [self fontSize: @"dbFont"]]];
+                if( [originalOutlineViewStudies containsObject: item]) [cell setFont: [NSFont boldSystemFontOfSize: [self fontSize: @"dbFont"]]];
                 else [cell setFont: [NSFont systemFontOfSize: [self fontSize: @"dbFont"]]];
             }
             else [cell setFont: [NSFont boldSystemFontOfSize: [self fontSize: @"dbFont"]]];
@@ -6796,27 +6943,24 @@ static NSConditionLock *threadLock = nil;
             
             if( [[tableColumn identifier] isEqualToString: @"reportURL"])
             {
-                if( (![_database isLocal] && [item valueForKey:@"reportURL"] != nil) || [[NSFileManager defaultManager] fileExistsAtPath: [item valueForKey:@"reportURL"]] == YES)
+                // Sekhmet (P3, nach ThalesMMS/horos 4d46ba7): der eingetragene Link, wie er ist. Eine
+                // verschwundene Datei faellt beim Oeffnen des Berichts auf - nicht durch einen Plattenzugriff
+                // pro Zeile und Neuzeichnen, und schon gar nicht durch Aendern der Studie beim Zeichnen.
+                NSString *reportURL = [item valueForKey:@"reportURL"];
+                if( reportURL.length)
                 {
-                    NSImage	*reportIcon = [NSImage imageNamed:@"Report.icns"];
-                    [reportIcon setSize: NSMakeSize(16, 16)];
+                    static NSImage *localReportIcon = nil, *webReportIcon = nil;
+                    static dispatch_once_t once;
+                    dispatch_once( &once, ^{
+                        localReportIcon = [[NSImage imageNamed:@"Report.icns"] copy];
+                        [localReportIcon setSize: NSMakeSize(16, 16)];
+                        webReportIcon = [[[NSWorkspace sharedWorkspace] iconForFileType: @"download"] copy];
+                        if( webReportIcon == nil) webReportIcon = [localReportIcon retain];
+                        [webReportIcon setSize: NSMakeSize(16, 16)];
+                    });
                     
-                    [(ImageAndTextCell*) cell setImage: reportIcon];
-                }
-                else if( [[item valueForKey: @"reportURL"] hasPrefix: @"http://"] || [[item valueForKey: @"reportURL"] hasPrefix: @"https://"])
-                {
-                    NSImage	*reportIcon = [[NSWorkspace sharedWorkspace] iconForFileType: @"download"];
-                    
-                    if( reportIcon == nil) reportIcon = [NSImage imageNamed:@"Report.icns"];
-                    
-                    [reportIcon setSize: NSMakeSize(16, 16)];
-                    
-                    [(ImageAndTextCell*) cell setImage: reportIcon];
-                }
-                else
-                {
-                    if( [item valueForKey:@"reportURL"] != nil)
-                        [item setValue: nil forKey: @"reportURL"];
+                    BOOL webLink = [_database isLocal] && ([reportURL hasPrefix: @"http://"] || [reportURL hasPrefix: @"https://"]);
+                    [(ImageAndTextCell*) cell setImage: webLink ? webReportIcon : localReportIcon];
                 }
             }
         }
@@ -7029,9 +7173,9 @@ static NSConditionLock *threadLock = nil;
             }
             else if( [DCMAbstractSyntaxUID isStructuredReport: [im valueForKeyPath: @"series.seriesSOPClassUID"]])
             {
-                [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_osirix"];
+                [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_sekhvet"];
                 
-                NSString *htmlpath = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent: [[im valueForKey: @"completePath"] lastPathComponent]] stringByAppendingPathExtension: @"xml"];
+                NSString *htmlpath = [[@"/tmp/dicomsr_sekhvet/" stringByAppendingPathComponent: [[im valueForKey: @"completePath"] lastPathComponent]] stringByAppendingPathExtension: @"xml"];
                 
                 if( [[NSFileManager defaultManager] fileExistsAtPath: htmlpath] == NO)
                 {
@@ -7107,6 +7251,8 @@ static NSConditionLock *threadLock = nil;
     return r;
 }
 
+static BOOL sekhvetOpeningProtocolAllowed = NO; // SekhVet Paket CT: set while the browser itself opens a study
+
 - (void) databaseOpenStudy:(DicomStudy*) currentStudy withProtocol:(NSDictionary*) currentHangingProtocol
 {
     // SekhVet Paket AU: Passt ein Oeffnungsprotokoll, bestimmt es Serienwahl, Reihenfolge,
@@ -7120,7 +7266,9 @@ static NSConditionLock *threadLock = nil;
         [SekhmetOpening performSelector: @selector(bringViewersToFrontForStudyUID:) withObject: sekhmetOpenedUID afterDelay: 0.4];
         [SekhmetOpening performSelector: @selector(bringViewersToFrontForStudyUID:) withObject: sekhmetOpenedUID afterDelay: 1.5];
     }
-    if( [SekhmetOpening applyToStudy: currentStudy]) return;
+    // SekhVet Paket CT: only when the study is opened from the database. A hanging protocol the user picks
+    // explicitly in the viewer menu (-[ViewerController applyWindowProtocol:]) is no longer overridden.
+    if( sekhvetOpeningProtocolAllowed && [SekhmetOpening applyToStudy: currentStudy]) return;
 
     BOOL restoreNOAutotiling = NO;
     int WINDOWSIZEVIEWERCopy = 0;
@@ -7314,8 +7462,7 @@ static NSConditionLock *threadLock = nil;
             {
                 distantStudies = NO;
                 
-                int copy = [[NSUserDefaults standardUserDefaults] integerForKey: @"ListenerCompressionSettings"];
-                [[NSUserDefaults standardUserDefaults] setInteger: 0 forKey: @"ListenerCompressionSettings"]; //No time for decompression....
+                SekhmetSuspendListenerCompression(); // Sekhmet (DG)
                 
                 for( int i = 0; i < comparatives.count; i++)
                 {
@@ -7346,7 +7493,7 @@ static NSConditionLock *threadLock = nil;
                     }
                 }
                 
-                [[NSUserDefaults standardUserDefaults] setInteger: copy forKey: @"ListenerCompressionSettings"];
+                SekhmetResumeListenerCompression(); // Sekhmet (DG)
                 
                 if( distantStudies && w == nil)
                 {
@@ -7624,8 +7771,7 @@ static NSConditionLock *threadLock = nil;
                             
                             if( distantStudy)
                             {
-                                int copy = [[NSUserDefaults standardUserDefaults] integerForKey: @"ListenerCompressionSettings"];
-                                [[NSUserDefaults standardUserDefaults] setInteger: 0 forKey: @"ListenerCompressionSettings"]; //No time for decompression....
+                                SekhmetSuspendListenerCompression(); // Sekhmet (DG)
                                 
                                 [QueryController retrieveStudies: [NSArray arrayWithObject: distantStudy] showErrors: NO checkForPreviousAutoRetrieve: YES];
                                 
@@ -7654,7 +7800,7 @@ static NSConditionLock *threadLock = nil;
                                 }
                                 while( ([studiesArray count] == 0 || lastNumberOfImages != currentNumberOfImages) && [NSDate timeIntervalSinceReferenceDate] - dateStart < 20);
                                 
-                                [[NSUserDefaults standardUserDefaults] setInteger: copy forKey: @"ListenerCompressionSettings"];
+                                SekhmetResumeListenerCompression(); // Sekhmet (DG)
                             }
 #endif
                         }
@@ -7718,7 +7864,7 @@ static NSConditionLock *threadLock = nil;
                                         [seriesForThisViewer addObject: [seriesArray objectAtIndex: 0]];
                                     }
                                     else
-                                        NSLog(@"%@ versus %@", [[seriesArray objectAtIndex: 0] valueForKeyPath:@"study.patientUID"], [currentStudy valueForKey: @"patientUID"]);
+                                        NSLog(@"patientUID mismatch: study %@ versus study %@", [[seriesArray objectAtIndex: 0] valueForKeyPath:@"study.studyInstanceUID"], [currentStudy valueForKey: @"studyInstanceUID"]); // SekhVet Paket CT: patientUID is name-ID-birthdate
                                 }
                                 else if( [seriesArray count] > 1)
                                     NSLog( @"****** number of series corresponding to these UID (%@) is not unique?: %d", curSeriesUID, (int) [seriesArray count]);
@@ -7924,7 +8070,9 @@ static NSConditionLock *threadLock = nil;
             
             NSDictionary *currentHangingProtocol = [[WindowLayoutManager sharedWindowLayoutManager] currentHangingProtocol];
             
-            [self databaseOpenStudy:currentStudy withProtocol:currentHangingProtocol];
+            sekhvetOpeningProtocolAllowed = YES; // SekhVet Paket CT
+            @try { [self databaseOpenStudy:currentStudy withProtocol:currentHangingProtocol]; }
+            @finally { sekhvetOpeningProtocolAllowed = NO; }
         }
     }
 }
@@ -8861,7 +9009,7 @@ static NSConditionLock *threadLock = nil;
     
     NSSavePanel *sPanel	= [NSSavePanel savePanel];
     [sPanel setAllowedFileTypes:@[@"txt"]];
-    sPanel.nameFieldStringValue = NSLocalizedString(@"Horos Database List", nil);
+    sPanel.nameFieldStringValue = NSLocalizedString(@"SekhVet Database List", nil);
     
     [sPanel beginWithCompletionHandler:^(NSInteger result) {
         if (result != NSFileHandlingPanelOKButton)
@@ -8964,8 +9112,8 @@ static BOOL withReset = NO;
         if( animate == NO)
         {
             [animationSlider setEnabled:NO];
+            [animationSlider setNumberOfTickMarks:0];
             [animationSlider setMaxValue:0];
-            [animationSlider setNumberOfTickMarks:1];
             [animationSlider setIntValue:0];
         }
         else if( [animationSlider isEnabled] == NO)
@@ -8979,8 +9127,8 @@ static BOOL withReset = NO;
     else
     {
         [animationSlider setEnabled:NO];
+        [animationSlider setNumberOfTickMarks:0];
         [animationSlider setMaxValue:0];
-        [animationSlider setNumberOfTickMarks:1];
         [animationSlider setIntValue:0];
     }
     
@@ -9372,8 +9520,8 @@ static BOOL withReset = NO;
     
     
     [animationSlider setEnabled:NO];
+    [animationSlider setNumberOfTickMarks:0];
     [animationSlider setMaxValue:0];
-    [animationSlider setNumberOfTickMarks:1];
     [animationSlider setIntValue:0];
     
     if( [theCell tag] >= 0)
@@ -9450,6 +9598,7 @@ static BOOL withReset = NO;
             [cell setFont:[NSFont systemFontOfSize: [self fontSize: @"dbMatrixFont"]]];
             [cell setImagePosition: NSImageBelow];
             cell.title = NSLocalizedString(@"loading...", nil);
+            [oMatrix setToolTip: nil forCell: cell]; // SekhVet Paket CA
             cell.image = nil;
             cell.bezelStyle = NSShadowlessSquareBezelStyle;
         }
@@ -9548,11 +9697,18 @@ static BOOL withReset = NO;
                 if( name == nil)
                     name = @"";
                 
+                // SekhVet Paket CA: Serien zeigen den Namen unter der Miniatur, bis drei Zeilen, ganz im Tooltip
+                BOOL sekhmetSerie = [[curFile valueForKey:@"type"] isEqualToString: @"Series"] && ![modality hasPrefix: @"RT"] && ![fileType isEqualToString: @"DICOMMPEG2"];
+                NSString *vollerName = name;
+                
                 if( name.length > 18)
                 {
                     [cell setFont:[NSFont systemFontOfSize: [self fontSize: @"dbSmallMatrixFont"]]];
-                    name = [name stringByTruncatingToLength: 36]; // 2 lines
+                    if( !sekhmetSerie)
+                        name = [name stringByTruncatingToLength: 36]; // 2 lines
                 }
+                if( sekhmetSerie)
+                    name = [SekhmetSequenz name: name dreiZeilenBreite: oMatrix.cellSize.width - 8 font: cell.font];
                 
                 if( name.length == 0)
                     name = modality;
@@ -9602,6 +9758,9 @@ static BOOL withReset = NO;
                     }
                     
                     [cell setTitle:[NSString stringWithFormat: @"%@\r%@", name, N2LocalizedSingularPluralCount(count, singleType, pluralType)]];
+                    [cell setLineBreakMode: NSLineBreakByWordWrapping]; // SekhVet Paket CA
+                    [cell setImagePosition: NSImageAbove];
+                    [oMatrix setToolTip: vollerName.length ? vollerName : nil forCell: cell];
                 }
                 else if( [[curFile valueForKey:@"type"] isEqualToString: @"Image"])
                 {
@@ -9639,6 +9798,9 @@ static BOOL withReset = NO;
 //                        [cell setAlternateImage:[img imageByScalingProportionallyUsingNSImage: 1.3]];
                         break;
                 }
+                
+                if( sekhmetSerie) // SekhVet Paket CA: Sequenz-Plakette unten auf der Miniatur
+                    [cell setImage: [SekhmetSequenz bild: cell.image mitPlakettenFuer: vollerName modalitaet: modality]]; // SekhVet Paket CS: T1/T2 badge only for MR
                 
                 if( setDCMDone == NO)
                 {
@@ -9853,7 +10015,7 @@ static BOOL withReset = NO;
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"])
                 r = NSAlertDefaultReturn;
             else
-                r = NSRunAlertPanel( NSLocalizedString(@"Corrupted files", nil), NSLocalizedString(@"A corrupted study crashed OsiriX:\r\r%@ / %@\r\rThis file will be deleted.\r\rYou can run OsiriX in Protected Mode (shift + option keys at startup) if you have more crashes.\r\rShould I delete this corrupted study? (Highly recommended)", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil, [studyObject valueForKey:@"name"], [studyObject valueForKey:@"studyName"]);
+                r = NSRunAlertPanel( NSLocalizedString(@"Corrupted files", nil), NSLocalizedString(@"A corrupted study crashed SekhVet:\r\r%@ / %@\r\rThis file will be deleted.\r\rYou can run SekhVet in Protected Mode (shift + option keys at startup) if you have more crashes.\r\rShould I delete this corrupted study? (Highly recommended)", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil, [studyObject valueForKey:@"name"], [studyObject valueForKey:@"studyName"]);
             
             if( r == NSAlertDefaultReturn)
             {
@@ -10897,6 +11059,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     [contextual addItem: [NSMenuItem separatorItem]];
     
     [contextual addItemWithTitle: NSLocalizedString(@"Export to DICOM Network Node", nil) action:@selector(export2PACS:) keyEquivalent:@""];
+    [contextual addItem: [SekhmetDICOMweb sendMenuItemWithTitle: NSLocalizedString(@"Send via DICOMweb", nil)]]; // SekhVet Paket CH
     [contextual addItemWithTitle: NSLocalizedString(@"Export to Movie", nil) action:@selector(exportQuicktime:) keyEquivalent:@""];
     [contextual addItemWithTitle: NSLocalizedString(@"Export to JPEG", nil) action:@selector(exportJPEG:) keyEquivalent:@""];
     [contextual addItemWithTitle: NSLocalizedString(@"Export to TIFF", nil) action:@selector(exportTIFF:) keyEquivalent:@""];
@@ -11657,7 +11820,13 @@ constrainSplitPosition:(CGFloat)proposedPosition
         
         NSArray* a = [plist objectForKey:key];
         if (a) {
-            [databaseOutline setSortDescriptors:[NSKeyedUnarchiver unarchiveObjectWithData:[a objectAtIndex:0]]];
+            // Sekhmet (DE): nur ein Feld von Sortierbeschreibungen, sicher entpackt (nach ThalesMMS/horos e948e313)
+            NSArray *sortDescriptors = [NSKeyedUnarchiver unarchivedObjectOfClasses: [NSSet setWithObjects: [NSArray class], [NSSortDescriptor class], nil] fromData: [a objectAtIndex:0] error: NULL];
+            if( [sortDescriptors isKindOfClass: [NSArray class]])
+            {
+                for( NSSortDescriptor *sd in sortDescriptors) if( [sd isKindOfClass: [NSSortDescriptor class]]) [sd allowEvaluation];
+                [databaseOutline setSortDescriptors: sortDescriptors];
+            }
             NSArray* cols = [a objectAtIndex:1];
             
             NSArray* tableColumns = [databaseOutline tableColumns];
@@ -11756,8 +11925,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
             [comparativeRetrieveQueue addObject: study];
         }
         
-        int copy = [[NSUserDefaults standardUserDefaults] integerForKey: @"ListenerCompressionSettings"];
-        [[NSUserDefaults standardUserDefaults] setInteger: 0 forKey: @"ListenerCompressionSettings"]; //No time for decompression....
+        SekhmetSuspendListenerCompression(); // Sekhmet (DG)
         
 #ifndef OSIRIX_LIGHT
         [QueryController retrieveStudies: [NSArray arrayWithObject: study] showErrors: NO checkForPreviousAutoRetrieve: NO];
@@ -11771,7 +11939,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
         if( [idb waitForCompressThread])
             [idb importFilesFromIncomingDir];
         
-        [[NSUserDefaults standardUserDefaults] setInteger: copy forKey: @"ListenerCompressionSettings"];
+        SekhmetResumeListenerCompression(); // Sekhmet (DG)
         
         @synchronized( comparativeRetrieveQueue)
         {
@@ -12299,8 +12467,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
                 
                 if( notEnoughMemory)
                 {
-                    if( NSRunCriticalAlertPanel( NSLocalizedString(@"32-bit", nil),  NSLocalizedString(@"Cannot load this series.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.", nil), NSLocalizedString(@"OK",nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
-                        [[AppController sharedAppController] osirix64bit: self];
+                    NSRunCriticalAlertPanel( NSLocalizedString(@"Not enough memory", nil),  NSLocalizedString(@"Cannot load this series: there is not enough memory.\r\rClose other viewer windows or applications and try again.", nil), NSLocalizedString(@"OK",nil), nil, nil); // SekhVet Paket CT: no "OsiriX 64-bit" offer
                 }
                 
                 free( memBlockTestPtr);
@@ -13644,7 +13811,7 @@ static NSArray*	openSubSeriesArray = nil;
         if( firstTimeNotEnoughMemory)
         {
             firstTimeNotEnoughMemory = NO;
-            [[AppController sharedAppController] osirix64bit: nil];
+            // SekhVet Paket CT: no longer opens a web page in the background when memory is short
         }
         
         [leftIcon setImage: [NSImage imageNamed: @"error"]];
@@ -14099,6 +14266,7 @@ static NSArray*	openSubSeriesArray = nil;
     }
     [menu addItem: [NSMenuItem separatorItem]];
     [menu addItemWithTitle: NSLocalizedString(@"Export to DICOM Network Node", nil) action: @selector(export2PACS:) keyEquivalent:@""];
+    [menu addItem: [SekhmetDICOMweb sendMenuItemWithTitle: NSLocalizedString(@"Send via DICOMweb", nil)]]; // SekhVet Paket CH
     [menu addItemWithTitle: NSLocalizedString(@"Export to Movie", nil) action: @selector(exportQuicktime:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Export to JPEG", nil) action: @selector(exportJPEG:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Export to TIFF", nil) action: @selector(exportTIFF:) keyEquivalent:@""];
@@ -14432,7 +14600,7 @@ static NSArray*	openSubSeriesArray = nil;
             [self initContextualMenus];
             
             // opens a port for interapplication communication
-            [[NSConnection defaultConnection] registerName:@"OsiriX"];
+            [[NSConnection defaultConnection] registerName:@"SekhVet"]; // SekhVet Paket CT: own name, "OsiriX" is the name Horos and OsiriX register
             [[NSConnection defaultConnection] setRootObject:self];
             //start timer for monitoring incoming logs on main thread
             [LogManager currentLogManager];
@@ -14565,8 +14733,8 @@ static NSArray*	openSubSeriesArray = nil;
     {
         NSAlert *alert = [[NSAlert alloc] init];
         [alert addButtonWithTitle:NSLocalizedString(@"OK",nil)];
-        [alert setMessageText:NSLocalizedString(@"Not validated OsiriX plugins were detected!",nil)];
-        [alert setInformativeText:NSLocalizedString(@"Not validated OsiriX plugins may cause SekhVet run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. A brand new SekhVet plugin database is being built for you.",nil)];
+        [alert setMessageText:NSLocalizedString(@"Plugins that are not validated were detected!",nil)];
+        [alert setInformativeText:NSLocalizedString(@"Plugins that are not validated may cause SekhVet run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. A brand new SekhVet plugin database is being built for you.",nil)];
         [alert setAlertStyle:NSWarningAlertStyle];
         [alert runModal];
         [alert release];
@@ -14584,7 +14752,7 @@ static NSArray*	openSubSeriesArray = nil;
 #endif
     
     [ICloudDriveDetector performStartupICloudDriveTasks:self];
-    [O2HMigrationAssistant performStartupO2HTasks:self];
+    [SekhmetDatenbankImport performSelector: @selector(startHinweis) withObject: nil afterDelay: 2]; // SekhVet Paket BZ: Hinweis statt O2H-Erststart-Dialog (nur OsiriX-Standardort)
 }
 
 - (IBAction) clickBanner:(id) sender
@@ -14683,9 +14851,9 @@ static NSArray*	openSubSeriesArray = nil;
         [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"hideListenerError"];
         [[NSUserDefaults standardUserDefaults] synchronize];
         
-        [[NSFileManager defaultManager] createFileAtPath: @"/tmp/kill_all_storescu" contents: [NSData data] attributes: nil];
+        [[NSFileManager defaultManager] createFileAtPath: @"/tmp/kill_all_storescu_sekhvet" contents: [NSData data] attributes: nil];
         
-        unlink( "/tmp/kill_all_storescu");
+        unlink( "/tmp/kill_all_storescu_sekhvet");
         [[NSUserDefaults standardUserDefaults] setBool: hideListenerError_copy forKey: @"hideListenerError"];
         [[NSUserDefaults standardUserDefaults] removeObjectForKey: @"copyHideListenerError"];
         [[NSUserDefaults standardUserDefaults] synchronize];
@@ -14779,8 +14947,8 @@ static NSArray*	openSubSeriesArray = nil;
     
     [[NSUserDefaults standardUserDefaults] synchronize];
     
-    [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/OsiriXTemporaryDatabase" error:NULL];
-    [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/dicomsr_osirix" error:NULL];
+    // SekhVet Paket CT: /tmp/OsiriXTemporaryDatabase is not removed any more (nothing in SekhVet creates it; it could belong to a running Horos)
+    [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/dicomsr_sekhvet" error:NULL];
 }
 
 -(void)shouldTerminateCallback:(NSTimer*) tt
@@ -15274,7 +15442,10 @@ static NSArray*	openSubSeriesArray = nil;
     }
     else if( [menuItem action] == @selector(annotMenu:))
     {
-        if( [menuItem tag] == [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"]) [menuItem setState: NSOnState];
+        // SekhVet Paket CW: "Graphics + Orientation" is annotGraphics plus the flag
+        NSInteger sekhmetLevel = [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"];
+        if( sekhmetLevel == annotGraphics && [[NSUserDefaults standardUserDefaults] boolForKey: SEKHMET_ANNOT_LETTERS_KEY]) sekhmetLevel = SEKHMET_ANNOT_LETTERS_TAG;
+        if( [menuItem tag] == sekhmetLevel) [menuItem setState: NSOnState];
         else [menuItem setState: NSOffState];
     }
     return YES;
@@ -15297,13 +15468,11 @@ static NSArray*	openSubSeriesArray = nil;
     NSMenu *helpMenu = [[NSMenu allocWithZone: [NSMenu menuZone]] initWithTitle: NSLocalizedString(@"Help", nil)];
     [helpItem setSubmenu:helpMenu];
     
-    //[helpMenu addItemWithTitle: NSLocalizedString(@"TBD", nil) action: @selector(help:) keyEquivalent: @""];
-    [helpMenu addItemWithTitle: NSLocalizedString(@"Professional support", nil) action: @selector(openHorosSupport:) keyEquivalent: @""];
-    [helpMenu addItemWithTitle: NSLocalizedString(@"Community support", nil) action: @selector(openCommunityPage:) keyEquivalent: @""];
-    [helpMenu addItem: [NSMenuItem separatorItem]];
+
+    // SekhVet Paket CT: "Professional support" and "Community support" (Horos project pages) removed; "Report a bug" opens the SekhVet issue tracker
+
     [helpMenu addItemWithTitle: NSLocalizedString(@"Report a bug", nil) action: @selector(openBugReportPage:) keyEquivalent: @""];
-    //[helpMenu addItem: [NSMenuItem separatorItem]];
-    //[helpMenu addItemWithTitle: NSLocalizedString(@"Send an email to SekhVet support", nil) action: @selector(sendEmail:) keyEquivalent: @""];
+
     
     [helpMenu release];
 }
@@ -15652,7 +15821,7 @@ static NSArray*	openSubSeriesArray = nil;
             {
                 NSAlert* alert = [[NSAlert new] autorelease];
                 [alert setMessageText: NSLocalizedString(@"Delete ZIP file", nil)];
-                [alert setInformativeText: NSLocalizedString(@"The ZIP file was successfully decompressed and the images successfully incorporated in OsiriX database. Should I delete the ZIP file?", nil)];
+                [alert setInformativeText: NSLocalizedString(@"The ZIP file was successfully decompressed and the images successfully incorporated in SekhVet database. Should I delete the ZIP file?", nil)];
                 [alert setShowsSuppressionButton: YES];
                 [alert addButtonWithTitle: NSLocalizedString( @"Yes", nil)];
                 [alert addButtonWithTitle: NSLocalizedString( @"No", nil)];
@@ -16423,9 +16592,9 @@ static volatile int numberOfThreadsForJPEG = 0;
             }
             else if( [DCMAbstractSyntaxUID isStructuredReport: [curImage valueForKeyPath: @"series.seriesSOPClassUID"]])
             {
-                [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_osirix/"];
+                [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_sekhvet/"];
                 
-                NSString *htmlpath = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent: [[curImage valueForKey: @"completePath"] lastPathComponent]] stringByAppendingPathExtension: @"xml"];
+                NSString *htmlpath = [[@"/tmp/dicomsr_sekhvet/" stringByAppendingPathComponent: [[curImage valueForKey: @"completePath"] lastPathComponent]] stringByAppendingPathExtension: @"xml"];
                 
                 if( [[NSFileManager defaultManager] fileExistsAtPath: htmlpath] == NO)
                 {
@@ -18841,7 +19010,7 @@ restart:
                     
                     if( localReportFile == nil)
                     {
-                        NSLog( @"New report for: %@", [studySelected valueForKey: @"name"]);
+                        NSLog( @"New report for: %@", [studySelected valueForKey: @"studyInstanceUID"]); // Sekhmet (P6): keine Patientendaten im System-Log
                         
                         if (reportsMode != 3)
                         {
@@ -19153,7 +19322,9 @@ restart:
     
     // Attach the toolbar to the document window 
     [self.window setToolbar: toolbar];
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SekhmetDICOMwebToolbarInserted"] == NO) // SekhVet Paket CT: once only, so the user can remove the item for good
     { // SekhVet Paket R: DICOMweb-Knopf hinter Query einfuegen, falls die gesicherte Toolbar-Konfiguration ihn nicht kennt
+        [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SekhmetDICOMwebToolbarInserted"];
         BOOL have = NO; NSInteger qIdx = -1, idx = 0;
         for( NSToolbarItem *it in [toolbar items])
         {
@@ -19162,6 +19333,31 @@ restart:
             idx++;
         }
         if( have == NO) [toolbar insertItemWithItemIdentifier: SekhmetDICOMwebToolbarItemIdentifier atIndex: (qIdx >= 0) ? qIdx + 1 : 0];
+    }
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SekhmetDICOMwebSendToolbarInserted"] == NO) // SekhVet Paket CZ: once only, like Paket CT
+    {
+        [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SekhmetDICOMwebSendToolbarInserted"];
+        BOOL have = NO; NSInteger after = -1, idx = 0;
+        for( NSToolbarItem *it in [toolbar items])
+        {
+            if( [[it itemIdentifier] isEqualToString: SekhmetDICOMwebSendToolbarItemIdentifier]) have = YES;
+            if( [[it itemIdentifier] isEqualToString: SekhmetDICOMwebToolbarItemIdentifier]) after = idx;
+            else if( after < 0 && [[it itemIdentifier] isEqualToString: SendToolbarItemIdentifier]) after = idx;
+            idx++;
+        }
+        if( have == NO) [toolbar insertItemWithItemIdentifier: SekhmetDICOMwebSendToolbarItemIdentifier atIndex: (after >= 0) ? after + 1 : 0];
+    }
+    if( sekhmetReportPilotAktiv() && [[NSUserDefaults standardUserDefaults] boolForKey: @"SekhmetReportPilotToolbarInserted"] == NO) // SekhVet privat: ReportPilot, einmalig
+    {
+        [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SekhmetReportPilotToolbarInserted"];
+        BOOL have = NO; NSInteger after = -1, idx = 0;
+        for( NSToolbarItem *it in [toolbar items])
+        {
+            if( [[it itemIdentifier] isEqualToString: SekhmetReportPilotToolbarItemIdentifier]) have = YES;
+            if( [[it itemIdentifier] isEqualToString: SekhmetDICOMwebSendToolbarItemIdentifier]) after = idx;
+            idx++;
+        }
+        if( have == NO) [toolbar insertItemWithItemIdentifier: SekhmetReportPilotToolbarItemIdentifier atIndex: (after >= 0) ? after + 1 : 0];
     }
     [self.window setShowsToolbarButton:NO];
     [[self.window toolbar] setVisible: YES];
@@ -19295,6 +19491,28 @@ restart:
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(anonymizeDICOM:)];
     } 
+    else if ([itemIdent isEqualToString: SekhmetReportPilotToolbarItemIdentifier]) // SekhVet privat: Bericht in ReportPilot
+    {
+        [toolbarItem setLabel: @"ReportPilot"];
+        [toolbarItem setPaletteLabel: @"ReportPilot"];
+        [toolbarItem setToolTip: NSLocalizedString(@"Write the report for the selected study in ReportPilot", nil)];
+        NSImage *bild = nil;
+        if( [NSImage respondsToSelector: @selector(imageWithSystemSymbolName:accessibilityDescription:)])
+            bild = [NSImage performSelector: @selector(imageWithSystemSymbolName:accessibilityDescription:) withObject: @"doc.text" withObject: @"ReportPilot"];
+        [toolbarItem setImage: bild ?: [NSImage imageNamed: SendToolbarItemIdentifier]];
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(sekhmetReportPilot:)];
+    }
+    else if ([itemIdent isEqualToString: SekhmetDICOMwebSendToolbarItemIdentifier]) // SekhVet Paket CZ: STOW-RS from the database, no right-click needed
+    {
+        [toolbarItem setLabel: NSLocalizedString(@"Send DICOMweb",nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"Send via DICOMweb (SekhVet)",nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"Send the selected studies or series to one of your DICOMweb servers (STOW-RS)",nil)];
+        [toolbarItem setImage: [NSImage imageNamed: SendToolbarItemIdentifier]];
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(sekhmetSendDICOMwebToolbar:)];
+        [toolbarItem setMenuFormRepresentation: [SekhmetDICOMweb sendMenuItemWithTitle: NSLocalizedString(@"Send via DICOMweb", nil)]];
+    }
     else if ([itemIdent isEqualToString: SekhmetDICOMwebToolbarItemIdentifier]) // SekhVet Paket R: DICOMweb-Abfrage direkt aus der DB
     {
         [toolbarItem setLabel: NSLocalizedString(@"DICOMweb",nil)];
@@ -19456,9 +19674,10 @@ restart:
     }
     else if ([itemIdent isEqualToString: HorosMigrationAssistantIdentifier])
     {
-        [toolbarItem setLabel: NSLocalizedString(@"Migration Assistant",nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Migration Assistant",nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"Open SekhVet Migration Assistant",nil)];
+        // SekhVet Paket CT: the item opens the SekhVet import window (it used to require an installed OsiriX)
+        [toolbarItem setLabel: NSLocalizedString(@"Import Databases",nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"Import Databases",nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"Import studies from other databases (Horos, OsiriX ...)",nil)];
         [toolbarItem setImage: [NSImage imageNamed: HorosMigrationAssistantIdentifier]];
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(openHorosMigrationAssistant:)];
@@ -19520,18 +19739,8 @@ restart:
 
 - (void) openHorosMigrationAssistant:(id) sender
 {
-    [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"O2H_MIGRATION_USER_ACTION"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-
-    if ([O2HMigrationAssistant isOsiriXInstalled] == NO)
-    {
-        NSRunInformationalAlertPanel(NSLocalizedString(@"SekhVet Migration Assistant", nil),
-                                     NSLocalizedString(@"It seems you don't have OsiriX installed.", nil),
-                                     NSLocalizedString(@"Return",nil), nil, nil);
-        return;
-    }
-    
-    [O2HMigrationAssistant performStartupO2HTasks:self];
+    // SekhVet Paket CT: open the import window directly - no OsiriX needed, and not only once
+    [[SekhmetDatenbankImport shared] zeigen: sender];
 }
 
 
@@ -19635,6 +19844,223 @@ restart:
      */
 }
 
+// SekhVet privat (03.10.2026): Knopf "ReportPilot" -- die markierte Studie geht als Link reportpilot://studie?... an ReportPilot,
+// die eigene Befund-App des Betreibers. Es gibt den Knopf NUR, wenn die versteckte Einstellung "SekhVetReportPilot" gesetzt ist
+// UND auf dem Rechner ein Programm den Link annimmt; in allen anderen Installationen bleibt die Symbolleiste wie bisher.
+// Rohwerte (PatientName mit ^, Tierart) liest die Funktion aus der ersten Datei, der Rest kommt aus der Datenbank.
+static BOOL sekhmetReportPilotAktiv( void)
+{
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SekhVetReportPilot"] == NO) return NO;
+    return [[NSWorkspace sharedWorkspace] URLForApplicationToOpenURL: [NSURL URLWithString: @"reportpilot://studie"]] != nil;
+}
+
+static NSString* sekhmetLinkWert( NSString *s)
+{
+    static NSCharacterSet *erlaubt = nil;
+    if( erlaubt == nil) erlaubt = [[NSCharacterSet characterSetWithCharactersInString: @"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"] retain];
+    NSString *roh = [s isKindOfClass: [NSString class]] ? s : @"";
+    NSString *t = [roh stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return [t stringByAddingPercentEncodingWithAllowedCharacters: erlaubt] ?: @"";
+}
+
+static NSString* sekhmetTagTextAus( DCMObject *o, int gruppe, int element)
+{
+    DCMAttribute *a = [o attributeForTag: [DCMAttributeTag tagWithGroup: gruppe element: element]];
+    id v = [[a values] count] ? [[a values] objectAtIndex: 0] : nil;
+    return [v isKindOfClass: [NSString class]] ? (NSString*) v : @"";
+}
+
+// Kopf einer Datei fuer den ReportPilot-Link: nur bis 20 MB (DCMObject liest die ganze Datei in den Speicher -- ein
+// Cine/Multiframe von 1 GB hielte den Hauptthread Sekunden fest), Fehler -> nil.
+static DCMObject* sekhmetKopfLesen( NSString *datei)
+{
+    if( datei.length == 0) return nil;
+    @try
+    {
+        NSDictionary *a = [[NSFileManager defaultManager] attributesOfItemAtPath: datei error: nil];
+        if( a == nil || [a fileSize] > 20 * 1024 * 1024) return nil;
+        return [DCMObject objectWithContentsOfFile: datei decodingPixelData: NO];
+    }
+    @catch( NSException *e)
+    {
+        NSLog( @"SekhVet ReportPilot: Kopf nicht lesbar (%@)", e.reason);
+        return nil;
+    }
+}
+
+// Alle Werte eines Tags mit Backslash verbunden (ConvolutionKernel, ImageType sind mehrwertig).
+static NSString* sekhmetTagWerteAus( DCMObject *o, int gruppe, int element)
+{
+    DCMAttribute *a = [o attributeForTag: [DCMAttributeTag tagWithGroup: gruppe element: element]];
+    NSMutableArray *w = [NSMutableArray array];
+    for( id v in [a values]) if( [v isKindOfClass: [NSString class]] && [v length]) [w addObject: v];
+    return [w componentsJoinedByString: @"\\"];
+}
+
+// Je Serie die Rohwerte fuer "Region / Fenster / Serien" in ReportPilot (03.10.2026): Beschreibung, Protokoll, Koerperteil, Kernel,
+// Kontrastmittel (sonst -weg), Bildtyp (nur LOCALIZER/MPR/DERIVED/SECONDARY), Hersteller, Modell, Bildzahl -- aus der ersten Datei
+// der Serie. JSON mit kurzen Schluesseln wie im Link-Leser. Stabil vor schnell: jede Serie in eigenem Autorelease-Pool und @try
+// (ein kaputter Kopf kostet nur diese Serie), Koepfe hoechstens 2 s lang lesen (danach nur noch die Datenbankwerte), JSON hoechstens
+// 12000 Zeichen (ReportPilot nimmt Links bis 64 kB), Hilfsobjekte (SR, KO, PR ...) bleiben draussen. Fehler -> nil, der Link geht ohne.
+static NSString* sekhmetSerienJSON( DicomStudy *studie)
+{
+    NSMutableArray *liste = [NSMutableArray array];
+    @try
+    {
+        NSSet *hilfsobjekte = [NSSet setWithObjects: @"SR", @"KO", @"PR", @"DOC", @"OT", @"REG", @"SEG", @"RWV", nil];
+        NSSet *bildtypWichtig = [NSSet setWithObjects: @"LOCALIZER", @"MPR", @"DERIVED", @"SECONDARY", nil];
+        NSArray *serien = [[studie imageSeries] sortedArrayUsingDescriptors: [NSArray arrayWithObject: [NSSortDescriptor sortDescriptorWithKey: @"id" ascending: YES]]];
+        NSDate *start = [NSDate date];
+        NSUInteger laenge = 2;
+        for( DicomSeries *s in serien)
+        {
+            if( liste.count >= 60) break;
+            BOOL voll = NO;
+            @autoreleasepool
+            {
+                NSString *modalitaet = [s.modality isKindOfClass: [NSString class]] ? [s.modality uppercaseString] : @"";
+                if( [hilfsobjekte containsObject: modalitaet]) continue;
+
+                NSMutableDictionary *d = [NSMutableDictionary dictionary];
+                void (^feld)( NSString*, NSString*) = ^( NSString *schluessel, NSString *wert)
+                {
+                    if( [wert isKindOfClass: [NSString class]] == NO) return;
+                    NSString *t = [wert stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                    if( t.length > 80) t = [t substringToIndex: [t rangeOfComposedCharacterSequenceAtIndex: 80].location];
+                    if( t.length) [d setObject: t forKey: schluessel];
+                };
+                feld( @"m", modalitaet);
+                feld( @"b", s.name);
+                int bilder = abs( [s.numberOfImages intValue]); // bei Multiframe-Serien negativ
+                if( bilder > 0) [d setObject: [NSNumber numberWithInt: bilder] forKey: @"n"];
+
+                if( -[start timeIntervalSinceNow] < 2.0)
+                {
+                    @try
+                    {
+                        DCMObject *k = sekhmetKopfLesen( [[[s images] anyObject] completePath]);
+                        if( k)
+                        {
+                            feld( @"p", sekhmetTagTextAus( k, 0x0018, 0x1030));
+                            feld( @"t", sekhmetTagTextAus( k, 0x0018, 0x0015));
+                            feld( @"k", sekhmetTagWerteAus( k, 0x0018, 0x1210));
+                            NSString *kontrast = sekhmetTagTextAus( k, 0x0018, 0x0010);
+                            feld( @"c", kontrast.length ? kontrast : sekhmetTagTextAus( k, 0x0018, 0x1040));
+                            NSMutableArray *typ = [NSMutableArray array];
+                            for( NSString *w in [[sekhmetTagWerteAus( k, 0x0008, 0x0008) uppercaseString] componentsSeparatedByString: @"\\"])
+                                if( [bildtypWichtig containsObject: w]) [typ addObject: w];
+                            feld( @"i", [typ componentsJoinedByString: @"\\"]);
+                            feld( @"h", sekhmetTagTextAus( k, 0x0008, 0x0070));
+                            feld( @"g", sekhmetTagTextAus( k, 0x0008, 0x1090));
+                        }
+                    }
+                    @catch( NSException *e)
+                    {
+                        NSLog( @"SekhVet ReportPilot: Kopf einer Serie nicht lesbar (%@)", e.reason);
+                    }
+                }
+
+                NSData *einzeln = [NSJSONSerialization isValidJSONObject: d] ? [NSJSONSerialization dataWithJSONObject: d options: 0 error: nil] : nil;
+                if( einzeln == nil) continue; // diese Serie nicht, die folgenden schon
+                if( laenge + einzeln.length + 1 <= 12000)
+                {
+                    [liste addObject: d];
+                    laenge += einzeln.length + 1;
+                }
+                else voll = YES;
+            }
+            if( voll) break;
+        }
+        if( liste.count == 0) return nil;
+        NSData *json = [NSJSONSerialization dataWithJSONObject: liste options: 0 error: nil];
+        return json ? [[[NSString alloc] initWithData: json encoding: NSUTF8StringEncoding] autorelease] : nil;
+    }
+    @catch( NSException *e)
+    {
+        NSLog( @"SekhVet ReportPilot: Serienangaben ausgelassen (%@)", e.reason);
+        return nil;
+    }
+}
+
++ (BOOL) sekhmetReportPilotAktiv
+{
+    return sekhmetReportPilotAktiv();
+}
+
+// Link reportpilot://studie?... fuer eine Studie bauen und dem System uebergeben (auch vom 2D-Viewer aus benutzt).
++ (BOOL) sekhmetReportPilotOeffnen:(DicomStudy*) studie
+{
+    if( studie == nil) return NO;
+    // Studienkopf (PatientName roh, Tierart) aus dem ersten Bild einer Serie -- [studie paths] wuerde alle Bilder der Studie laden
+    DCMObject *kopf = nil;
+    for( DicomSeries *s in [studie imageSeries])
+    {
+        kopf = sekhmetKopfLesen( [[[s images] anyObject] completePath]);
+        if( kopf) break;
+    }
+    id rohName = [kopf attributeValueWithName: @"PatientsName"];
+
+    NSDateFormatter *tag = [[[NSDateFormatter alloc] init] autorelease];
+    tag.locale = [NSLocale localeWithLocaleIdentifier: @"en_US_POSIX"];
+    tag.dateFormat = @"yyyyMMdd";
+
+    NSMutableArray *teile = [NSMutableArray array];
+    void (^setze)( NSString*, id) = ^( NSString *schluessel, id wert)
+    {
+        NSString *w = sekhmetLinkWert( wert);
+        if( w.length) [teile addObject: [NSString stringWithFormat: @"%@=%@", schluessel, w]];
+    };
+    setze( @"uid", studie.studyInstanceUID);
+    setze( @"pid", studie.patientID);
+    setze( @"name", [rohName isKindOfClass: [NSString class]] && [rohName length] ? rohName : studie.name);
+    setze( @"geb", studie.dateOfBirth ? [tag stringFromDate: studie.dateOfBirth] : nil);
+    setze( @"sex", studie.patientSex);
+    setze( @"datum", studie.date ? [tag stringFromDate: studie.date] : nil);
+    setze( @"mod", [studie modalities]);
+    setze( @"inst", studie.institutionName);
+    setze( @"ref", studie.referringPhysician);
+    setze( @"art", kopf ? sekhmetTagTextAus( kopf, 0x0010, 0x2201) : nil);
+    setze( @"beschr", studie.studyName);
+    setze( @"ser", sekhmetSerienJSON( studie));
+
+    NSURL *link = [NSURL URLWithString: [@"reportpilot://studie?" stringByAppendingString: [teile componentsJoinedByString: @"&"]]];
+    return link != nil && [[NSWorkspace sharedWorkspace] openURL: link];
+}
+
+// Datenbankfenster: Studie im Viewer oeffnen UND den Bericht in ReportPilot (die Bilder braucht es zum Befunden ohnehin).
+- (IBAction) sekhmetReportPilot:(id) sender
+{
+    DicomStudy *studie = nil;
+    BOOL mehrere = NO;
+    for( id o in [self databaseSelection])
+    {
+        DicomStudy *s = [o isKindOfClass: [DicomStudy class]] ? o : ([o isKindOfClass: [DicomSeries class]] ? [(DicomSeries*) o study] : nil);
+        if( s == nil) continue;
+        if( studie && s != studie) mehrere = YES;
+        studie = s;
+    }
+    if( studie == nil || mehrere)
+    {
+        NSAlert *hinweis = [[[NSAlert alloc] init] autorelease];
+        hinweis.messageText = NSLocalizedString(@"Select exactly one study", nil);
+        hinweis.informativeText = NSLocalizedString(@"ReportPilot writes the report for one study at a time.", nil);
+        [hinweis runModal];
+        return;
+    }
+    [self viewerDICOM: sender];
+    if( [BrowserController sekhmetReportPilotOeffnen: studie] == NO) NSBeep();
+}
+
+// SekhVet Paket CZ: the toolbar button opens the same node menu as "Send via DICOMweb" in the context menu,
+// at the mouse position (standard image toolbar items have no view to anchor a menu to).
+- (IBAction) sekhmetSendDICOMwebToolbar:(id) sender
+{
+    NSMenu *menu = [[SekhmetDICOMweb sendMenuItemWithTitle: NSLocalizedString(@"Send via DICOMweb", nil)] submenu];
+    NSEvent *event = [NSApp currentEvent];
+    if( event == nil || [[self window] contentView] == nil) return;
+    [NSMenu popUpContextMenu: menu withEvent: event forView: [[self window] contentView]];
+}
+
 - (NSArray *)toolbarDefaultItemIdentifiers: (NSToolbar *)toolbar
 {
     return [NSArray arrayWithObjects:
@@ -19666,6 +20092,7 @@ restart:
 {	
     NSMutableArray *array = [NSMutableArray arrayWithObjects:
                              SekhmetDICOMwebToolbarItemIdentifier, // SekhVet Paket R
+                             SekhmetDICOMwebSendToolbarItemIdentifier, // SekhVet Paket CZ
                              ViewersToolbarItemIdentifier,
                              SearchToolbarItemIdentifier,
                              TimeIntervalToolbarItemIdentifier,
@@ -19696,6 +20123,7 @@ restart:
                              ResetSplitViewsItemIdentifier,
                              HorosMigrationAssistantIdentifier,
                              nil];
+    if( sekhmetReportPilotAktiv()) [array addObject: SekhmetReportPilotToolbarItemIdentifier]; // SekhVet privat: sonst gibt es den Knopf nicht
     
     NSArray*		allPlugins = [[PluginManager pluginsDict] allKeys];
     NSMutableSet*	pluginsItems = [NSMutableSet setWithCapacity: [allPlugins count]];
@@ -19997,7 +20425,7 @@ restart:
             NSString *str = [image.series.study roiPathForImage: image];
             
             @try {
-                if( str && [[NSUnarchiver unarchiveObjectWithData: [SRAnnotation roiFromDICOM: str]] count] > 0)
+                if( str && [[SekhmetRestrictedUnarchiver unarchiveROIsWithData: [SRAnnotation roiFromDICOM: str]] count] > 0) // Sekhmet (DE)
                     [roisImagesArray addObject: image];
             }
             @catch (NSException *exception) {
@@ -20290,7 +20718,7 @@ restart:
     @catch (NSException* e)
     {
         N2LogExceptionWithStackTrace(e);
-        NSRunAlertPanel(NSLocalizedString(@"Horos Database", nil), NSLocalizedString( @"SekhVet cannot read/create this file/folder. Permissions error?", nil), nil, nil, nil);
+        NSRunAlertPanel(NSLocalizedString(@"SekhVet Database", nil), NSLocalizedString( @"SekhVet cannot read/create this file/folder. Permissions error?", nil), nil, nil, nil);
         [self resetToLocalDatabase];
     }
     
@@ -20313,7 +20741,7 @@ restart:
     
     if( filter == nil)
     {
-        NSRunAlertPanel( NSLocalizedString( @"Plugins Error", nil), NSLocalizedString( @"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
+        NSRunAlertPanel( NSLocalizedString( @"Plugins Error", nil), NSLocalizedString( @"SekhVet cannot launch the selected plugin.", nil), nil, nil, nil);
         return;
     }
     
@@ -20328,7 +20756,7 @@ restart:
     
     if( result)
     {
-        NSRunAlertPanel( NSLocalizedString( @"Plugins Error", nil), NSLocalizedString( @"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
+        NSRunAlertPanel( NSLocalizedString( @"Plugins Error", nil), NSLocalizedString( @"SekhVet cannot launch the selected plugin.", nil), nil, nil, nil);
     }
     
     [PluginManager endProtectForCrash];
@@ -20572,8 +21000,8 @@ restart:
                 description = [[NSString alloc] initWithFormat: NSLocalizedString(@" / Search: Comments = %@", nil), _searchString];
                 break;
                 
-            case 4:			// Study Description
-                description = [[NSString alloc] initWithFormat: NSLocalizedString(@" / Search: Study Description = %@", nil), _searchString];
+            case 4:			// Study or Series Description
+                description = [[NSString alloc] initWithFormat: NSLocalizedString(@" / Search: Description = %@", nil), _searchString];
                 break;
                 
             case 5:			// Modality
@@ -20663,7 +21091,15 @@ restart:
     return [NSCompoundPredicate andPredicateWithSubpredicates: predicates];
 }
 
-- (NSPredicate *)createFilterPredicate
+- (BOOL)searchIncludesSeriesDescriptions
+{
+    if( _searchString.length == 0)
+        return NO;
+
+    return searchType == 4 || (searchType == 7 && _searchString.length >= 3);
+}
+
+- (NSPredicate *)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions
 {
     NSPredicate *predicate = nil;
     NSString *s = nil;
@@ -20676,7 +21112,15 @@ restart:
                 s = _searchString;
                 
                 if( [s length] >= 3)
-                    predicate = [NSPredicate predicateWithFormat: @"(name CONTAINS[cd] %@) OR (patientID CONTAINS[cd] %@) OR (id CONTAINS[cd] %@) OR (comment CONTAINS[cd] %@) OR (comment2 CONTAINS[cd] %@) OR (comment3 CONTAINS[cd] %@) OR (comment4 CONTAINS[cd] %@) OR (studyName CONTAINS[cd] %@) OR (modality CONTAINS[cd] %@) OR (accessionNumber CONTAINS[cd] %@) OR (performingPhysician CONTAINS[cd] %@) OR (referringPhysician CONTAINS[cd] %@) OR (institutionName CONTAINS[cd] %@)", s, s, s, s, s, s, s, s, s, s, s, s, s];
+                {
+                    NSMutableArray *predicates = [NSMutableArray arrayWithObject: [NSPredicate predicateWithFormat: @"(name CONTAINS[cd] %@) OR (patientID CONTAINS[cd] %@) OR (id CONTAINS[cd] %@) OR (comment CONTAINS[cd] %@) OR (comment2 CONTAINS[cd] %@) OR (comment3 CONTAINS[cd] %@) OR (comment4 CONTAINS[cd] %@) OR (studyName CONTAINS[cd] %@) OR (modality CONTAINS[cd] %@) OR (accessionNumber CONTAINS[cd] %@) OR (performingPhysician CONTAINS[cd] %@) OR (referringPhysician CONTAINS[cd] %@) OR (institutionName CONTAINS[cd] %@)", s, s, s, s, s, s, s, s, s, s, s, s, s]];
+                    if( includeSeriesDescriptions)
+                    {
+                        [predicates addObject: [NSPredicate predicateWithFormat: @"ANY series.name CONTAINS[cd] %@", s]];
+                        [predicates addObject: [NSPredicate predicateWithFormat: @"ANY series.seriesDescription CONTAINS[cd] %@", s]];
+                    }
+                    predicate = [NSCompoundPredicate orPredicateWithSubpredicates: predicates];
+                }
                 else if( [s length] >= 1)
                     predicate = [self patientsnamePredicate: _searchString];
                 break;
@@ -20697,8 +21141,16 @@ restart:
                 predicate = [NSPredicate predicateWithFormat: @"comment CONTAINS[cd] %@", _searchString];
                 break;
                 
-            case 4:			// Study Description
-                predicate = [NSPredicate predicateWithFormat: @"studyName CONTAINS[cd] %@", _searchString];
+            case 4:			// Study or Series Description
+                if( includeSeriesDescriptions)
+                {
+                    predicate = [NSCompoundPredicate orPredicateWithSubpredicates: [NSArray arrayWithObjects:
+                        [NSPredicate predicateWithFormat: @"studyName CONTAINS[cd] %@", _searchString],
+                        [NSPredicate predicateWithFormat: @"ANY series.name CONTAINS[cd] %@", _searchString],
+                        [NSPredicate predicateWithFormat: @"ANY series.seriesDescription CONTAINS[cd] %@", _searchString], nil]];
+                }
+                else
+                    predicate = [NSPredicate predicateWithFormat: @"studyName CONTAINS[cd] %@", _searchString];
                 break;
                 
             case 5:			// Modality
@@ -20726,6 +21178,11 @@ restart:
         }
     }
     return predicate;
+}
+
+- (NSPredicate *)createFilterPredicate
+{
+    return [self createFilterPredicateIncludingSeriesDescriptions: YES];
 }
 
 - (NSArray *) databaseSelection

@@ -108,9 +108,9 @@ void PFMoveToApplicationsFolderIfNecessary() {
 	{
 		NSString *informativeText = nil;
 
-		[alert setMessageText:(installToUserApplications ? NSLocalizedString( @"Move Horos to Applications folder in your Home folder?", nil) : NSLocalizedString( @"Move Horos to Applications folder?", nil))];
+		[alert setMessageText:(installToUserApplications ? NSLocalizedString( @"Move SekhVet to Applications folder in your Home folder?", nil) : NSLocalizedString( @"Move SekhVet to Applications folder?", nil))];
 
-		informativeText = NSLocalizedString( @"Horos is currently not in the Applications folder. It is recommended to run Horos from the Applications folder. I can move it now, add an icon to the dock and restart, if you agree? (recommended)", nil);
+		informativeText = NSLocalizedString( @"SekhVet is currently not in the Applications folder. It is recommended to run SekhVet from the Applications folder. I can move it now, add an icon to the dock and restart, if you agree? (recommended)", nil);
 
 		if (needAuthorization) {
 			informativeText = [informativeText stringByAppendingString:@" "];
@@ -125,7 +125,7 @@ void PFMoveToApplicationsFolderIfNecessary() {
 		[alert setInformativeText:informativeText];
 
 		// Add accept button
-		[alert addButtonWithTitle:NSLocalizedString( @"Move Horos to Applications Folder", nil)];
+		[alert addButtonWithTitle:NSLocalizedString( @"Move SekhVet to Applications Folder", nil)];
 
 		// Add deny button
 		NSButton *cancelButton = [alert addButtonWithTitle:NSLocalizedString( @"Do Not Move", nil)];
@@ -244,7 +244,7 @@ fail:
 	{
 		// Show failure message
 		alert = [[[NSAlert alloc] init] autorelease];
-		[alert setMessageText: NSLocalizedString( @"Could not move OsiriX to Applications folder.", nil)];
+		[alert setMessageText: NSLocalizedString( @"Could not move SekhVet to Applications folder.", nil)];
 		[alert runModal];
 	}
 }

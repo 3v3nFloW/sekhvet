@@ -101,7 +101,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
         if( [[columns objectAtIndex: i] isEqualToString: @"Preset"])
         {
             NSPopUpButtonCell *pc = [[[NSPopUpButtonCell alloc] initTextCell: @"" pullsDown: NO] autorelease];
-            [pc setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
+            [pc setMenu: [SekhmetOrientation presetMenuIncludingOff: YES automatic: NO]];   // SekhVet Paket CS: "Automatic" belongs to the toolbar popups only
             [pc setBordered: NO];
             keywordPresetCell = pc;
             [c setDataCell: pc];
@@ -129,7 +129,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
     [cv addSubview: [self label: NSLocalizedString( @"Default preset (used when no keyword matches):", nil) frame: NSMakeRect( 20, y, 360, 20) bold: YES]];
     presetPopup = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 380, y - 4, 240, 26) pullsDown: NO] autorelease];
-    [presetPopup setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
+    [presetPopup setMenu: [SekhmetOrientation presetMenuIncludingOff: YES automatic: NO]];
     [presetPopup setTarget: self]; [presetPopup setAction: @selector(presetChanged:)];
     [cv addSubview: presetPopup];
 
@@ -175,12 +175,14 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
     y -= 190;
 
     // Stichworte
-    [cv addSubview: [self label: NSLocalizedString( @"Keywords (study/series description contains …) → preset", nil) frame: NSMakeRect( 20, y, 600, 20) bold: YES]];
+    // SekhVet Paket CS (review finding 2): say how the keywords are matched
+    [cv addSubview: [self label: NSLocalizedString( @"Keywords (study/series description contains …) → preset; the longest match wins", nil) frame: NSMakeRect( 20, y, 600, 20) bold: YES]];
     y -= 130;
     NSScrollView *ksv = [self tableWithFrame: NSMakeRect( 20, y, 500, 124) identifier: @"keywords"
                                      columns: [NSArray arrayWithObjects: @"Keyword", @"Preset", nil]
                                       widths: [NSArray arrayWithObjects: @"250", @"200", nil]];
     keywordTable = (NSTableView*) [ksv documentView];
+    [keywordTable setToolTip: NSLocalizedString( @"Upper and lower case do not matter. If several keywords match, the longest one decides, so \"Hindlimb\" beats \"Limb\". A keyword of up to 3 letters must be a whole word (\"Hip\" does not match \"Hippocampus\"); a keyword of 4 letters must start a word (\"Kopf\" does not match \"Femurkopf\").", nil)];
     [cv addSubview: ksv];
     [cv addSubview: [self button: @"+" frame: NSMakeRect( 530, y + 96, 40, 26) action: @selector(addKeyword:) tag: 0]];
     [cv addSubview: [self button: @"−" frame: NSMakeRect( 575, y + 96, 40, 26) action: @selector(removeKeyword:) tag: 0]];
@@ -246,14 +248,11 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
     [self protocolSelectionChanged];
 }
 
-- (NSInteger) layoutPreset
-{
-    return [self selectedProtocol];
-}
-
+// SekhVet Paket CS (dead code): -layoutPreset was only another name for -selectedProtocol, and -layoutPresetChanged:
+// had no caller since the separate layout popup was removed (Paket BP).
 - (void) updateLayoutStatus
 {
-    NSInteger p = [self layoutPreset];
+    NSInteger p = [self selectedProtocol];
     [layoutHeading setStringValue: p == SekhmetPresetOff ? @"" : [SekhmetOrientation nameForPreset: p]];
     [layoutStatus setStringValue: p == SekhmetPresetOff ? @"" : [SekhmetOrientation describeMPRLayout: [SekhmetOrientation mprLayoutForPreset: p]]];
 }
@@ -290,12 +289,20 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (void) reloadPresetMenus
 {
-    [presetPopup setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
-    [keywordPresetCell setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
+    [presetPopup setMenu: [SekhmetOrientation presetMenuIncludingOff: YES automatic: NO]];
+    [keywordPresetCell setMenu: [SekhmetOrientation presetMenuIncludingOff: YES automatic: NO]];
+}
+
+// SekhVet Paket CS (review, unconfirmed "table edit while rows are removed"): commit a cell that is still being edited
+// before rows are added or removed, while its row still exists.
+- (void) sekhmetCommitCellEditing
+{
+    if( [[self window] makeFirstResponder: nil] == NO) [[self window] endEditingFor: nil];
 }
 
 - (IBAction) addProtocol:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     NSInteger p = [SekhmetOrientation addProtocolNamed: nil];
     [self loadFromDefaults];
     [self selectProtocol: p];
@@ -304,6 +311,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (IBAction) removeProtocol:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     NSInteger p = [self selectedProtocol];
     if( [SekhmetOrientation canRemovePreset: p] == NO) return;
     NSAlert *a = [[[NSAlert alloc] init] autorelease];
@@ -315,11 +323,6 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
     [SekhmetOrientation removeProtocol: p];
     [self loadFromDefaults];
     [SekhmetOrientation applyToAllViewersOfStudyUID: nil];
-}
-
-- (IBAction) layoutPresetChanged:(id) sender
-{
-    [self updateLayoutStatus];
 }
 
 - (IBAction) takeMPRLayout:(id) sender
@@ -335,7 +338,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
         [a runModal];
         return;
     }
-    NSInteger preset = [self layoutPreset];
+    NSInteger preset = [self selectedProtocol];
     if( preset == SekhmetPresetOff) return;
     [a setMessageText: [NSString stringWithFormat: NSLocalizedString( @"Use this layout for \"%@\"?", nil), [SekhmetOrientation nameForPreset: preset]]];
     [a setInformativeText: [NSString stringWithFormat: NSLocalizedString( @"From \"%@\":\n%@\n\nEvery MPR window opened or switched to this preset will be arranged like this.", nil),
@@ -350,8 +353,8 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (IBAction) resetMPRLayout:(id) sender
 {
-    if( [self layoutPreset] == SekhmetPresetOff) return;
-    [SekhmetOrientation setMPRLayout: nil forPreset: [self layoutPreset]];
+    if( [self selectedProtocol] == SekhmetPresetOff) return;
+    [SekhmetOrientation setMPRLayout: nil forPreset: [self selectedProtocol]];
     [self updateLayoutStatus];
 }
 
@@ -405,6 +408,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (IBAction) addKeyword:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     [keywords addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys: @"", @"keyword", [NSNumber numberWithInteger: SekhmetPresetHeadSpine], @"preset", nil]];
     [self saveTables]; [keywordTable reloadData];
     [keywordTable editColumn: 0 row: keywords.count - 1 withEvent: nil select: YES];
@@ -412,12 +416,14 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (IBAction) removeKeyword:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     NSInteger r = [keywordTable selectedRow];
     if( r >= 0 && r < (NSInteger) keywords.count) { [keywords removeObjectAtIndex: r]; [self saveTables]; [keywordTable reloadData]; }
 }
 
 - (IBAction) addDXRule:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     [dxRules addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys: @"DX", @"match", [NSNumber numberWithFloat: 0], @"rotation", [NSNumber numberWithBool: NO], @"xFlipped", [NSNumber numberWithBool: NO], @"yFlipped", nil]];
     [self saveTables]; [dxTable reloadData];
     [dxTable editColumn: 0 row: dxRules.count - 1 withEvent: nil select: YES];
@@ -425,18 +431,28 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (IBAction) removeDXRule:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     NSInteger r = [dxTable selectedRow];
     if( r >= 0 && r < (NSInteger) dxRules.count) { [dxRules removeObjectAtIndex: r]; [self saveTables]; [dxTable reloadData]; }
 }
 
 - (IBAction) resetKeywords:(id) sender
 {
+    [self sekhmetCommitCellEditing];
+    // SekhVet Paket CS (review finding 8): this deletes every keyword the user has entered - ask first.
+    NSAlert *a = [[[NSAlert alloc] init] autorelease];
+    [a setMessageText: NSLocalizedString( @"Reset the keywords to the defaults?", nil)];
+    [a setInformativeText: NSLocalizedString( @"All keywords you have added or changed are deleted and replaced by the built-in list. Protocols, rules and MPR layouts stay as they are. This cannot be undone.", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Reset", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Cancel", nil)];
+    if( [a runModal] != NSAlertFirstButtonReturn) return;
     [[NSUserDefaults standardUserDefaults] removeObjectForKey: SekhmetVetKeywordsKey];
     [self loadFromDefaults];
 }
 
 - (IBAction) applyNow:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     [self saveTables];
     [SekhmetOrientation applyToAllViewersOfStudyUID: nil];
 }
@@ -456,6 +472,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (id) tableView:(NSTableView*) tv objectValueForTableColumn:(NSTableColumn*) col row:(NSInteger) row
 {
+    if( row < 0 || row >= (NSInteger) [self arrayForTable: tv].count) return nil;   // SekhVet Paket CS: stale row
     NSMutableDictionary *d = [[self arrayForTable: tv] objectAtIndex: row];
     NSString *ident = [col identifier];
     if( [ident isEqualToString: @"Keyword"]) return [d objectForKey: @"keyword"];
@@ -474,6 +491,7 @@ static NSString* const kRuleKeys[ 5] = { @"transversalDorsalUp", @"sagittalCrani
 
 - (void) tableView:(NSTableView*) tv setObjectValue:(id) value forTableColumn:(NSTableColumn*) col row:(NSInteger) row
 {
+    if( row < 0 || row >= (NSInteger) [self arrayForTable: tv].count) return;   // SekhVet Paket CS: the edited row is gone - drop the edit
     NSMutableDictionary *d = [[self arrayForTable: tv] objectAtIndex: row];
     NSString *ident = [col identifier];
     if( value == nil) value = @"";

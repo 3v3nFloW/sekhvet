@@ -12,6 +12,8 @@
 
 #import <Cocoa/Cocoa.h>
 #import "MPRController.h"
+#import "CPRController.h" // SekhVet Paket CH
+#import "OrthogonalMPRViewer.h" // SekhVet Paket CH
 
 @class DCMPix, MPRDCMView;
 
@@ -31,23 +33,46 @@ extern BOOL SekhmetMPRSyncing;
 - (IBAction) sekhmetConvChanged:(id) sender;
 - (IBAction) sekhmetSpineTool:(id) sender;
 - (void) sekhmetApplyHangingProtocol;
-- (void) sekhmetUpdatePresetPopup;
+- (void) sekhmetApplyPendingHangingProtocol;  // SekhVet Paket CS: protocol was applied while a view was zoomed - complete it after un-zoom
 - (void) sekhmetPresetDidChange:(NSNotification*) n;
 - (IBAction) sekhmetPresetChanged:(id) sender;
 - (IBAction) sekhmetToggleSync:(id) sender;
+- (void) sekhmetSyncSettingDidChange:(NSNotification*) n;  // SekhVet Paket CS: MPR-Sync was switched somewhere else - update the toolbar item
 - (BOOL) sekhmetHPApplied;
 + (void) sekhmetSetSyncSuppressed:(BOOL) on;
 - (void) sekhmetSettleAfterHP;  // SekhVet Paket AF
-- (IBAction) sekhmetToggleZoomSync:(id) sender;  // SekhVet Paket P/Q: nur Horos-Zoomsync der drei Ansichten (Fenster-Massstab laeuft immer mit)
 - (void) sekhmetScheduleSyncBroadcast;
 - (void) sekhmetBroadcastSync;
 - (NSString*) sekhmetStateSeriesUID;
-- (NSInteger) sekhmetStatePreset;
 - (void) sekhmetSaveViewState;
 - (BOOL) sekhmetRestoreViewState;
+- (NSArray*) sekhmetCurrentViews;               // SekhVet Paket DA: cameras, flips, crosshair angles of the three views (nil = no camera)
+- (BOOL) sekhmetApplyViews:(NSArray*) views;    // SekhVet Paket DA: the restore part of sekhmetRestoreViewState (NO = unusable)
 - (IBAction) sekhmetResetView:(id) sender;
 - (NSString*) sekhmetCameraFingerprint;  // SekhVet Paket R: Kamerastand der drei Ansichten, gerundet (Echo-Erkennung)
 - (void) sekhmetDelayedFullLODRendering;  // SekhVet Paket R: scharf nachrendern als Folge eines Empfangs -> nichts zuruecksenden
-- (NSString*) sekhmetFoRForPix:(DCMPix*) pix;
+- (NSString*) sekhmetFoRForPix:(DCMPix*) pix;  // nil = no frame of reference known, never sync (SekhVet Paket CS)
 - (void) sekhmetSyncFromNotification:(NSNotification*) n;
+@end
+
+/** SekhVet Paket CH: Hanging Protocol auch im Curved MPR (Popup in der Toolbar, beim Oeffnen angewandt). */
+@interface CPRController (SekhVet)
+- (void) sekhmetConfigurePresetItem:(NSToolbarItem*) toolbarItem;
+- (void) sekhmetApplyHangingProtocol;
+- (void) sekhmetPresetDidChange:(NSNotification*) n;
+- (IBAction) sekhmetPresetChanged:(id) sender;
+@end
+
+/** SekhVet Paket CV: tools menu for a right click without drag in an MPR view (as the contextual menu of the 2D viewer). */
+@interface MPRController (SekhVetToolsMenu)
+- (NSMenu*) sekhmetToolsMenu;
+- (IBAction) sekhmetToolFromMenu:(id) sender;
+@end
+
+/** SekhVet Paket CH: dasselbe im Orthogonal MPR. */
+@interface OrthogonalMPRViewer (SekhVet)
+- (void) sekhmetConfigurePresetItem:(NSToolbarItem*) toolbarItem;
+- (void) sekhmetApplyHangingProtocol;
+- (void) sekhmetPresetDidChange:(NSNotification*) n;
+- (IBAction) sekhmetPresetChanged:(id) sender;
 @end

@@ -16,8 +16,8 @@
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
         <menu title="MainMenu" systemMenu="main" id="29" userLabel="MainMenu">
             <items>
-                <menuItem title="OsiriX" id="56">
-                    <menu key="submenu" title="OsiriX" systemMenu="apple" id="57">
+                <menuItem title="SekhVet" id="56">
+                    <menu key="submenu" title="SekhVet" systemMenu="apple" id="57">
                         <items>
                             <menuItem title="About SekhVet" id="58">
                                 <modifierMask key="keyEquivalentModifierMask"/>
@@ -1087,6 +1087,11 @@
                                                 <action selector="annotMenu:" target="-1" id="13229"/>
                                             </connections>
                                         </menuItem>
+                                        <menuItem title="Graphics + Orientation Letters" tag="100" id="SKV-an-gl1">
+                                            <connections>
+                                                <action selector="annotMenu:" target="-1" id="SKV-an-gl2"/>
+                                            </connections>
+                                        </menuItem>
                                         <menuItem title="Basic (No Name)" tag="2" id="13154">
                                             <connections>
                                                 <action selector="annotMenu:" target="-1" id="13247"/>
@@ -1376,7 +1381,7 @@
                                     <action selector="mprViewer:" target="-1" id="13762"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="3D Curved-MPR" image="MPR" tag="1" id="13754">
+                            <menuItem title="3D Curved-MPR" image="CPR" tag="1" id="13754">
                                 <connections>
                                     <action selector="cprViewer:" target="-1" id="14189"/>
                                 </connections>
@@ -2102,7 +2107,7 @@ Gw
                     <textField verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" allowsCharacterPickerTouchBarItem="YES" id="11243">
                         <rect key="frame" x="57" y="25" width="291" height="14"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <textFieldCell key="cell" controlSize="small" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="left" title="Example: http://www.osirix-viewer.com/internet.dcm" id="13361">
+                        <textFieldCell key="cell" controlSize="small" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="left" title="Example: https://www.example.org/image.dcm" id="13361">
                             <font key="font" metaFont="smallSystem"/>
                             <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
                             <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -2394,7 +2399,7 @@ Gw
                         <action selector="setSearchType:" target="898" id="14143"/>
                     </connections>
                 </menuItem>
-                <menuItem title="Study Description" tag="4" id="11588">
+                <menuItem title="Description" tag="4" id="11588">
                     <connections>
                         <action selector="setSearchType:" target="898" id="11592"/>
                     </connections>
@@ -2826,8 +2831,8 @@ Gw
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                                     <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="center" id="14508">
                                         <font key="font" metaFont="systemBold"/>
-                                        <string key="title">This version of OsiriX cannot open large series,
-update to OsiriX 64-bit:</string>
+                                        <string key="title">This version cannot open large series,
+a 64-bit version is required:</string>
                                         <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
                                         <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
                                     </textFieldCell>
@@ -2838,7 +2843,7 @@ update to OsiriX 64-bit:</string>
                                 <button verticalHuggingPriority="750" id="14502">
                                     <rect key="frame" x="127" y="11" width="202" height="25"/>
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <buttonCell key="cell" type="roundTextured" title="Update Now to OsiriX 64-bit !" bezelStyle="texturedRounded" alignment="center" state="on" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="14509">
+                                    <buttonCell key="cell" type="roundTextured" title="Update to 64-bit" bezelStyle="texturedRounded" alignment="center" state="on" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="14509">
                                         <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                         <font key="font" metaFont="system"/>
                                     </buttonCell>
@@ -2884,7 +2889,7 @@ update to OsiriX 64-bit:</string>
                     <slider verticalHuggingPriority="750" id="14475">
                         <rect key="frame" x="117" y="207" width="296" height="16"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" minValue="1" maxValue="90" doubleValue="1" tickMarkPosition="below" numberOfTickMarks="30" sliderType="linear" id="14498">
+                        <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" minValue="1" maxValue="90" doubleValue="1" sliderType="linear" id="14498">
                             <font key="font" size="12" name="Helvetica"/>
                         </sliderCell>
                         <connections>
@@ -2913,7 +2918,7 @@ update to OsiriX 64-bit:</string>
                     <slider verticalHuggingPriority="750" tag="1" id="14478">
                         <rect key="frame" x="117" y="195" width="296" height="16"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" tag="1" minValue="1" maxValue="90" doubleValue="1" tickMarkPosition="above" numberOfTickMarks="30" sliderType="linear" id="14495">
+                        <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" tag="1" minValue="1" maxValue="90" doubleValue="1" sliderType="linear" id="14495">
                             <font key="font" size="12" name="Helvetica"/>
                         </sliderCell>
                         <connections>
@@ -3978,7 +3983,7 @@ Gw
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                         <textFieldCell key="cell" controlSize="small" sendsActionOnEndEditing="YES" id="14378">
                             <font key="font" metaFont="smallSystem"/>
-                            <string key="title">This function will re-import all DICOM files in the database, removing unavailable items and optimizing the SQL index file located in the Horos Data folder.</string>
+                            <string key="title">This function will re-import all DICOM files in the database, removing unavailable items and optimizing the SQL index file located in the SekhVet Data folder.</string>
                             <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
                             <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
                         </textFieldCell>
@@ -4046,12 +4051,12 @@ Gw
                                 <buttonCell type="radio" title="Complete rebuild" imagePosition="left" alignment="left" controlSize="small" inset="2" id="14385">
                                     <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                                     <font key="font" metaFont="smallSystem"/>
-                                    <string key="toolTip">The SQL index will be deleted. OsiriX will then import all files available in the DATABASE folder. All 'linked' files, that were not in the DATABASE folder, will NOT be re-imported.</string>
+                                    <string key="toolTip">The SQL index will be deleted. SekhVet will then import all files available in the DATABASE folder. All 'linked' files, that were not in the DATABASE folder, will NOT be re-imported.</string>
                                 </buttonCell>
                                 <buttonCell type="radio" title="Re-import DICOM files and clean" imagePosition="left" alignment="left" controlSize="small" state="on" tag="1" inset="2" id="14384">
                                     <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                                     <font key="font" metaFont="smallSystem"/>
-                                    <string key="toolTip">OsiriX will re-import all files available in the DATABASE folder. OsiriX will then check if all images of the studies are available. If not, OsiriX will remove those studies without associated DICOM files.</string>
+                                    <string key="toolTip">SekhVet will re-import all files available in the DATABASE folder. SekhVet will then check if all images of the studies are available. If not, SekhVet will remove those studies without associated DICOM files.</string>
                                 </buttonCell>
                             </column>
                         </cells>
@@ -4929,7 +4934,7 @@ Gw
                                     <slider verticalHuggingPriority="750" horizontalCompressionResistancePriority="1" id="1293">
                                         <rect key="frame" x="0.0" y="2" width="294" height="16"/>
                                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES"/>
-                                        <sliderCell key="cell" controlSize="mini" scrollable="YES" lineBreakMode="clipping" continuous="YES" alignment="left" maxValue="100" doubleValue="49.494949494949495" tickMarkPosition="above" numberOfTickMarks="100" allowsTickMarkValuesOnly="YES" sliderType="linear" id="13340">
+                                        <sliderCell key="cell" controlSize="mini" scrollable="YES" lineBreakMode="clipping" continuous="YES" enabled="NO" alignment="left" maxValue="1" tickMarkPosition="above" numberOfTickMarks="0" allowsTickMarkValuesOnly="YES" sliderType="linear" id="13340">
                                             <font key="font" size="12" name="Helvetica"/>
                                         </sliderCell>
                                         <connections>
@@ -4969,6 +4974,7 @@ Gw
         </buttonCell>
     </objects>
     <resources>
+        <image name="CPR" width="32" height="32"/>
         <image name="Endoscopy" width="32" height="32"/>
         <image name="List" width="15" height="15"/>
         <image name="MIP" width="32" height="32"/>

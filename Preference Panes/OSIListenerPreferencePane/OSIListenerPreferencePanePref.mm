@@ -172,9 +172,9 @@
 {
 	if( [sender tag] == 0)
     {
-        [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/OsiriXTables.pdf" error:nil];
-        [[NSFileManager defaultManager] copyItemAtPath: [[NSBundle mainBundle] pathForResource:@"OsiriXTables" ofType:@"pdf"] toPath: @"/tmp/OsiriXTables.pdf" error: nil];
-		[[NSWorkspace sharedWorkspace] openFile: @"/tmp/OsiriXTables.pdf"];
+        [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/SekhVetTables.pdf" error:nil];
+        [[NSFileManager defaultManager] copyItemAtPath: [[NSBundle mainBundle] pathForResource:@"OsiriXTables" ofType:@"pdf"] toPath: @"/tmp/SekhVetTables.pdf" error: nil];
+		[[NSWorkspace sharedWorkspace] openFile: @"/tmp/SekhVetTables.pdf"];
 	}
     
 	if( [sender tag] == 1)
@@ -280,7 +280,7 @@
 		[[NSUserDefaults standardUserDefaults] setObject:self.TLSStoreSCPAETITLE forKey:@"TLSStoreSCPAETITLE"];
 		[[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithBool:self.TLSStoreSCPAETITLEIsDefaultAET] forKey:@"TLSStoreSCPAETITLEIsDefaultAET"];
 		
-		NSRunAlertPanel( NSLocalizedString( @"DICOM Listener", nil), NSLocalizedString( @"Restart Horos to apply these changes.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+		NSRunAlertPanel( NSLocalizedString( @"DICOM Listener", nil), NSLocalizedString( @"Restart SekhVet to apply these changes.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 	}
 }
 

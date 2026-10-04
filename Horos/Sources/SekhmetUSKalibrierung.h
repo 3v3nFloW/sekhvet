@@ -17,6 +17,15 @@
  faellt die IoU schon bei 2 % Tiefenaenderung auf 0.2. Messungen auf einem
  solchen Bild tragen im Textfeld den Hinweis, woher die Kalibrierung stammt.
  Abschalten: defaults SekhmetUSCalibrationFallback = NO.
+
+ SekhVet Paket CS: a wrong mm/px is worse than none, so two more conditions:
+   - the Manufacturer (0008,0070) of the image is on the list in defaults
+     SekhmetUSCalibrationFallbackVendors ("A|B", substring, "*" = any);
+     unset = "Mindray", the only device this was validated on;
+   - the donor's strip is ruler-like: moved vertically by 3 and by 7 px it
+     no longer matches itself (IoU <= 0.5). A grey bar or similar block in
+     the strip gives IoU ~ 1 at any depth and is refused.
+ In a multiframe file the source reads "image N, frame M".
  ============================================================================*/
 
 #import <Foundation/Foundation.h>

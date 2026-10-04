@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "DCMAbstractSyntaxUID.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 #import "SekhmetTesthaken.h" // SekhVet: Testhaken nur mit Build-Flag SEKHVET_TESTHAKEN=1
 #import "SekhmetDCMViewKategorie.h" // SekhVet Stufe 6c: die sekhmet*-Methoden dieser Klasse
 #import "SekhmetOrientation.h"      // SekhVet Stufe 6c: SekhmetVetLetter()
@@ -67,6 +68,8 @@
 #import "DicomSeries.h"
 #import "DicomImage.h"
 #include <OpenGL/CGLMacro.h>
+#import "SekhmetLupe.h" // SekhVet Paket CC: Lupe beim Messen
+#import "SekhmetUeberlagerung.h" // SekhVet Paket CJ: Ueberlagern
 #include <OpenGL/CGLCurrent.h>
 #include <OpenGL/CGLContext.h>
 #import <CoreVideo/CoreVideo.h>
@@ -1346,7 +1349,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     
     for( NSString *path in filenames)
     {
-        NSMutableArray*    roiArray = [NSUnarchiver unarchiveObjectWithFile: path];
+        NSMutableArray*    roiArray = (NSMutableArray*) [SekhmetRestrictedUnarchiver unarchiveROIsWithFile: path]; // Sekhmet (DE): .roi-Datei per Drop
         
         for( id loopItem1 in roiArray)
         {
@@ -1413,7 +1416,10 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     else if( [item action] == @selector(annotMenu:))
     {
         valid = YES;
-        if( [item tag] == [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"]) [item setState: NSOnState];
+        // SekhVet Paket CW: "Graphics + Orientation" is annotGraphics plus the flag
+        NSInteger sekhmetLevel = [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"];
+        if( sekhmetLevel == annotGraphics && [[NSUserDefaults standardUserDefaults] boolForKey: SEKHMET_ANNOT_LETTERS_KEY]) sekhmetLevel = SEKHMET_ANNOT_LETTERS_TAG;
+        if( [item tag] == sekhmetLevel) [item setState: NSOnState];
         else [item setState: NSOffState];
     }
     else if( [item action] == @selector(barMenu:))
@@ -1571,7 +1577,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     {
         [[self windowController] addToUndoQueue:@"roi"];
         
-        NSMutableArray*	roiArray = [NSUnarchiver unarchiveObjectWithData: archived_data];
+        NSMutableArray*	roiArray = (NSMutableArray*) [SekhmetRestrictedUnarchiver unarchiveROIsWithData: archived_data]; // Sekhmet (DE): Zwischenablage
         
         // Unselect all ROIs
         for( ROI *r in curRoiList) [r setROIMode: ROI_sleep];
@@ -2770,6 +2776,8 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     
     unichar		c = [[event characters] characterAtIndex:0];
     if( [SekhmetSpine handleKey: c]) return; // Sekhmet: ⌫ / Esc fuer Wirbel-Labels
+    if( [self sekhmetLupeTaste: c]) return; // SekhVet Paket CC: + / - / Pfeile, solange die Lupe sichtbar ist
+    if( [SekhmetUeberlagerung handleKeyEvent: event inView: self]) return; // SekhVet Paket CJ: "<" / "y" schalten den Stapel
     long		xMove = 0, yMove = 0, val;
     BOOL		Jog = NO;
     
@@ -2994,9 +3002,19 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             curImage = (long)[dcmPixList count]-1;
         else if (c == 9)	// Tab key
         {
-            int a = annotationType + 1;
+            // SekhVet Paket CW: None -> Graphics -> Graphics + orientation letters -> Basic -> Full -> None
+            BOOL sekhmetLetters = [[NSUserDefaults standardUserDefaults] boolForKey: SEKHMET_ANNOT_LETTERS_KEY];
+            int a = annotationType;
+            if( a == annotGraphics && sekhmetLetters == NO)
+                sekhmetLetters = YES;
+            else
+            {
+                a = a + 1;
+                sekhmetLetters = NO;
+            }
             if( a > annotFull) a = 0;
             
+            [[NSUserDefaults standardUserDefaults] setBool: sekhmetLetters forKey: SEKHMET_ANNOT_LETTERS_KEY];
             [[NSUserDefaults standardUserDefaults] setInteger: a forKey: @"ANNOTATIONS"];
             [DCMView setDefaults];
             annotationType = a;
@@ -3337,7 +3355,9 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         if( [self clickInROI: tempPt])
             roiHit = YES;
     }
-    else if( ( [event modifierFlags] & NSShiftKeyMask) && !([event modifierFlags] & NSAlternateKeyMask)  && !([event modifierFlags] & NSCommandKeyMask)  && !([event modifierFlags] & NSControlKeyMask) && mouseDragging == NO)
+    // SekhVet Paket CO: die freie Lupe (Shift) kommt im 2D-Viewer und im MPR auch mit einem Messwerkzeug — nur nicht,
+    // wenn der Zeiger auf einer Messung steht (dort bleibt Shift bei Horos). Bis Build 141 gab es sie nur ohne ROI-Werkzeug.
+    if( ([self roiTool: currentTool] == NO || (roiHit == NO && [self sekhmetLupeErlaubt])) && ( [event modifierFlags] & NSShiftKeyMask) && !([event modifierFlags] & NSAlternateKeyMask)  && !([event modifierFlags] & NSCommandKeyMask)  && !([event modifierFlags] & NSControlKeyMask) && mouseDragging == NO)
     {
         if( [event type] != NSLeftMouseDragged && [event type] != NSLeftMouseDown)
         {
@@ -3719,7 +3739,9 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 }
             }
             
-            if( cursorhidden == NO)
+            // SekhVet Paket CG-2: die neue Lupe steht NEBEN dem Zeiger — der Zeiger bleibt sichtbar und zeigt
+            // im Original, wo die Mitte der Lupe liegt (28.09.). Nur Horos' alte runde Lupe lag darueber.
+            if( cursorhidden == NO && [self sekhmetLupeErlaubt] == NO)
             {
                 cursorhidden = YES;
                 [NSCursor hide];
@@ -3821,7 +3843,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     }
                     else if( (modifierFlags & (NSShiftKeyMask|NSCommandKeyMask|NSControlKeyMask|NSAlternateKeyMask)) == NSShiftKeyMask && mouseDragging == NO)
                     {
-                        if( [self roiTool: currentTool] == NO)
+                        if( [self roiTool: currentTool] == NO || [self sekhmetLupeErlaubt]) // SekhVet Paket CO: auch mit Messwerkzeug
                         {
                             [self computeMagnifyLens: imageLocation];
 #ifdef new_loupe
@@ -4902,6 +4924,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 - (void)scrollWheel:(NSEvent *)theEvent
 {
     if( [SekhmetNorberg handleScrollWheel: theEvent inView: self]) return; // SekhVet Paket Y: Mausrad ueber dem Femurkopfkreis = Radius
+    if( [self sekhmetLupeRad: theEvent]) return; // SekhVet Paket CC: Rad bei sichtbarer Lupe = Lupenzoom
     float reverseScrollWheel;
     
     float deltaX = [theEvent deltaX];
@@ -5593,20 +5616,41 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     }
 }
 
+// SekhVet Paket CY: angle (degrees, counter-clockwise positive in view coordinates) the mouse travelled
+// around the view centre between two events, damped near the centre. Horos (2D) and VTK's Spin (MPR) take
+// the raw atan2 angle: its gain is 1/r, so a few pixels next to the centre become tens of degrees and the
+// image jumps. Inside rMin the gain is clamped to 1/rMin, outside the image follows the mouse exactly.
++ (float) sekhmetRotateDeltaFrom:(NSPoint) prev to:(NSPoint) cur viewSize:(NSSize) size
+{
+    float cx = size.width / 2., cy = size.height / 2.;
+    float ax = prev.x - cx, ay = prev.y - cy, bx = cur.x - cx, by = cur.y - cy;
+    float ra = sqrtf( ax*ax + ay*ay), rb = sqrtf( bx*bx + by*by);
+    
+    if( ra < 1 || rb < 1) return 0; // on the centre there is no angle
+    
+    float delta = atan2f( ax*by - ay*bx, ax*bx + ay*by) / deg2rad; // signed angle prev -> cur, (-180, 180]
+    
+    float rMin = MIN( size.width, size.height) / 4.;
+    if( rMin < 80) rMin = 80;
+    
+    float r = MIN( ra, rb);
+    if( r < rMin) delta *= r / rMin;
+    
+    return delta;
+}
+
 //Method for rotating
 - (void)mouseDraggedRotate:(NSEvent *)event
 {
+    // SekhVet Paket CY: incremental from the previous event, damped near the centre (was: absolute atan2 of the mouse)
     NSPoint current = [self currentPointInView:event];
-    
-    current.x -= [self frame].size.width/2.;
-    current.y -= [self frame].size.height/2.;
     
     float sign = 1;
     
     if( xFlipped) sign = -sign;
     if( yFlipped) sign = -sign;
     
-    float rot = rotationStart + sign * atan2( current.x, current.y) / deg2rad;
+    float rot = rotation - sign * [DCMView sekhmetRotateDeltaFrom: previous to: current viewSize: [self frame].size];
     
     while( rot < 0) rot += 360;
     while( rot > 360) rot -= 360;
@@ -7422,6 +7466,11 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 {
     short chosenLine = [sender tag];
     
+    // SekhVet Paket CW: menu item "Graphics + Orientation" = annotGraphics plus the flag; every other item clears it
+    BOOL sekhmetLetters = (chosenLine == SEKHMET_ANNOT_LETTERS_TAG);
+    if( sekhmetLetters) chosenLine = annotGraphics;
+    [[NSUserDefaults standardUserDefaults] setBool: sekhmetLetters forKey: SEKHMET_ANNOT_LETTERS_KEY];
+    
     [[NSUserDefaults standardUserDefaults] setInteger: chosenLine forKey: @"ANNOTATIONS"];
     [DCMView setDefaults];
     
@@ -8172,6 +8221,16 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void) drawTextualData:(NSRect) size annotationsLevel:(long) annotations fullText: (BOOL) fullText onlyOrientation: (BOOL) onlyOrientation
 {
+    // SekhVet Paket CW: level "graphics + orientation letters" -- the ROIs and lines are drawn as in "Graphics Only"
+    // (the caller still sees annotGraphics), here the letters at the image borders are added through Horos' own
+    // "only orientation" path. All views (2D, MPR, Curved, Orthogonal) come through this method. Off-screen
+    // renderings (thumbnails with ROIs, window never shown) stay as they were.
+    if( annotations == annotGraphics && [[NSUserDefaults standardUserDefaults] boolForKey: SEKHMET_ANNOT_LETTERS_KEY] && [[self window] isVisible])
+    {
+        annotations = annotBase;
+        onlyOrientation = YES;
+    }
+    
     float sf = [self.window backingScaleFactor]; //retina
     
     CGLContextObj cgl_ctx = [[NSOpenGLContext currentContext] CGLContextObj];
@@ -8487,12 +8546,17 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                                         if( flippedData) pos = (float) ([dcmPixList count] - curImage) / (float) [dcmPixList count];
                                         else pos = (float) curImage / (float) [dcmPixList count];
                                         
+                                        // SekhVet: keep only the first (dominant) letter. The veterinary letters "Cr"/"Cd" have two
+                                        // characters, all others (R L A P S I, D V) one -- "%c" printed "C (C -> C)" for Cr/Cd.
+                                        stackOrientationStart[ (stackOrientationStart[ 0] == 'C' && (stackOrientationStart[ 1] == 'r' || stackOrientationStart[ 1] == 'd')) ? 2 : 1] = 0;
+                                        stackOrientationEnd[ (stackOrientationEnd[ 0] == 'C' && (stackOrientationEnd[ 1] == 'r' || stackOrientationEnd[ 1] == 'd')) ? 2 : 1] = 0;
+                                        
                                         if( pos < 0.4)
-                                            orientationStack = [NSString stringWithFormat: @" %c (%c -> %c)", stackOrientationStart[ 0], stackOrientationStart[ 0], stackOrientationEnd[ 0]];
+                                            orientationStack = [NSString stringWithFormat: @" %s (%s -> %s)", stackOrientationStart, stackOrientationStart, stackOrientationEnd];
                                         else if( pos > 0.6)
-                                            orientationStack = [NSString stringWithFormat: @" %c (%c -> %c)", stackOrientationEnd[ 0], stackOrientationStart[ 0], stackOrientationEnd[ 0]];
+                                            orientationStack = [NSString stringWithFormat: @" %s (%s -> %s)", stackOrientationEnd, stackOrientationStart, stackOrientationEnd];
                                         else
-                                            orientationStack = [NSString stringWithFormat: @" (%c -> %c)", stackOrientationStart[ 0], stackOrientationEnd[ 0]];
+                                            orientationStack = [NSString stringWithFormat: @" (%s -> %s)", stackOrientationStart, stackOrientationEnd];
                                     }
                                 }
                             }
@@ -9565,7 +9629,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 
                 //** SLICE CUT BETWEEN SERIES - CROSS REFERENCES LINES
                 
-                if( is2DViewer && frontMost && sekhmetOwnPointSet && curImage == sekhmetOwnPointImage && self.curDCM && stringID == nil) // SekhVet Build 67: Klickpunkt des Point-Werkzeugs im Quellfenster (orange)
+                if( is2DViewer && frontMost && sekhmetOwnPointSet && curImage == sekhmetOwnPointImage && self.curDCM && self.curDCM.pixelSpacingX != 0 && self.curDCM.pixelSpacingY != 0 && stringID == nil) // SekhVet Build 67: Klickpunkt des Point-Werkzeugs im Quellfenster (orange)
                 {
                     float sfo = self.window.backingScaleFactor, cx = sekhmetOwnPoint[ 0] / self.curDCM.pixelSpacingX - self.curDCM.pwidth * 0.5f, cy = sekhmetOwnPoint[ 1] / self.curDCM.pixelSpacingY - self.curDCM.pheight * 0.5f;
                     float lx = 15 / self.curDCM.pixelSpacingX, gx = 5 / self.curDCM.pixelSpacingX;
@@ -9912,7 +9976,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         }
         
         #ifndef new_loupe
-        if( lensTexture)
+        if( lensTexture && [self sekhmetLupeErlaubt] == NO) // SekhVet Paket CC/CE: im 2D-Viewer und MPR zeichnet sekhmetZeichneLupe
         {
             /* creating Loupe textures (mask and border) */
             
@@ -10132,6 +10196,8 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             
         }
 #endif
+        
+        [self sekhmetZeichneLupe]; // SekhVet Paket CC: Lupe beim Messen / freie Lupe neben dem Zeiger
         
         [self drawRectAnyway:aRect];
         
@@ -13537,7 +13603,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
                 name = [name stringByAppendingFormat:@" - %@", description];
             
             if (!name.length)
-                name = @"Horos";
+                name = @"SekhVet";
 
             NSURL *url = [(NSURL *)urlRef URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"jpg"]];
             size_t i = 0;

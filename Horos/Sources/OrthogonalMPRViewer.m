@@ -53,6 +53,8 @@
 #import "DicomSeries.h"
 #import "DicomImage.h"
 #import "PluginManager.h"
+#import "SekhmetMPRKategorie.h" // SekhVet Paket CH: Hanging Protocol im Orthogonal MPR
+#import "SekhmetOrientation.h"
 
 static NSString* 	MPROrthoToolbarIdentifier				= @"MPROrtho Viewer Toolbar Identifier";
 static NSString*	AdjustSplitViewToolbarItemIdentifier	= @"sameSizeSplitView";
@@ -218,6 +220,7 @@ static SyncSeriesScope globalSyncSeriesScope;
     // Series Synchronisation
     [nc addObserver:self selector:@selector(syncSeriesNotification:) name:OsirixOrthoMPRSyncSeriesNotification object:nil];
     [nc addObserver:self selector:@selector(posChangeNotification:) name:OsirixOrthoMPRPosChangeNotification object:nil];
+    [nc addObserver:self selector:@selector(sekhmetPresetDidChange:) name: SekhmetVetPresetDidChangeNotification object:nil]; // SekhVet Paket CH
     
     [OrthogonalMPRViewer initSyncSeriesProperties:self];
     [OrthogonalMPRViewer evaluteSyncSeriesToolbarItemActivationWhenInit:self];
@@ -573,11 +576,18 @@ static SyncSeriesScope globalSyncSeriesScope;
     [OrthogonalMPRViewer synchronizeViewer:self];
     
     [self adjustSplitView];
+    
+    // SekhVet Paket CH: Hanging Protocol wie im 2D-Viewer und im 3D-MPR, nachdem die Ansichten geschnitten sind
+    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetApplyHangingProtocol) object: nil];
+    [self performSelector: @selector(sekhmetApplyHangingProtocol) withObject: nil afterDelay: 0.5 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
 }
 
 - (void) windowWillClose:(NSNotification *)notification
 {
     [[self window] setAcceptsMouseMovedEvents: NO];
+    
+    // SekhVet Paket CS (fork review 15): the hanging protocol is scheduled 0.5 s after showWindow: - never on a closing window
+    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetApplyHangingProtocol) object: nil];
     
     [[NSNotificationCenter defaultCenter] removeObserver: self];
     
@@ -948,6 +958,15 @@ static SyncSeriesScope globalSyncSeriesScope;
     [[self window] setToolbar: toolbar];
     [[self window] setShowsToolbarButton:NO];
     [[[self window] toolbar] setVisible: YES];
+    // SekhVet Paket CH: Hanging-Protocol-Popup einmalig auch in eine gespeicherte Toolbar-Konfiguration einfuegen
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    if( [ud boolForKey: @"SekhmetVetPresetInsertedOrtho"] == NO)
+    {
+        BOOL have = NO;
+        for( NSToolbarItem *it in [toolbar items]) if( [[it itemIdentifier] isEqualToString: @"SekhmetVetPreset"]) have = YES;
+        if( have == NO) [toolbar insertItemWithItemIdentifier: @"SekhmetVetPreset" atIndex: MIN( (NSUInteger) 2, [[toolbar items] count])];
+        [ud setBool: YES forKey: @"SekhmetVetPresetInsertedOrtho"];
+    }
     
 #ifdef EXPORTTOOLBARITEM
     NSLog(@"************** WARNING EXPORTTOOLBARITEM ACTIVATED");
@@ -1007,6 +1026,12 @@ static SyncSeriesScope globalSyncSeriesScope;
     
     NSToolbarItem *toolbarItem =nil;
     
+    if ([itemIdent isEqualToString: @"SekhmetVetPreset"]) // SekhVet Paket CH: Hanging Protocol je Studie, auch im Orthogonal MPR
+    {
+        toolbarItem = [[[NSToolbarItem alloc] initWithItemIdentifier: itemIdent] autorelease];
+        [self sekhmetConfigurePresetItem: toolbarItem];
+        return toolbarItem;
+    }
     if ([itemIdent isEqualToString: SyncSeriesToolbarItemIdentifier]) {
         toolbarItem = [[[KBPopUpToolbarItem alloc] initWithItemIdentifier: itemIdent] autorelease];
     }else{
@@ -1211,6 +1236,7 @@ static SyncSeriesScope globalSyncSeriesScope;
     // user chooses to revert to the default items this set will be used
     return [NSArray arrayWithObjects:       ToolsToolbarItemIdentifier,
             WLWWToolbarItemIdentifier,
+            @"SekhmetVetPreset", // SekhVet Paket CH
             BlendingToolbarItemIdentifier,
             ThickSlabToolbarItemIdentifier,
             MovieToolbarItemIdentifier,
@@ -1233,6 +1259,7 @@ static SyncSeriesScope globalSyncSeriesScope;
                              NSToolbarSpaceItemIdentifier,
                              NSToolbarSeparatorItemIdentifier,
                              WLWWToolbarItemIdentifier,
+                             @"SekhmetVetPreset", // SekhVet Paket CH
                              BlendingToolbarItemIdentifier,
                              ThickSlabToolbarItemIdentifier,
                              MovieToolbarItemIdentifier,
@@ -1355,7 +1382,7 @@ static SyncSeriesScope globalSyncSeriesScope;
     
     bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
     
-    NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Horos.jpg"];
+    NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"SekhVet.jpg"];
     [bitmapData writeToFile:path atomically:YES];
 				
     email = [[Mailer alloc] init];
@@ -1635,7 +1662,7 @@ static SyncSeriesScope globalSyncSeriesScope;
         else if( [[dcmSelection selectedCell] tag] == 2) // 4th Dimension
         {
             if( exportDCM == nil) exportDCM = [[DICOMExport alloc] init];
-            [exportDCM setSeriesNumber:5600 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];	//Try to create a unique series number... Do you have a better idea??
+            [exportDCM beginSeriesWithNumber:5600 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]]; // Sekhmet (DD): immer neue Serie	//Try to create a unique series number... Do you have a better idea??
             
             for( int i = 0; i < maxMovieIndex; i ++)
             {
@@ -1705,7 +1732,7 @@ static SyncSeriesScope globalSyncSeriesScope;
             @try
             {
                 if( exportDCM == nil) exportDCM = [[DICOMExport alloc] init];
-                [exportDCM setSeriesNumber:5600 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];	//Try to create a unique series number... Do you have a better idea??
+                [exportDCM beginSeriesWithNumber:5600 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]]; // Sekhmet (DD): immer neue Serie	//Try to create a unique series number... Do you have a better idea??
                 
                 for( i = from; i < to; i+=interval)
                 {

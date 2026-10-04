@@ -5,7 +5,7 @@ A veterinary DICOM viewer for macOS. SekhVet is a fork of [Horos](https://horosp
 
 Developed and maintained by Kappa1-VRS GmbH, Zurich, Switzerland.
 
-**Status: public beta.** See [Beta status](#beta-status) below before you rely on a function.
+**Status: version 1.0** (first regular release, October 2026). See [Status](#status) below before you rely on a function.
 
 ---
 
@@ -26,31 +26,29 @@ shortcoming.
 
 ---
 
-## Beta status
+## Status
 
-SekhVet 1.0 is published as a **beta**. The Horos core and most veterinary tools have been in
-daily use in one practice since September 2026. Some functions have been tested on few devices
-or not yet on a real device; they are marked **experimental** here and in the manuals. Version
-1.0 without the beta suffix follows once these have been verified by more than one practice.
+SekhVet 1.0 is the first regular release after a public beta (builds 45–149, August to October
+2026). The Horos core and the veterinary tools are in daily use in one practice. Functions that
+are new in 1.0 and have been tested on few devices so far are marked **new** here and in the
+manuals.
 
 | Function | Status |
 |---|---|
-| Orientation letters, 2D hanging protocol, window presets | in daily use |
-| Norberg angle, distraction index | in daily use |
-| Point tool, double MPR, convolution filters | in daily use |
-| DICOMweb query / retrieve / send | in daily use |
-| Image and PDF import, rename patient, display settings | in daily use |
-| Hanging protocol in the 3D MPR | **experimental**, rebuilt in September 2026, device verification running |
-| Opening protocols, two-view radiograph hanging | **experimental**, device verification running |
-| Spine labeling | **experimental**, rebuilt in build 108–110; counting and level logic verified headless, on-screen drawing checked on one Mac |
-| Ultrasound calibration from a neighbouring image | **experimental**, one device tested (Mindray Vetus 9) |
-| DICOMweb retrieve queue (new in build 111) | **experimental**, not yet tested on a device |
-| CT corner information kVp / mA / mAs (new in build 114) | **experimental**, not yet checked on a device |
+| Orientation letters, hanging protocol in 2D and MPR (also curved and orthogonal), opening protocols, window presets | in daily use |
+| Spine labeling, Norberg angle, distraction index | in daily use |
+| Point tool, double MPR, convolution filters, magnifier, free rotation | in daily use |
+| DICOMweb query / retrieve (with queue) / send | in daily use |
+| Image and PDF import, rename patient, import from other databases, display settings | in daily use |
+| Overlay of native / contrast / bone series, in 2D and MPR | **new**, in use on CT and MR of one device since late September 2026 |
+| Subtraction by location (Horos fusion, repaired) | **new**, checked on CT and MR |
+| Measurement navigator; DICOMweb institution filter and automatic refresh | **new**, tested on one device since October 2026 |
+| Ultrasound calibration from a neighbouring image | **new**, one device tested (Mindray Vetus 9), enabled for Mindray only by default |
+| Update check against GitHub | **new**, can only be judged in use with the next release |
 | macOS 27 | tested in a test installation (double MPR with a large CT, double-click zoom); daily use is on macOS 26 |
 
-What a beta means here: no function is known to corrupt data, measurements are reproducible on
-the devices tested, but wording, defaults and edge cases will still change between builds. Keep
-Horos or OsiriX installed alongside if you depend on them; SekhVet does not touch their data.
+No function is known to corrupt data, and measurements are reproducible on the devices tested.
+Keep Horos or OsiriX installed alongside if you depend on them; SekhVet does not touch their data.
 
 ## Why this fork exists
 
@@ -84,6 +82,8 @@ Everything below lives in the **Vet Tools** menu unless stated otherwise.
 | **Double MPR** | Two MPR windows of one study stay in sync: crosshair, planes, thickness, rotation, zoom per view |
 | **Swap / rotate windows** | ⌘H or the Swap button: two MPR windows change sides together with their 2D series; without MPR the 2D series swap; with three or more windows each moves one place on |
 | **MPR extras** | Convolution filters on all three planes, larger crosshair hit zones, quiet cursor, no high-dynamic-range dialog |
+| **Overlay** | Native, contrast and bone kernel of one examination stacked in one window, in 2D and in the MPR; slice, zoom and pan stay; shared measurements with a native / contrast Δ line |
+| **Magnifier** | Corner magnifier while measuring a length, free magnifier with Shift |
 | **Ultrasound** | Length measurements on frames without calibration data borrow the calibration of a neighbouring frame with the same depth scale |
 | **Rename patient** | Writes name, ID, birth date and sex into the DICOM files of one or more studies, or takes the identity from an existing patient |
 | **Display** | Screen area per monitor, readable annotation text in full colour, corner information with kVp / mA / mAs for CT and CBCT, dark mode, modality colours in the database |
@@ -91,7 +91,8 @@ Everything below lives in the **Vet Tools** menu unless stated otherwise.
 | **Import** | Photos and PDFs into a study as DICOM, optionally attached to an existing study |
 | **Feedback** | Send Feedback… opens a prepared e-mail with build and macOS version |
 
-Removed from Horos: the Horos Cloud plugin and the hourly update check.
+Removed from Horos: the Horos Cloud plugin, the hourly update check against the Horos server and
+the plugin update check.
 
 ## Documentation
 
@@ -110,8 +111,8 @@ Removed from Horos: the Horos Cloud plugin and the hourly update check.
 
 Download the **DMG** from the [releases page](https://github.com/3v3nFloW/sekhvet/releases),
 open it and drag SekhVet onto the Applications folder in the window. The zip on the same page
-contains the same app. Beta builds are marked as pre-releases; the SHA-256 of each file is in
-the release notes.
+contains the same app. The beta builds (up to build 149) were pre-releases; 1.0 is a regular release. The SHA-256 of
+each file is in the release notes.
 
 SekhVet is ad-hoc signed and **not notarised**, so macOS blocks the first launch. Afterwards go
 to **System Settings › Privacy & Security › "Open Anyway"**. Since macOS 15 the right-click ›
@@ -125,11 +126,15 @@ On first launch SekhVet shows a one-time notice that it is not a certified medic
 
 SekhVet keeps its own database (`~/Documents/SekhVet Data`), preferences
 (`vet.kappa1.sekhvet.horos`), plugin folder (`~/Library/Application Support/SekhVet/Plugins`)
-and DICOM port (11113 instead of 11112), so it can sit next to an existing Horos or OsiriX
-installation without touching it.
+and suggested DICOM port (11113 instead of 11112, once the listener is enabled), so it can sit
+next to an existing Horos or OsiriX installation without touching it.
 
-SekhVet does not check for updates. New builds are published on the releases page. Quit the
+SekhVet can check GitHub once a day for a new release (asked at first start, switchable in
+Preferences › General). It only tells you; you download the DMG and install it yourself. Quit the
 running copy before replacing it; database and settings are kept.
+
+**Network defaults:** the DICOM listener is off until you enable it in Preferences › Listener;
+SekhVet does not announce itself via Bonjour by default; there is no plugin update check.
 
 ## Reporting problems
 
@@ -185,8 +190,9 @@ rebuild without it before installing or shipping. The hooks are declared in
 ## Versioning
 
 Builds are numbered consecutively (`CFBundleVersion`, shown in the About window and in the
-feedback template). The beta carries the version string `1.0 beta`; releases are tagged
-`v1.0-beta.<build>` until 1.0 final. The public repository receives one commit per release on
+feedback template). The public beta (builds 45–149) was tagged `v1.0-beta.<build>` and published as
+pre-releases; 1.0 is tagged `v1.0` and its DMG is named `SekhVet-1.0-build<N>-macOS.dmg`. The
+update check reads the build number from that file name. The public repository receives one commit per release on
 top of the Horos history, authored by Kappa1-VRS GmbH; the day-to-day history stays in the
 private working repository.
 
@@ -203,6 +209,27 @@ project is **not affiliated with, endorsed by or supported by** the Horos Projec
 SARL. Please do not send SekhVet issues to them.
 
 SekhVet itself: © 2026 Kappa1-VRS GmbH, Zurich.
+
+## Acknowledgements
+
+SekhVet builds on the work of others. Thank you:
+
+- **The Horos Project** and **OsiriX** — the viewer SekhVet is built on.
+- **Thales Santos ([ThalesMMS/horos](https://github.com/ThalesMMS/horos))** — fixes adapted in
+  build 119: the mean projection is now kept per MPR window instead of globally, the database list
+  draws its rows without side effects, the study list is refreshed in batches during imports,
+  notifications are grouped, patient data is kept out of the system log, and several small fixes
+  (shutter, window/level threads, C-GET progress).
+- **Yves Starreveld ([ystarrev/horos](https://github.com/ystarrev/horos))** — fixes adapted in
+  build 119: the database index is never deleted silently when it cannot be opened, faster
+  import of large batches, search in series descriptions, the Query window toolbar and slider
+  tick marks for macOS 27.
+- **Hiroaki Inomata ([PHORLIX](https://github.com/Hiroaki-Inomata/PHORLIX-community))** — the idea
+  of importing studies from other Horos/OsiriX databases (build 120, own implementation, with his
+  kind permission), and the original Japanese resources of Horos.
+
+Code taken from the forks above is LGPL-3.0 like SekhVet; the origin is noted in the source
+comments at each place ("nach ThalesMMS/horos …", "nach ystarrev/horos …").
 
 ## Contributing
 

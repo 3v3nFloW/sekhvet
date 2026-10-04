@@ -3,6 +3,69 @@
  ============================================================================*/
 
 #import "SekhmetOpening.h"
+
+// SekhVet Paket CS: the contrast detection is plain Foundation logic and stands above the rest of the file, so that
+// SekhVet/test/keyword-test.sh compiles exactly this code (with SEKHVET_LOGIC_TEST) without the application classes.
+//
+// Review finding 12: a lone "C" anywhere in the series name counted as contrast and a lone "N" as native, so
+// "C Spine T2", "C-Bogen" or "N. ischiadicus" filled the CT positions wrongly. Now, word by word:
+//  1. negations first: "ohne KM", "without contrast", "non contrast", "pre KM", "vor KM" -> native
+//  2. contrast: KM, CE, contrast, Kontrast(mittel), post (not "post OP"), "+C"
+//  3. native: nativ, native, plain, pre / prae (not "pre OP")
+//  4. the single letters C and N only as the LAST word of a name with at least two words - the way the GE scanner
+//     of the practice names its series ("Head C", "Thorax Bone N", survey of 15.09.2026). Everywhere else a lone
+//     C or N says nothing about contrast.
+static NSInteger sekhmetContrastForName( NSString *name)
+{
+    if( name.length == 0) return SekhmetContrastAny;
+    static NSSet *agent = nil, *native = nil, *negation = nil, *notAPhase = nil;
+    if( agent == nil)
+    {
+        agent = [[NSSet alloc] initWithObjects: @"KM", @"CE", @"CONTRAST", @"KONTRAST", @"KONTRASTMITTEL", nil];
+        native = [[NSSet alloc] initWithObjects: @"NATIV", @"NATIVE", @"PLAIN", nil];
+        negation = [[NSSet alloc] initWithObjects: @"OHNE", @"WITHOUT", @"NON", @"NO", @"PRE", @"PRAE", @"PRÄ", @"VOR", nil];
+        notAPhase = [[NSSet alloc] initWithObjects: @"OP", @"OPERATIV", @"OPERATIVE", @"OPERATION", @"MORTEM", nil];   // "post OP" is not "post contrast"
+    }
+    NSMutableArray *tokens = [NSMutableArray array];
+    for( NSString *raw in [name componentsSeparatedByCharactersInSet: [[NSCharacterSet alphanumericCharacterSet] invertedSet]])
+        if( raw.length) [tokens addObject: [raw uppercaseString]];
+    NSUInteger n = tokens.count;
+
+    for( NSUInteger i = 1; i < n; i++)   // 1. negated contrast
+        if( [agent containsObject: [tokens objectAtIndex: i]] && [negation containsObject: [tokens objectAtIndex: i - 1]])
+            return SekhmetContrastNative;
+
+    NSRange search = NSMakeRange( 0, name.length);   // 2. "+C" as its own marker ("T1W_TSE +C", "T1+C"), not "+CE..." / "+Cor"
+    while( search.length >= 2)
+    {
+        NSRange r = [name rangeOfString: @"+C" options: NSCaseInsensitiveSearch range: search];
+        if( r.location == NSNotFound) break;
+        if( NSMaxRange( r) >= name.length || ![[NSCharacterSet alphanumericCharacterSet] characterIsMember: [name characterAtIndex: NSMaxRange( r)]])
+            return SekhmetContrastAgent;
+        search.location = r.location + 1;
+        search.length = name.length - search.location;
+    }
+    for( NSUInteger i = 0; i < n; i++)
+    {
+        NSString *t = [tokens objectAtIndex: i];
+        BOOL phaseFollows = i + 1 >= n || ![notAPhase containsObject: [tokens objectAtIndex: i + 1]];
+        if( [agent containsObject: t] || ([t isEqualToString: @"POST"] && phaseFollows)) return SekhmetContrastAgent;
+    }
+    if( n >= 2 && [[tokens lastObject] isEqualToString: @"C"]) return SekhmetContrastAgent;
+
+    for( NSUInteger i = 0; i < n; i++)   // 3. native
+    {
+        NSString *t = [tokens objectAtIndex: i];
+        BOOL phaseFollows = i + 1 >= n || ![notAPhase containsObject: [tokens objectAtIndex: i + 1]];
+        if( [native containsObject: t]) return SekhmetContrastNative;
+        if( ([t isEqualToString: @"PRE"] || [t isEqualToString: @"PRAE"] || [t isEqualToString: @"PRÄ"]) && phaseFollows) return SekhmetContrastNative;
+    }
+    if( n >= 2 && [[tokens lastObject] isEqualToString: @"N"]) return SekhmetContrastNative;
+    return SekhmetContrastAny;
+}
+
+#ifndef SEKHVET_LOGIC_TEST   // everything below needs the application classes
+
 #import "SekhmetWindowing.h"
 #import "SekhmetDisplayPanel.h"
 #import "SekhmetTesthaken.h"
@@ -121,8 +184,16 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
     if( cache == nil) cache = [[NSMutableDictionary alloc] init];
     if( series == nil) return @"";
 
+    // SekhVet Paket CS (review finding 19): the cache was keyed by the series UID alone, so after a rename the old
+    // name kept matching until the next start. The name is part of the key now - a renamed series misses the cache
+    // and is read again; the expensive part (reading the DICOM file) is still done only once per name.
     NSString *uid = nil;
-    @try { uid = [series valueForKey: @"seriesInstanceUID"]; } @catch (NSException *e) { }
+    @try
+    {
+        uid = [series valueForKey: @"seriesInstanceUID"];
+        if( uid.length) uid = [NSString stringWithFormat: @"%@|%@|%@", uid, [series valueForKey: @"name"], [series valueForKey: @"seriesDescription"]];
+    }
+    @catch (NSException *e) { uid = nil; }
     if( uid.length)
     {
         NSString *cached = [cache objectForKey: uid];
@@ -162,7 +233,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
 
 // Kontrastphase. Nur der SERIENNAME wird zerlegt, nicht der ganze Suchtext: "CERVICAL"
 // aus BodyPartExamined darf nicht als GE-Kontrastkuerzel "C" gelesen werden.
-// Marker als ganzes Wort: KM / post KM / CE / C = Kontrast, nativ / N = nativ.
+// Marker als ganzes Wort; die Regeln stehen bei sekhmetContrastForName() am Dateianfang (Paket CS).
 // Horos fuehrt den Serientext in "name"; "seriesDescription" traegt bei manchen Geraeten
 // die STUDIENbeschreibung (Siemens der Praxis: alle sechs Serien hiessen dort gleich).
 // Darum "name" zuerst — SekhmetWindowing descriptionForViewer: macht es genauso.
@@ -180,22 +251,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
 
 + (NSInteger) contrastForName:(NSString*) name
 {
-    if( name.length == 0) return SekhmetContrastAny;
-    NSCharacterSet *sep = [[NSCharacterSet alphanumericCharacterSet] invertedSet];
-    NSArray *tokens = [name componentsSeparatedByCharactersInSet: sep];
-    for( NSString *raw in tokens)
-    {
-        NSString *t = [raw uppercaseString];
-        if( [t isEqualToString: @"KM"] || [t isEqualToString: @"CE"] || [t isEqualToString: @"C"])
-            return SekhmetContrastAgent;
-    }
-    for( NSString *raw in tokens)
-    {
-        NSString *t = [raw uppercaseString];
-        if( [t isEqualToString: @"NATIV"] || [t isEqualToString: @"NATIVE"] || [t isEqualToString: @"N"])
-            return SekhmetContrastNative;
-    }
-    return SekhmetContrastAny;
+    return sekhmetContrastForName( name);   // SekhVet Paket CS: rules at the top of the file (unit test)
 }
 
 + (NSInteger) contrastForSeries:(DicomSeries*) series
@@ -355,9 +411,15 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
                                           lateralLeft: [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetTwoViewLateralLeftKey]];
     if( order == 0) return nil;
     NSArray *result = order == 1 ? two : [NSArray arrayWithObjects: [two objectAtIndex: 1], [two objectAtIndex: 0], nil];
+    // SekhVet Paket CS (review finding 21): series names only in a test build, the release log gets the projections.
+#if SEKHVET_TESTHAKEN
     NSLog( @"SekhVet two-view: %@ %@ / %@ -> left \"%@\", right \"%@\"", [regions objectAtIndex: 0],
           [projections objectAtIndex: 0], [projections objectAtIndex: 1],
           [self nameForSeries: [result objectAtIndex: 0]], [self nameForSeries: [result objectAtIndex: 1]]);
+#else
+    NSLog( @"SekhVet two-view: %@ / %@ -> %@", [projections objectAtIndex: 0], [projections objectAtIndex: 1],
+          order == 1 ? @"series order kept" : @"series swapped");
+#endif
     return result;
 }
 
@@ -419,8 +481,10 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
         return YES;
     }
 
+    // SekhVet Paket CS (review finding 10): from here on Horos opens the study its own way and tiles the windows anew.
+    // Black tiles of the previous study would stay behind (they were only closed when a protocol matched).
     NSDictionary *p = [self protocolForStudy: study];
-    if( p == nil) return NO;
+    if( p == nil) { [SekhmetBlackTile closeAll]; return NO; }
 
     NSArray *chosen = [self seriesForProtocol: p study: study];
     NSArray *positions = [p objectForKey: @"positions"];
@@ -455,7 +519,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
         [slots addObject: [positions objectAtIndex: i]];
         cell++;
     }
-    if( open.count == 0) return NO;
+    if( open.count == 0) { [SekhmetBlackTile closeAll]; return NO; }   // SekhVet Paket CS: see above
 
     // Ohne schwarze Kacheln das Raster auf die tatsaechliche Zahl eindampfen,
     // sonst bliebe genau das Loch stehen, das wir vermeiden wollen.
@@ -496,7 +560,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
 
     NSLog( @"SekhVet opening protocol \"%@\": %lu of %lu positions filled, grid %dx%d%@",
           [p objectForKey: @"name"], (unsigned long) open.count, (unsigned long) positions.count,
-          useRows, useColumns, black ? @", Luecken schwarz" : @"");
+          useRows, useColumns, black ? @", gaps black" : @"");
     return YES;
 }
 
@@ -575,10 +639,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
     if( [[ViewerController getDisplayed2DViewers] count] == 0) [SekhmetBlackTile closeAll];
 }
 
-// "Take from screen": die offenen Viewer von links nach rechts (bei Gleichstand von oben
-// nach unten) als Positionen uebernehmen. Stichwort ist der Serienname, damit man sieht,
-// was gemeint war, und ihn danach von Hand kuerzen kann.
-// Einen einzelnen Tag der ersten Datei einer Serie lesen (fuer "Take from screen").
+// Einen einzelnen Tag der ersten Datei einer Serie lesen (fuer "Take from screen" und die Zwei-Ebenen-Regel).
 + (NSString*) tag:(NSString*) tagName forSeries:(DicomSeries*) series
 {
     @try
@@ -673,10 +734,17 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
         if( body.length) [protocol setObject: body forKey: @"region"];
     }
 
+    // SekhVet Paket CS (review finding 21): the series names ("bericht") only in a test build.
+#if SEKHVET_TESTHAKEN
     NSLog( @"SekhVet opening protocol \"%@\" taken from screen: %lu positions, %@x%@, modality %@, region \"%@\"%@",
           [protocol objectForKey: @"name"], (unsigned long) positions.count,
           [protocol objectForKey: @"rows"], [protocol objectForKey: @"columns"], modality,
           [protocol objectForKey: @"region"], bericht);
+#else
+    NSLog( @"SekhVet opening protocol \"%@\" taken from screen: %lu positions, %@x%@, modality %@",
+          [protocol objectForKey: @"name"], (unsigned long) positions.count,
+          [protocol objectForKey: @"rows"], [protocol objectForKey: @"columns"], modality);
+#endif
 }
 
 #pragma mark - Testhaken
@@ -704,6 +772,16 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
         @"Topogramm 0,70 Tr20 sag",        @"0",
         @"CSPINE stitch",                  @"0",
         @"C1-Th3 N",                       @"1",
+        // SekhVet Paket CS (review finding 12): a lone C / N is a marker only as the last word; negations; "+C"; "post OP"
+        @"C Spine T2",                     @"0",
+        @"C-Bogen Thorax",                 @"0",
+        @"N. ischiadicus T2",              @"0",
+        @"T1 tra ohne KM",                 @"1",
+        @"Abdomen without contrast",       @"1",
+        @"T1W_TSE +C",                     @"2",
+        @"Abdomen post contrast",          @"2",
+        @"Knie post OP",                   @"0",
+        @"Thorax plain",                   @"1",
         nil];
     int ok = 0, bad = 0;
     NSMutableString *fails = [NSMutableString string];
@@ -884,7 +962,9 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
     [w setReleasedWhenClosed: NO];
     [w setExcludedFromWindowsMenu: YES];
     [w setLevel: NSNormalWindowLevel];
-    [w setCollectionBehavior: NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary];
+    // SekhVet Paket CS (review finding 10): no NSWindowCollectionBehaviorCanJoinAllSpaces - the tile belongs to the
+    // desktop of its viewers; with that flag the black windows showed on every Space until the last viewer closed.
+    [w setCollectionBehavior: NSWindowCollectionBehaviorFullScreenAuxiliary];
     return [w autorelease];
 }
 
@@ -1159,8 +1239,27 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
     return [protocols objectAtIndex: r];
 }
 
+// SekhVet Paket CS (review, unconfirmed "table edit while rows are removed"): every button that adds, removes or moves
+// rows first commits a cell that is still being edited - to the row it belongs to, while that row still exists.
+- (void) sekhmetCommitCellEditing
+{
+    if( [[self window] makeFirstResponder: nil] == NO) [[self window] endEditingFor: nil];
+}
+
+// SekhVet Paket CS (review finding 7): after the list changed, select a valid row and refill the fields on the right.
+// reloadData keeps the selected INDEX, so tableViewSelectionDidChange: did not fire and the fields went on showing
+// the deleted protocol; Return in one of them then wrote that stale value into the protocol now selected.
+- (void) selectProtocolRow:(NSInteger) row
+{
+    [protocolTable reloadData];
+    if( protocols.count == 0) [protocolTable deselectAll: nil];
+    else [protocolTable selectRowIndexes: [NSIndexSet indexSetWithIndex: MAX( 0, MIN( row, (NSInteger) protocols.count - 1))] byExtendingSelection: NO];
+    [self tableViewSelectionDidChange: [NSNotification notificationWithName: NSTableViewSelectionDidChangeNotification object: protocolTable]];
+}
+
 - (IBAction) addProtocol:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     NSMutableDictionary *p = [NSMutableDictionary dictionary];
     [p setObject: @"New Protocol" forKey: @"name"];
     [p setObject: @"" forKey: @"modality"];
@@ -1170,28 +1269,30 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
     [p setObject: @NO forKey: @"blackTiles"];
     [p setObject: [NSMutableArray array] forKey: @"positions"];
     [protocols addObject: p];
-    [self save]; [protocolTable reloadData];
-    [protocolTable selectRowIndexes: [NSIndexSet indexSetWithIndex: protocols.count - 1] byExtendingSelection: NO];
+    [self save];
+    [self selectProtocolRow: protocols.count - 1];
 }
 
 - (IBAction) removeProtocol:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     NSInteger r = [protocolTable selectedRow];
     if( r >= 0 && r < (NSInteger) protocols.count)
     {
         [protocols removeObjectAtIndex: r];
-        [self save]; [protocolTable reloadData];
-        [positionTable reloadData];
+        [self save];
+        [self selectProtocolRow: r];   // SekhVet Paket CS: the protocol that moved up (or the last one); fields refilled
     }
 }
 
 - (void) moveProtocol:(NSInteger) delta
 {
+    [self sekhmetCommitCellEditing];
     NSInteger r = [protocolTable selectedRow], n = r + delta;
     if( r < 0 || n < 0 || n >= (NSInteger) protocols.count) return;
     [protocols exchangeObjectAtIndex: r withObjectAtIndex: n];
-    [self save]; [protocolTable reloadData];
-    [protocolTable selectRowIndexes: [NSIndexSet indexSetWithIndex: n] byExtendingSelection: NO];
+    [self save];
+    [self selectProtocolRow: n];
 }
 
 - (IBAction) moveProtocolUp:(id) sender { [self moveProtocol: -1]; }
@@ -1231,6 +1332,7 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
 
 - (IBAction) addPosition:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     NSMutableDictionary *p = [self selectedProtocol];
     if( p == nil) return;
     NSMutableArray *positions = [p objectForKey: @"positions"];
@@ -1241,6 +1343,7 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
 
 - (IBAction) removePosition:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     NSMutableDictionary *p = [self selectedProtocol];
     if( p == nil) return;
     NSMutableArray *positions = [p objectForKey: @"positions"];
@@ -1254,6 +1357,7 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
 
 - (void) movePosition:(NSInteger) delta
 {
+    [self sekhmetCommitCellEditing];
     NSMutableDictionary *p = [self selectedProtocol];
     if( p == nil) return;
     NSMutableArray *positions = [p objectForKey: @"positions"];
@@ -1296,6 +1400,7 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
 
 - (IBAction) takeFromScreen:(id) sender
 {
+    [self sekhmetCommitCellEditing];
     NSMutableDictionary *p = [self selectedProtocol];
     if( p == nil) return;
     [SekhmetOpening takeFromScreenIntoProtocol: p];
@@ -1305,6 +1410,14 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
 
 - (IBAction) resetToDefaults:(id) sender
 {
+    [self sekhmetCommitCellEditing];
+    // SekhVet Paket CS (review finding 8): this deletes every protocol the user has made - ask first.
+    NSAlert *a = [[[NSAlert alloc] init] autorelease];
+    [a setMessageText: NSLocalizedString( @"Reset the opening protocols to the defaults?", nil)];
+    [a setInformativeText: NSLocalizedString( @"All protocols you have added or changed are deleted and replaced by the built-in ones. This cannot be undone.", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Reset", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Cancel", nil)];
+    if( [a runModal] != NSAlertFirstButtonReturn) return;
     [[NSUserDefaults standardUserDefaults] removeObjectForKey: SekhmetOpeningProtocolsKey];
     [self loadFromDefaults];
 }
@@ -1323,7 +1436,8 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
         }
         else
         {
-            [regionField setStringValue: [p objectForKey: @"region"]];
+            NSString *region = [p objectForKey: @"region"];   // SekhVet Paket CS: a protocol without "region" (damaged defaults) gave setStringValue: nil
+            [regionField setStringValue: [region isKindOfClass: [NSString class]] ? region : @""];
             [rowsField setStringValue: [NSString stringWithFormat: @"%d", [[p objectForKey: @"rows"] intValue]]];
             [columnsField setStringValue: [NSString stringWithFormat: @"%d", [[p objectForKey: @"columns"] intValue]]];
             [blackTilesButton setState: [[p objectForKey: @"blackTiles"] boolValue] ? NSControlStateValueOn : NSControlStateValueOff];
@@ -1348,6 +1462,7 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
 {
     if( tv == protocolTable)
     {
+        if( row < 0 || row >= (NSInteger) protocols.count) return nil;   // SekhVet Paket CS: stale row
         NSDictionary *p = [protocols objectAtIndex: row];
         NSString *ident = [col identifier];
         if( [ident isEqualToString: @"Name"]) return [p objectForKey: @"name"];
@@ -1359,6 +1474,7 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
         NSMutableDictionary *p = [self selectedProtocol];
         if( p == nil) return nil;
         NSArray *positions = [p objectForKey: @"positions"];
+        if( row < 0 || row >= (NSInteger) positions.count) return nil;   // SekhVet Paket CS: stale row
         NSDictionary *pos = [positions objectAtIndex: row];
         NSString *ident = [col identifier];
         if( [ident isEqualToString: @"Keywords"]) return [pos objectForKey: @"keywords"];
@@ -1376,6 +1492,7 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
 {
     if( tv == protocolTable)
     {
+        if( row < 0 || row >= (NSInteger) protocols.count) return;   // SekhVet Paket CS: the edited row is gone - drop the edit
         NSMutableDictionary *p = [protocols objectAtIndex: row];
         NSString *ident = [col identifier];
         if( value == nil) value = @"";
@@ -1388,6 +1505,7 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
         NSMutableDictionary *p = [self selectedProtocol];
         if( p == nil) return;
         NSMutableArray *positions = [p objectForKey: @"positions"];
+        if( row < 0 || row >= (NSInteger) positions.count) return;   // SekhVet Paket CS: the edited row is gone - drop the edit
         NSMutableDictionary *pos = [positions objectAtIndex: row];
         NSString *ident = [col identifier];
         if( value == nil) value = @"";
@@ -1407,3 +1525,5 @@ static SekhmetOpeningPanel *sekhmetOpeningPanel = nil;
 }
 
 @end
+
+#endif // SEKHVET_LOGIC_TEST

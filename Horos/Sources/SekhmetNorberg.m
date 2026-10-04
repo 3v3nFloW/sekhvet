@@ -9,10 +9,14 @@
 #import "ViewerController.h"
 #import "Notifications.h"
 #import "StringTexture.h"
+#import "ToolbarPanel.h"
+#import "SekhmetViewerKategorie.h"
 #import <math.h>
+#import <objc/runtime.h>
 
 static SekhmetNorberg *sekhmetNorberg = nil;
 static BOOL sekhmetNorbergUpdating = NO;      // setName: posts OsirixROIChangeNotification -> no recursion
+static char sekhmetGripGapKey;                // SekhVet Paket CS: associated NSNumber = gap the grip was last snapped with
 
 static NSString* const kHeadName[ 2]    = { @"HD head R", @"HD head L" };
 static NSString* const kNorbergName[ 2] = { @"Norberg R", @"Norberg L" };   // prefix; full name "Norberg R: 104.3°"
@@ -27,8 +31,9 @@ static const RGBColor kSideColor[ 2]    = { { 0x0000, 0xBFBF, 0xFFFF },      // 
 static NSString* const kDIRiskKey = @"SekhmetDIRisk";                         // Paket BE: show the risk level in the DI label (option)
 
 // Parts of the measurement (Paket BD): the femoral head circles (+ grips) are shared by both measurements.
-// kPartCups covers the cup circles + their grips and the "HD ace" points of Build 90.
-enum { kPartHeads = 1, kPartRims = 2, kPartCups = 4, kPartAll = 7 };
+// kPartCups covers the cup circles + their grips and the "HD ace" points of Build 90 (kept so that measurements saved
+// with that build are still removed together with the distraction index).
+enum { kPartHeads = 1, kPartRims = 2, kPartCups = 4 };
 
 @implementation SekhmetNorberg
 
@@ -80,7 +85,10 @@ enum { kPartHeads = 1, kPartRims = 2, kPartCups = 4, kPartAll = 7 };
 
 + (NSString*) riskTextForDI:(double) di
 {
-    return di < 0.3 ? @"low" : di < 0.7 ? @"moderate" : @"high";
+    // SekhVet Paket CS: the level follows the DISPLAYED value (two decimals) and the legend "< 0.30 low · 0.30–0.70 moderate ·
+    // > 0.70 high" — 0.296 is shown as "0.30" and must not read "low", 0.70 is still "moderate".
+    long h = lround( di * 100.0);
+    return h < 30 ? @"low" : h > 70 ? @"high" : @"moderate";
 }
 
 + (BOOL) showsRisk
@@ -118,8 +126,9 @@ enum { kPartHeads = 1, kPartRims = 2, kPartCups = 4, kPartAll = 7 };
     BOOL ok = fabs( wR - 105.0) < 0.05 && fabs( wL - 105.0) < 0.05 && fabs( wAniso - 90.0) < 0.05 && fabs( wCaudal - 105.0) < 0.05
            && fabs( diR - 0.5) < 0.0005 && fabs( diAniso - 0.5) < 0.0005 && fabs( diDiag - 0.5) < 0.0005 && diZero == 0
            && [[self riskTextForDI: 0.29] isEqualToString: @"low"] && [[self riskTextForDI: 0.3] isEqualToString: @"moderate"]
-           && [[self riskTextForDI: 0.69] isEqualToString: @"moderate"] && [[self riskTextForDI: 0.7] isEqualToString: @"high"];
-    return [NSString stringWithFormat: @"R=%.1f L=%.1f aniso=%.1f caudal=%.1f DI=%.3f DIaniso=%.3f DIdiag=%.3f DIzero=%.3f risk(0.29/0.3/0.69/0.7)=%@/%@/%@/%@ -> %@", wR, wL, wAniso, wCaudal, diR, diAniso, diDiag, diZero, [self riskTextForDI: 0.29], [self riskTextForDI: 0.3], [self riskTextForDI: 0.69], [self riskTextForDI: 0.7], ok ? @"OK" : @"FAIL"];
+           && [[self riskTextForDI: 0.296] isEqualToString: @"moderate"] && [[self riskTextForDI: 0.69] isEqualToString: @"moderate"]
+           && [[self riskTextForDI: 0.7] isEqualToString: @"moderate"] && [[self riskTextForDI: 0.71] isEqualToString: @"high"];
+    return [NSString stringWithFormat: @"R=%.1f L=%.1f aniso=%.1f caudal=%.1f DI=%.3f DIaniso=%.3f DIdiag=%.3f DIzero=%.3f risk(0.29/0.3/0.7/0.71)=%@/%@/%@/%@ -> %@", wR, wL, wAniso, wCaudal, diR, diAniso, diDiag, diZero, [self riskTextForDI: 0.29], [self riskTextForDI: 0.3], [self riskTextForDI: 0.7], [self riskTextForDI: 0.71], ok ? @"OK" : @"FAIL"];
 }
 #endif // SEKHVET_TESTHAKEN
 
@@ -197,6 +206,24 @@ static void sekhmetGripOntoRimSigned( ROI *circle, ROI *grip, ROI *other, int si
     NSPoint np = NSMakePoint( rc.origin.x + dir.x * (rc.size.width + gap), rc.origin.y + dir.y * (rc.size.width + gap));
     if( fabs( np.x - g.x) > 0.01 || fabs( np.y - g.y) > 0.01)
         [grip setROIRect: NSMakeRect( np.x, np.y, 0, 0)];
+    objc_setAssociatedObject( grip, &sekhmetGripGapKey, [NSNumber numberWithFloat: gap], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+// SekhVet Paket CS: the gap is 18 VIEW points, so in image pixels it depends on zoom and backing scale. Until Build 146 every
+// change notification of a grip (ROI -setROIMode: posts one on a mere click) recomputed the radius as "distance - gap(now)":
+// after zooming, resizing the window or reopening the study, selecting or deselecting the grip changed the femoral head radius
+// — and with it the distraction index — without any drag. A grip counts as dragged only if it has left the spot the last snap
+// put it on. A grip that was never snapped in this session (loaded from the database, restored by undo) is not dragged either:
+// the first notification only re-snaps it with the current gap.
+static BOOL sekhmetGripUntouched( ROI *circle, ROI *grip, ROI *other, int side, float sign)
+{
+    NSNumber *n = objc_getAssociatedObject( grip, &sekhmetGripGapKey);
+    if( n == nil) return YES;
+    NSRect rc = circle.rect;
+    NSPoint dir = sekhmetOuterDir( circle, other, side);
+    float d = rc.size.width + [n floatValue];
+    NSPoint e = NSMakePoint( rc.origin.x + sign * dir.x * d, rc.origin.y + sign * dir.y * d);
+    return fabs( e.x - grip.rect.origin.x) < 0.05 && fabs( e.y - grip.rect.origin.y) < 0.05;
 }
 
 static void sekhmetGripOntoRim( ROI *head, ROI *grip, ROI *other, int side, float gap)
@@ -219,20 +246,15 @@ static void sekhmetGripOntoRim( ROI *head, ROI *grip, ROI *other, int side, floa
     }
 }
 
-- (void) removeExistingIn:(DCMView*) v
-{
-    [self removeParts: kPartAll in: v];
-}
-
 // Inserted at the FRONT of curRoiList: DCMView mouseDown takes the first ROI that is hit, so points must precede the circles.
-- (ROI*) addROIOfType:(ToolMode) t at:(NSPoint) c radius:(float) r name:(NSString*) name side:(int) side group:(NSTimeInterval) gid view:(DCMView*) v
+- (ROI*) addROIOfType:(ToolMode) t at:(NSPoint) c radius:(float) r name:(NSString*) name side:(int) side view:(DCMView*) v
 {
     DCMPix *pix = v.curDCM;
     ROI *roi = [[[ROI alloc] initWithType: t :pix.pixelSpacingX :pix.pixelSpacingY :[DCMPix originCorrectedAccordingToOrientation: pix]] autorelease];
     [roi setROIRect: NSMakeRect( c.x, c.y, r, r)];   // tOval: origin = centre, size = radii; t2DPoint: origin = point
     [roi setName: name];
-    [roi setColor: kSideColor[ side]];
-    (void) gid;                                       // NO common groupID: Horos selects and drags a whole group together (DCMView setMode:toROIGroupWithID:) -> distance/angle could not change
+    [roi setColor: kSideColor[ side] globally: NO];   // SekhVet Paket CS: -setColor: alone rewrites the user's default ROI colour
+    // NO common groupID: Horos selects and drags a whole group together (DCMView setMode:toROIGroupWithID:) -> distance/angle could not change
     if( t == tOval) roi.displayTextualData = NO;      // no area/mean box on the head circles
     [roi setCurView: v];
     [[v curRoiList] insertObject: roi atIndex: 0];
@@ -336,23 +358,6 @@ static void sekhmetDrawDIIconBody( void)
     return icon;
 }
 
-+ (NSImage*) toolbarDIDeleteIcon
-{
-    static NSImage *icon = nil;
-    if( icon) return icon;
-    icon = [[NSImage alloc] initWithSize: NSMakeSize( 32, 32)];
-    [icon lockFocus];
-    sekhmetDrawDIIconBody();
-    NSBezierPath *x = [NSBezierPath bezierPath];
-    [x setLineWidth: 2.5];
-    [x moveToPoint: NSMakePoint( 11, 21)]; [x lineToPoint: NSMakePoint( 21, 31)];
-    [x moveToPoint: NSMakePoint( 21, 21)]; [x lineToPoint: NSMakePoint( 11, 31)];
-    [x stroke];
-    [icon unlockFocus];
-    [icon setTemplate: YES];
-    return icon;
-}
-
 - (void) deleteInFrontViewer:(id) sender
 {
     [self deleteInViewer: [ViewerController frontMostDisplayed2DViewer]];
@@ -371,6 +376,8 @@ static void sekhmetDrawDIIconBody( void)
     ROI *heads[ 2], *rims[ 2], *grips[ 2], *cups[ 2], *cupGrips[ 2];
     sekhmetFindGroup( [v curRoiList], heads, rims, grips, cups, cupGrips);
     BOOL keepHeads = (cups[ 0] || cups[ 1]);
+    if( rims[ 0] || rims[ 1] || (keepHeads == NO && (heads[ 0] || heads[ 1])))
+        [vc addToUndoQueue: @"roi"];             // SekhVet Paket CS: deleting can be undone (Cmd-Z)
     [self removeParts: kPartRims | (keepHeads ? 0 : kPartHeads) in: v];
     [v setNeedsDisplay: YES];
 }
@@ -383,37 +390,175 @@ static void sekhmetDrawDIIconBody( void)
     ROI *heads[ 2], *rims[ 2], *grips[ 2], *cups[ 2], *cupGrips[ 2];
     sekhmetFindGroup( [v curRoiList], heads, rims, grips, cups, cupGrips);
     BOOL keepHeads = (rims[ 0] || rims[ 1]);
+    [vc addToUndoQueue: @"roi"];                 // SekhVet Paket CS
     [self removeParts: kPartCups | (keepHeads ? 0 : kPartHeads) in: v];
     [v setNeedsDisplay: YES];
 }
 
-+ (NSImage*) toolbarDeleteIcon
+#pragma mark - Toolbar toggle (Paket CS)
+
+// One push-on/push-off button per measurement instead of "place" + "delete": pressed = the measurement is on this image.
+// Same construction as the Overlay button (a one-segment NSSegmentedControl as the item's view), because Horos may hang the
+// viewer toolbar into its own window (ToolbarPanelController) whose window controller is not the viewer.
++ (ViewerController*) viewerForToolbarWindow:(NSWindow*) w
 {
-    static NSImage *icon = nil;
-    if( icon) return icon;
-    icon = [[NSImage alloc] initWithSize: NSMakeSize( 32, 32)];
-    [icon lockFocus];
-    [[NSColor blackColor] set];
-    NSBezierPath *bp = [NSBezierPath bezierPath];
-    [bp setLineWidth: 2.0];
-    [bp appendBezierPathWithOvalInRect: NSMakeRect( 2.5, 8.5, 11, 11)];
-    [bp appendBezierPathWithOvalInRect: NSMakeRect( 18.5, 8.5, 11, 11)];
-    [bp stroke];
-    NSBezierPath *ln = [NSBezierPath bezierPath];
-    [ln setLineWidth: 1.5];
-    CGFloat dash[ 2] = { 2.5, 2.0 };
-    [ln setLineDash: dash count: 2 phase: 0];
-    [ln moveToPoint: NSMakePoint( 8, 14)]; [ln lineToPoint: NSMakePoint( 24, 14)];
-    [ln stroke];
-    // cross = delete
-    NSBezierPath *x = [NSBezierPath bezierPath];
-    [x setLineWidth: 2.5];
-    [x moveToPoint: NSMakePoint( 11, 21)]; [x lineToPoint: NSMakePoint( 21, 31)];
-    [x moveToPoint: NSMakePoint( 21, 21)]; [x lineToPoint: NSMakePoint( 11, 31)];
-    [x stroke];
-    [icon unlockFocus];
-    [icon setTemplate: YES];
-    return icon;
+    id wc = [w windowController];
+    if( [wc isKindOfClass: [ViewerController class]]) return wc;
+    if( [wc isKindOfClass: [ToolbarPanelController class]]) return [(ToolbarPanelController*) wc viewer];
+    return nil;
+}
+
++ (BOOL) hasNorbergInView:(DCMView*) v
+{
+    ROI *heads[ 2], *rims[ 2], *grips[ 2], *cups[ 2], *cupGrips[ 2];
+    return v != nil && sekhmetFindGroup( [v curRoiList], heads, rims, grips, cups, cupGrips) && (rims[ 0] || rims[ 1]);
+}
+
++ (BOOL) hasDIInView:(DCMView*) v
+{
+    ROI *heads[ 2], *rims[ 2], *grips[ 2], *cups[ 2], *cupGrips[ 2];
+    return v != nil && sekhmetFindGroup( [v curRoiList], heads, rims, grips, cups, cupGrips) && (cups[ 0] || cups[ 1]);
+}
+
++ (void) configureToolbarItem:(NSToolbarItem*) item distractionIndex:(BOOL) di viewer:(ViewerController*) vc
+{
+    if( di)
+    {
+        [item setLabel: NSLocalizedString( @"Distraction Index", nil)];
+        [item setPaletteLabel: NSLocalizedString( @"Distraction Index (SekhVet)", nil)];
+        [item setToolTip: NSLocalizedString( @"PennHIP distraction view: click to place a yellow acetabular cup circle on each femoral head circle (DI = distance of the two centres / head radius); drag a circle at its centre, its grip or use the scroll wheel over it to resize. Click again to remove the distraction index (Cmd-Z brings it back). Reset: Vet Tools menu.", nil)];
+    }
+    else
+    {
+        [item setLabel: NSLocalizedString( @"Norberg Angle", nil)];
+        [item setPaletteLabel: NSLocalizedString( @"Norberg Angle (SekhVet)", nil)];
+        [item setToolTip: NSLocalizedString( @"Hip dysplasia: click to place both femoral head circles and acetabular rim points, then drag them. Click again to remove the measurement (Cmd-Z brings it back). Reset: Vet Tools menu.", nil)];
+    }
+    NSSegmentedControl *seg = [[[NSSegmentedControl alloc] initWithFrame: NSMakeRect( 0, 0, 44, 25)] autorelease];
+    [seg setSegmentStyle: NSSegmentStyleTexturedRounded];
+    [seg setSegmentCount: 1];
+    [[seg cell] setTrackingMode: NSSegmentSwitchTrackingSelectAny];
+    [seg setImage: di ? [self toolbarDIIcon] : [self toolbarIcon] forSegment: 0];
+    [seg setLabel: @"" forSegment: 0];
+    [seg setWidth: 40 forSegment: 0];
+    [seg setTag: di ? 1 : 0];
+    [seg setTarget: self];
+    [seg setAction: @selector(toolbarSegmentClicked:)];
+    [seg setSelected: di ? [self hasDIInView: [vc imageView]] : [self hasNorbergInView: [vc imageView]] forSegment: 0];
+    [seg sizeToFit];
+    [item setView: seg];
+    NSSize sz = [seg frame].size;
+    [item setMinSize: sz];
+    [item setMaxSize: sz];
+    // text-only toolbars and the overflow menu: a plain menu item that toggles as well
+    NSMenuItem *mi = [[[NSMenuItem alloc] initWithTitle: [item label] action: @selector(toolbarMenuClicked:) keyEquivalent: @""] autorelease];
+    [mi setTarget: self];
+    [mi setTag: di ? 1 : 0];
+    [mi setRepresentedObject: [NSValue valueWithNonretainedObject: vc]];
+    [item setMenuFormRepresentation: mi];
+}
+
++ (void) toggleDistractionIndex:(BOOL) di inViewer:(ViewerController*) vc
+{
+    if( vc == nil) { NSBeep(); return; }
+    SekhmetNorberg *n = [SekhmetNorberg shared];
+    BOOL present = di ? [self hasDIInView: [vc imageView]] : [self hasNorbergInView: [vc imageView]];
+    if( di) { if( present) [n deleteDIInViewer: vc]; else [n placeDIInViewer: vc]; }
+    else    { if( present) [n deleteInViewer: vc];   else [n placeInViewer: vc]; }
+    [self syncToolbarOfViewer: vc];
+    [[vc window] makeKeyWindow];                      // after a click into the toolbar panel, keys (Cmd-Z, Backspace) go to the image again
+    [[vc window] makeFirstResponder: [vc imageView]];
+}
+
++ (void) toolbarSegmentClicked:(NSSegmentedControl*) seg
+{
+    [self toggleDistractionIndex: [seg tag] == 1 inViewer: [self viewerForToolbarWindow: [seg window]]];
+}
+
++ (void) toolbarMenuClicked:(NSMenuItem*) mi
+{
+    ViewerController *vc = [[mi representedObject] nonretainedObjectValue];
+    if( [[ViewerController getDisplayed2DViewers] containsObject: vc] == NO) vc = [ViewerController frontMostDisplayed2DViewer];
+    [self toggleDistractionIndex: [mi tag] == 1 inViewer: vc];
+}
+
+static void sekhmetSetSegment( ViewerController *vc, NSString *identifier, BOOL on)
+{
+    for( NSToolbarItem *it in [[vc toolbar] items])
+    {
+        if( [[it itemIdentifier] isEqualToString: identifier] == NO) continue;
+        NSSegmentedControl *seg = (NSSegmentedControl*) [it view];
+        if( [seg isKindOfClass: [NSSegmentedControl class]] && [seg segmentCount] > 0 && [seg isSelectedForSegment: 0] != on)
+            [seg setSelected: on forSegment: 0];
+    }
+}
+
++ (void) syncToolbarOfViewer:(ViewerController*) vc
+{
+    if( vc == nil) return;
+    sekhmetSetSegment( vc, SekhmetNorbergToolbarItemIdentifier, [self hasNorbergInView: [vc imageView]]);
+    sekhmetSetSegment( vc, SekhmetDIToolbarItemIdentifier, [self hasDIInView: [vc imageView]]);
+}
+
+// Called on every draw of a DCMView (drawObjects:): the button follows the image — a study with a saved measurement shows the
+// button pressed, paging to another image, undo and Backspace are picked up without further observers. Only a changed state
+// touches the control, and never from inside the draw.
++ (void) syncToolbarForView:(DCMView*) v norberg:(BOOL) norberg di:(BOOL) di
+{
+    id wc = [v windowController];
+    if( [wc isKindOfClass: [ViewerController class]] == NO || [(ViewerController*) wc imageView] != v) return;
+    ViewerController *vc = wc;
+    BOOL differs = NO;
+    for( NSToolbarItem *it in [[vc toolbar] items])
+    {
+        BOOL isN = [[it itemIdentifier] isEqualToString: SekhmetNorbergToolbarItemIdentifier];
+        BOOL isD = isN == NO && [[it itemIdentifier] isEqualToString: SekhmetDIToolbarItemIdentifier];
+        if( isN == NO && isD == NO) continue;
+        NSSegmentedControl *seg = (NSSegmentedControl*) [it view];
+        if( [seg isKindOfClass: [NSSegmentedControl class]] && [seg segmentCount] > 0 && [seg isSelectedForSegment: 0] != (isN ? norberg : di))
+            differs = YES;
+    }
+    if( differs)
+        [self performSelector: @selector(syncToolbarOfViewer:) withObject: vc afterDelay: 0];
+}
+
+#pragma mark - Exchange sides R <-> L (Paket CS)
+
+// The sides are assigned by the screen when the measurement is placed: left on the screen = right hip (VD convention). That is
+// wrong for an image that is shown mirrored. "Exchange Sides R ↔ L" exchanges the side of every part (names, colours); the geometry and
+// the values stay, the right hip is then the circle on the right of the screen.
+- (void) swapSidesInViewer:(ViewerController*) vc
+{
+    DCMView *v = [vc imageView];
+    if( v == nil || v.curDCM == nil) { NSBeep(); return; }
+    ROI *heads[ 2], *rims[ 2], *grips[ 2], *cups[ 2], *cupGrips[ 2];
+    if( sekhmetFindGroup( [v curRoiList], heads, rims, grips, cups, cupGrips) == NO) { NSBeep(); return; }
+    [vc addToUndoQueue: @"roi"];
+    sekhmetNorbergUpdating = YES;
+    @try
+    {
+        for( int s = 0; s < 2; s++)
+        {
+            int t = 1 - s;                                // new side
+            [heads[ s] setName: kHeadName[ t]];
+            [heads[ s] setColor: kSideColor[ t] globally: NO];
+            if( grips[ s]) [grips[ s] setName: kRadiusName[ t]];
+            if( rims[ s]) { [rims[ s] setName: kNorbergName[ t]]; [rims[ s] setColor: kSideColor[ t] globally: NO]; }   // value is appended by updateView:
+            if( cups[ s]) [cups[ s] setName: kCupName[ t]];
+            if( cupGrips[ s]) [cupGrips[ s] setName: kCupGripName[ t]];
+        }
+    }
+    @finally
+    {
+        sekhmetNorbergUpdating = NO;
+    }
+    [self updateView: v];
+    [v setNeedsDisplay: YES];
+}
+
+- (void) swapSidesInFrontViewer:(id) sender
+{
+    [self swapSidesInViewer: [ViewerController frontMostDisplayed2DViewer]];
 }
 
 // Fresh femoral head circles + grips, sized relative to the window (as ScrutPilot does): screen left = right hip.
@@ -427,18 +572,17 @@ static void sekhmetDrawDIIconBody( void)
     float r = rPx / scale;                            // image pixels
 
     NSPoint centre[ 2] = { [v ConvertFromView2GL: NSMakePoint( -hPx, 0)], [v ConvertFromView2GL: NSMakePoint( hPx, 0)] };
-    NSTimeInterval gid = [NSDate timeIntervalSinceReferenceDate];
     float gap = sekhmetGripGap( v);
     // Insertion is at the front of curRoiList -> circles first, then the grips end up before them.
     for( int s = 0; s < 2; s++)
-        heads[ s] = [self addROIOfType: tOval at: centre[ s] radius: r name: kHeadName[ s] side: s group: gid view: v];
+        heads[ s] = [self addROIOfType: tOval at: centre[ s] radius: r name: kHeadName[ s] side: s view: v];
     for( int s = 0; s < 2; s++)
     {
         float dx = centre[ s].x - centre[ 1-s].x, dy = centre[ s].y - centre[ 1-s].y, d = hypotf( dx, dy);
         if( d < 0.001) { dx = s == 0 ? -1 : 1; dy = 0; d = 1; }
         NSPoint gp = NSMakePoint( centre[ s].x + dx / d * (r + gap), centre[ s].y + dy / d * (r + gap));
-        grips[ s] = [self addROIOfType: t2DPoint at: gp radius: 0 name: kRadiusName[ s] side: s group: gid view: v];
-        [grips[ s] setColor: kRadiusColor];
+        grips[ s] = [self addROIOfType: t2DPoint at: gp radius: 0 name: kRadiusName[ s] side: s view: v];
+        [grips[ s] setColor: kRadiusColor globally: NO];
         grips[ s].displayTextualData = NO;
     }
     if( rPxOut) *rPxOut = rPx;
@@ -455,8 +599,8 @@ static void sekhmetDrawDIIconBody( void)
         NSPoint dir = sekhmetOuterDir( heads[ s], heads[ 1-s], s);
         NSRect rc = heads[ s].rect;
         NSPoint gp = NSMakePoint( rc.origin.x + dir.x * (rc.size.width + gap), rc.origin.y + dir.y * (rc.size.width + gap));
-        grips[ s] = [self addROIOfType: t2DPoint at: gp radius: 0 name: kRadiusName[ s] side: s group: 0 view: v];
-        [grips[ s] setColor: kRadiusColor];
+        grips[ s] = [self addROIOfType: t2DPoint at: gp radius: 0 name: kRadiusName[ s] side: s view: v];
+        [grips[ s] setColor: kRadiusColor globally: NO];
         grips[ s].displayTextualData = NO;
     }
 }
@@ -488,6 +632,7 @@ static float sekhmetViewRadius( DCMView *v, ROI *head)
 {
     if( [self viewerReady: vc title: NSLocalizedString( @"Norberg Angle", nil)] == NO) return;
     DCMView *v = [vc imageView];
+    [vc addToUndoQueue: @"roi"];                 // SekhVet Paket CS: place / reset can be undone (Cmd-Z)
 
     ROI *heads[ 2], *rims[ 2], *grips[ 2], *cups[ 2], *cupGrips[ 2];
     BOOL haveHeads = sekhmetFindGroup( [v curRoiList], heads, rims, grips, cups, cupGrips);
@@ -514,7 +659,7 @@ static float sekhmetViewRadius( DCMView *v, ROI *head)
     }
     for( int s = 0; s < 2; s++)
     {
-        ROI *p = [self addROIOfType: t2DPoint at: rim[ s] radius: 0 name: kNorbergName[ s] side: s group: 0 view: v];
+        ROI *p = [self addROIOfType: t2DPoint at: rim[ s] radius: 0 name: kNorbergName[ s] side: s view: v];
         p.displayTextualData = NO;      // Paket X: the value is drawn at the arc; the Horos text box hid the circle
     }
 
@@ -529,6 +674,7 @@ static float sekhmetViewRadius( DCMView *v, ROI *head)
 {
     if( [self viewerReady: vc title: NSLocalizedString( @"Distraction Index", nil)] == NO) return;
     DCMView *v = [vc imageView];
+    [vc addToUndoQueue: @"roi"];                 // SekhVet Paket CS
 
     ROI *heads[ 2], *rims[ 2], *grips[ 2], *cups[ 2], *cupGrips[ 2];
     BOOL haveHeads = sekhmetFindGroup( [v curRoiList], heads, rims, grips, cups, cupGrips);
@@ -551,16 +697,16 @@ static float sekhmetViewRadius( DCMView *v, ROI *head)
         if( d < 0.001) { dx = s == 0 ? 1 : -1; dy = 0; d = 1; }
         NSPoint cv = NSMakePoint( c.x + dx / d * rp * 0.6f, c.y + dy / d * rp * 0.6f - rp * 0.3f);   // view space: y down, cranial = up
         cupCentre[ s] = [v ConvertFromView2GL: cv];
-        ROI *cup = [self addROIOfType: tOval at: cupCentre[ s] radius: heads[ s].rect.size.width name: kCupName[ s] side: s group: 0 view: v];
-        [cup setColor: kCupColor];
+        ROI *cup = [self addROIOfType: tOval at: cupCentre[ s] radius: heads[ s].rect.size.width name: kCupName[ s] side: s view: v];
+        [cup setColor: kCupColor globally: NO];
     }
     for( int s = 0; s < 2; s++)
     {
         NSPoint dir = sekhmetOuterDir( heads[ s], heads[ 1-s], s);   // inner side = towards the other hip
         float r = heads[ s].rect.size.width;
         NSPoint gp = NSMakePoint( cupCentre[ s].x - dir.x * (r + gap), cupCentre[ s].y - dir.y * (r + gap));
-        ROI *g = [self addROIOfType: t2DPoint at: gp radius: 0 name: kCupGripName[ s] side: s group: 0 view: v];
-        [g setColor: kCupColor];
+        ROI *g = [self addROIOfType: t2DPoint at: gp radius: 0 name: kCupGripName[ s] side: s view: v];
+        [g setColor: kCupColor globally: NO];
         g.displayTextualData = NO;
     }
 
@@ -595,7 +741,7 @@ static float sekhmetViewRadius( DCMView *v, ROI *head)
             ROI *h = heads[ s];
             NSRect rc = h.rect;
             ROI *g = grips[ s];
-            if( g && changed == g)                        // grip dragged: radius = distance grip <-> centre minus gap; grip snaps back to the outer side
+            if( g && changed == g && sekhmetGripUntouched( h, g, heads[ 1-s], s, 1) == NO)   // grip dragged: radius = distance grip <-> centre minus gap; grip snaps back to the outer side
             {
                 float nr = MAX( kMinRadiusPx, hypotf( g.rect.origin.x - rc.origin.x, g.rect.origin.y - rc.origin.y) - gap);
                 rc.size.width = nr; rc.size.height = nr;
@@ -620,7 +766,7 @@ static float sekhmetViewRadius( DCMView *v, ROI *head)
             if( cup)
             {
                 NSRect cc = cup.rect;
-                if( cg && changed == cg)
+                if( cg && changed == cg && sekhmetGripUntouched( cup, cg, heads[ 1-s], s, -1) == NO)
                 {
                     float nr = MAX( kMinRadiusPx, hypotf( cg.rect.origin.x - cc.origin.x, cg.rect.origin.y - cc.origin.y) - gap);
                     cc.size.width = nr; cc.size.height = nr;
@@ -696,6 +842,10 @@ static float sekhmetViewRadius( DCMView *v, ROI *head)
         if( target == nil || rel < best) { target = c; best = rel; }
     }
     if( target == nil) return NO;
+    // SekhVet Paket CS: a locked or hidden circle is not resized, and the inertia after a trackpad swipe does not keep
+    // changing the radius (consumed, so the image stack does not scroll under the circle either).
+    if( target.locked || target.hidden) return NO;
+    if( [event momentumPhase] != NSEventPhaseNone) return YES;
     float delta = [event hasPreciseScrollingDeltas] ? [event scrollingDeltaY] * 0.25f : [event deltaY] * 3.0f;   // trackpad fine, wheel coarse
     if( delta == 0) return YES;
     float scale = v.scaleValue > 0 ? v.scaleValue : 1;
@@ -716,12 +866,14 @@ static void sekhmetDrawLabel( DCMView *v, NSString *txt, float x, float y)
     static NSCache *cache = nil;
     if( cache == nil) { cache = [[NSCache alloc] init]; cache.countLimit = 40; }
     float sf = v.window.backingScaleFactor > 0 ? v.window.backingScaleFactor : 1;
-    NSString *key = [NSString stringWithFormat: @"%@|%.1f", txt, sf];
+    NSString *fontName = [[NSUserDefaults standardUserDefaults] stringForKey: @"LabelFONTNAME"];
+    float fontSize = [[NSUserDefaults standardUserDefaults] floatForKey: @"LabelFONTSIZE"];
+    NSString *key = [NSString stringWithFormat: @"%@|%.1f|%@|%.1f", txt, sf, fontName, fontSize];   // SekhVet Paket CS: font is part of the key
     StringTexture *sT = [cache objectForKey: key];
     if( sT == nil)
     {
         NSMutableDictionary *attrib = [NSMutableDictionary dictionary];
-        NSFont *f = [NSFont fontWithName: [[NSUserDefaults standardUserDefaults] stringForKey: @"LabelFONTNAME"] size: [[NSUserDefaults standardUserDefaults] floatForKey: @"LabelFONTSIZE"]];
+        NSFont *f = fontName ? [NSFont fontWithName: fontName size: fontSize] : nil;
         if( f == nil) f = [NSFont boldSystemFontOfSize: 14];
         [attrib setObject: f forKey: NSFontAttributeName];
         [attrib setObject: [NSColor whiteColor] forKey: NSForegroundColorAttributeName];
@@ -771,7 +923,20 @@ static void sekhmetDrawLabel( DCMView *v, NSString *txt, float x, float y)
     if( [v isKindOfClass: [DCMView class]] == NO || v.curDCM == nil) return;
 
     ROI *heads[ 2], *rims[ 2], *grips[ 2], *cups[ 2], *cupGrips[ 2];
-    if( sekhmetFindGroup( [v curRoiList], heads, rims, grips, cups, cupGrips) == NO) return;
+    BOOL complete = sekhmetFindGroup( [v curRoiList], heads, rims, grips, cups, cupGrips);
+    [SekhmetNorberg syncToolbarForView: v norberg: complete && (rims[ 0] || rims[ 1]) di: complete && (cups[ 0] || cups[ 1])];
+    if( complete == NO)
+    {
+        // SekhVet Paket CS: one femoral head circle was deleted by hand (Backspace) -> the rest of the measurement is orphaned:
+        // no overlay, no live update, stale values in the names. Remove it on the next pass of the run loop (never while drawing).
+        BOOL orphans = NO;
+        for( ROI *r in [v curRoiList]) if( sekhmetIsOurROI( r)) { orphans = YES; break; }
+        if( orphans) [self performSelector: @selector(removeOrphansIn:) withObject: v afterDelay: 0];
+        return;
+    }
+
+    if( (cupGrips[ 0] && cups[ 0] == nil) || (cupGrips[ 1] && cups[ 1] == nil))
+        [self performSelector: @selector(removeOrphansIn:) withObject: v afterDelay: 0];
 
     CGLContextObj cgl_ctx = [[NSOpenGLContext currentContext] CGLContextObj];
     if( cgl_ctx == nil) return;
@@ -780,6 +945,7 @@ static void sekhmetDrawLabel( DCMView *v, NSString *txt, float x, float y)
     float sf = v.window.backingScaleFactor > 0 ? v.window.backingScaleFactor : 1;
 
     // Draw in view space (backing pixels, centred, y down): ConvertFromGL2View honours zoom, rotation and flips.
+    glPushAttrib( GL_ENABLE_BIT | GL_LINE_BIT | GL_COLOR_BUFFER_BIT | GL_CURRENT_BIT);   // SekhVet Paket CS: leave Horos' GL state as found
     glPushMatrix();
     glLoadIdentity();
     glScalef( 2.0f / f.size.width, -2.0f / f.size.height, 1.0f);
@@ -927,13 +1093,35 @@ static void sekhmetDrawLabel( DCMView *v, NSString *txt, float x, float y)
         double w = [SekhmetNorberg angleAtCenter: h.rect.origin rim: p.rect.origin other: heads[ 1-s].rect.origin spacingX: pix.pixelSpacingX spacingY: pix.pixelSpacingY];
         // Paket Z: label at a fixed clock position outside the circle — 10 o'clock for R (blue), 2 o'clock for L (red)
         float lr = rp + 34*sf;
-        float clock = (s == 0) ? -0.866f : 0.866f;                 // x component: 10 o'clock left, 2 o'clock right; y = up
+        float clock = (c[ s].x <= c[ 1-s].x) ? -0.866f : 0.866f;   // x component: 10 o'clock for the circle on the left, 2 o'clock on the right; y = up
         NSString *txt = [NSString stringWithFormat: @"%@ %.1f°", s == 0 ? @"R" : @"L", w];
         sekhmetDrawLabel( v, txt, c[ s].x + lr * clock, c[ s].y - lr * 0.5f);
     }
 
     glLineWidth( 1.0f * sf);
     glPopMatrix();
+    glPopAttrib();
+}
+
+- (void) removeOrphansIn:(DCMView*) v
+{
+    if( v == nil || v.curDCM == nil) return;
+    ROI *heads[ 2], *rims[ 2], *grips[ 2], *cups[ 2], *cupGrips[ 2];
+    if( sekhmetFindGroup( [v curRoiList], heads, rims, grips, cups, cupGrips))
+    {
+        // complete (again): only a cup grip whose cup circle was deleted by hand is left over
+        for( int s = 0; s < 2; s++)
+        {
+            if( cupGrips[ s] && cups[ s] == nil)
+            {
+                [[NSNotificationCenter defaultCenter] postNotificationName: OsirixRemoveROINotification object: cupGrips[ s] userInfo: nil];
+                [[v curRoiList] removeObject: cupGrips[ s]];
+            }
+        }
+    }
+    else
+        [self removeParts: kPartHeads | kPartRims | kPartCups in: v];
+    [v setNeedsDisplay: YES];
 }
 
 @end

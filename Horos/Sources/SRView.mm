@@ -1887,7 +1887,7 @@ typedef struct _xyzArray
 	{
 		NSLog( @"Exception during drawRect... not enough memory?");
 		
-		if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+		if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rNot enough memory available.",nil), NSLocalizedString(@"OK", nil), nil, nil) == NSAlertAlternateReturn)
 			[[AppController sharedAppController] osirix64bit: self];
 		
 		[[self window] performSelector:@selector(performClose:) withObject:self afterDelay: 1.0];
@@ -2084,7 +2084,7 @@ typedef struct _xyzArray
 	}
 	catch (...)
 	{
-		if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+		if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rNot enough memory available.",nil), NSLocalizedString(@"OK", nil), nil, nil) == NSAlertAlternateReturn)
 			[[AppController sharedAppController] osirix64bit: self];
 	}
 }
@@ -2674,7 +2674,7 @@ typedef struct _xyzArray
 	
 	//Add the small OsiriX logo at the bottom right of the image
 	NSImage				*logo = [NSImage imageNamed:@"SmallLogo.tif"];
-	NSBitmapImageRep	*TIFFRep = [[NSBitmapImageRep alloc] initWithData: [logo TIFFRepresentation]];
+	NSBitmapImageRep	*TIFFRep = nil; (void) logo; // SekhVet Paket CU: no logo stamped into 3D captures (was the Horos logo)
 	
 	for( i = 0; i < [TIFFRep pixelsHigh]; i++)
 	{
@@ -3507,7 +3507,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
                 name = [name stringByAppendingFormat:@" - %@", description];
             
             if (!name.length)
-                name = @"Horos";
+                name = @"SekhVet";
             
             NSURL *url = [(NSURL *)urlRef URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"jpg"]];
             size_t i = 0;

@@ -730,7 +730,7 @@ The Horos Project was based originally upon the OsiriX Project which at the time
                 }
                 else
                 {
-                    if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Upgrade to SekhVet 64-bit to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"SekhVet 64-bit", nil), nil) == NSAlertAlternateReturn)
+                    if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Not enough memory available to complete the operation.",nil), NSLocalizedString(@"OK", nil), nil, nil) == NSAlertAlternateReturn)
                         [[AppController sharedAppController] osirix64bit: self];	
                 }
             }

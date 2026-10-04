@@ -46,47 +46,31 @@
 #define URL_H_INCLUDED
 
 // search for URLWithString
-#define URL_HOROS_VIEWER           @"http://www.horosproject.org"
+// SekhVet Paket CT: every link a user can reach goes to the SekhVet project page, none to horosproject.org.
+// The macro names are kept because other source files use them.
+#define URL_HOROS_VIEWER           @"https://github.com/3v3nFloW/sekhvet"
 #define URL_HOROS_WEB_PAGE         URL_HOROS_VIEWER
-#define URL_HOROS_LEARNING         URL_HOROS_VIEWER@"/community/communicate/"
-#define URL_HOROS_SUPPORT_PAGE     URL_HOROS_VIEWER@"/horos-technical-support/"
-#define URL_HOROS_COMMUNITY        @"https://groups.google.com/forum/#!forum/horos-project"
-#define URL_HOROS_BUG_REPORT_PAGE  @"https://github.com/horosproject/horos/issues"
+#define URL_HOROS_BUG_REPORT_PAGE  URL_HOROS_VIEWER@"/issues"
 #define URL_VENDOR                 URL_HOROS_VIEWER
-#define URL_EMAIL                  @"horos@horosproject.org"
+#define URL_EMAIL                  @"sekhvet@kappa1.vet"
 
 #define URL_VENDOR_NOTICE          URL_HOROS_VIEWER
 #define URL_VENDOR_USER_MANUAL     URL_HOROS_VIEWER
 
 #define URL_HOROS_DOC_SECURITY     URL_HOROS_VIEWER
 
-#define URL_HOROS_UPDATE           URL_HOROS_VIEWER@"/download/"
-#define URL_HOROS_UPDATE_CRASH     URL_HOROS_VIEWER@"/download/"
-
-#define URL_HOROS_VERSION          URL_HOROS_VIEWER@"/horos-content/version.xml"
-
-#define URL_HOROS_PLUGINS          URL_HOROS_VIEWER@"/horos-content/plugins/index.html"
+#define URL_HOROS_PLUGINS          URL_HOROS_VIEWER
 
 ////////////////////////////////////////////////////////////////////////////////
 // We want our own Defaults plist saved in ~/Library/Preferences/
 // Make sure it matches "Bundle Identifier" in Info.plist
+// SekhVet Paket CT: was the Horos identifier, so these macros pointed at the preferences of an installed Horos.
 
-#define BUNDLE_IDENTIFIER_PREFIX    "org.horosproject"
-#define BUNDLE_IDENTIFIER           "org.horosproject.horos"
+#define BUNDLE_IDENTIFIER_PREFIX    "vet.kappa1.sekhvet"
+#define BUNDLE_IDENTIFIER           "vet.kappa1.sekhvet.horos"
 
 ////////////////////////////////////////////////////////////////////////////////
-// This is the address of the plist containing the list of the available plugins.
-// the alternative link will be used if the first one doesn't reply...
-
-//#define OSIRIX_PLUGIN_LIST_URL            @"http://www.osirix-viewer.com/osirix_plugins/plugins.plist"
-//#define OSIRIX_PLUGIN_LIST_ALT_URL        @"http://www.osirixviewer.com/osirix_plugins/plugins.plist"
-
-#define OSIRIX_PLUGIN_LIST_URL              URL_HOROS_VIEWER@"/horos-content/plugins/osirixplugins.plist"
-#define OSIRIX_PLUGIN_LIST_ALT_URL          URL_HOROS_VIEWER@"/horos-content/plugins/osirixplugins.plist"
-
-#define HOROS_PLUGIN_LIST_URL               URL_HOROS_VIEWER@"/horos-content/plugins/horosplugins.plist"
-#define HOROS_PLUGIN_LIST_ALT_URL           URL_HOROS_VIEWER@"/horos-content/plugins/horosplugins.plist"
-
-#define HOROS_PLUGIN_SUBMISSION_URL         URL_HOROS_VIEWER@"/horos-content/plugins/submit.html"
+// SekhVet Paket CT: the remote plugin lists (plain http from horosproject.org) are no longer contacted.
+// SekhVet has no plugin server; plugins are installed from a file the user already has.
 
 #endif

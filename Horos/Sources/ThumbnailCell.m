@@ -37,10 +37,12 @@
 
 #import "ThumbnailCell.h"
 #import "O2ViewerThumbnailsMatrix.h"
+#import "DicomSeries.h"
 
 #define FULLSIZEHEIGHT 120
 #define HALFSIZEHEIGHT 60
 #define SIZEWIDTH 100
+#define SEKHMET_SERIENZEILE 14 // SekhVet Paket CA: Serienname bis drei Zeilen unter der Miniatur
 
 @implementation ThumbnailCell
 
@@ -104,6 +106,9 @@
         h = FULLSIZEHEIGHT;
     else
         h = HALFSIZEHEIGHT;
+    
+    if ([oro.object isKindOfClass:[DicomSeries class]])
+        h += SEKHMET_SERIENZEILE;
     
     switch( [[NSUserDefaults standardUserDefaults] integerForKey: @"dbFontSize"])
     {

@@ -17,8 +17,6 @@
 #import "ViewerController.h"
 #import "Point3D.h"
 #import "Camera.h"
-#import "AppController.h"
-#import "DicomImage.h"
 #import "SekhmetOrientation.h"
 #import "SekhmetSpine.h"
 #import "SekhmetDisplayPanel.h"
@@ -87,8 +85,15 @@ BOOL SekhmetMPRSyncing = NO;
 - (void) sekhmetApplyHangingProtocol
 {
     if( windowWillClose) return;
-    [SekhmetOrientation applyToMPR: self];
-    [self sekhmetRestoreViewState]; // SekhVet Paket AH: zuletzt gerade gerichtete Lage dieser Serie (gleiches Preset) wieder herstellen
+    [SekhmetOrientation applyToMPR: self];   // SekhVet Paket CS: writes its result into the window title (review finding 3)
+    if( [self sekhmetRestoreViewState]) // SekhVet Paket AH: zuletzt gerade gerichtete Lage dieser Serie (gleiches Preset) wieder herstellen
+    {
+        // SekhVet Paket CS: the remembered state replaces whatever applyToMPR reached, so a "not applied" note from
+        // above no longer describes the window. The state was saved under this protocol with these rules.
+        NSInteger preset = [SekhmetOrientation presetForMPR: self];
+        [SekhmetOrientation setBadge: preset == SekhmetPresetOff ? nil : [NSString stringWithFormat: @"HP: %@", [SekhmetOrientation nameForPreset: preset]]
+                     inTitleOfWindow: [self window]];
+    }
     sekhmetHPApplied = YES; // SekhVet Paket O: ab jetzt darf dieses Fenster seinen Stand senden
     // Gleichlauf an: ein bereits offenes MPR derselben Studie gibt seinen Stand vor, damit nicht zwei Fenster mit verschiedener Lage starten
     if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncKey])
@@ -105,35 +110,47 @@ BOOL SekhmetMPRSyncing = NO;
     }
 }
 
-- (void) sekhmetUpdatePresetPopup
+// SekhVet Paket CS (review finding 4): the protocol was applied while a view was zoomed by double-click, so the two
+// collapsed views could not be set. MPRDCMView calls this when the three views are back (second pass after un-zoom).
+- (void) sekhmetApplyPendingHangingProtocol
 {
-    for( NSToolbarItem *item in [[[self window] toolbar] items])
-        if( [[item itemIdentifier] isEqualToString: @"SekhmetVetPreset"])
-            {
-                NSPopUpButton *pb = (NSPopUpButton*) [item view];   // SekhVet Paket BP: Liste kann sich geaendert haben
-                [pb setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]];
-                [pb selectItemWithTag: [SekhmetOrientation presetForStudyUID: [[self viewer] studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: [self viewer]]]];
-            }
+    if( windowWillClose || self.sekhmetHPPending == NO || self.sekhmetFrameZoomed) return;
+    self.sekhmetHPPending = NO;
+    BOOL was = SekhmetMPRSyncing;
+    SekhmetMPRSyncing = YES;   // like a protocol change: no sync message while the planes are laid out
+    @try { [SekhmetOrientation applyToMPR: self straighten: YES]; }
+    @catch (NSException *e) { NSLog( @"SekhVet Hanging Protocol MPR after un-zoom: %@", e); }
+    @finally { SekhmetMPRSyncing = was; }
+    [self sekhmetSettleAfterHP];
 }
 
+// SekhVet Paket CS (dead code): this was a copy of +updatePresetToolbarItemInWindow:viewer:.
 - (void) sekhmetPresetDidChange:(NSNotification*) n
 {
-    [self sekhmetUpdatePresetPopup];
+    [SekhmetOrientation updatePresetToolbarItemInWindow: [self window] viewer: [self viewer]];
 }
 
 - (IBAction) sekhmetPresetChanged:(id) sender
 {
-    NSString *uid = [[self viewer] studyInstanceUID];
-    [SekhmetOrientation setPresetOverride: [[sender selectedItem] tag] forStudyUID: uid];
-    [SekhmetOrientation applyToAllViewersOfStudyUID: uid];   // 2D-Viewer und alle MPR-Fenster der Studie, inkl. diesem
+    [SekhmetOrientation presetPopupChanged: sender viewer: [self viewer]];   // 2D-Viewer und alle MPR-Fenster der Studie, inkl. diesem
 }
 
+// SekhVet Paket CS (review finding 18): the switch is global, so every open MPR window and the Display panel follow -
+// the notification is posted here and by the panel's checkbox; before, only the clicked toolbar item changed.
 - (IBAction) sekhmetToggleSync:(id) sender
 {
     BOOL on = ![[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncKey];
     [[NSUserDefaults standardUserDefaults] setBool: on forKey: SekhmetMPRSyncKey];
-    [sender setImage: [NSImage imageNamed: on ? @"SyncLock.pdf" : @"Sync.pdf"]];
+    [[NSNotificationCenter defaultCenter] postNotificationName: SekhmetMPRSyncSettingDidChangeNotification object: self];
     if( on) [self sekhmetScheduleSyncBroadcast];
+}
+
+- (void) sekhmetSyncSettingDidChange:(NSNotification*) n
+{
+    BOOL on = [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncKey];
+    for( NSToolbarItem *item in [[[self window] toolbar] items])
+        if( [[item itemIdentifier] isEqualToString: @"SekhmetMPRSync"])
+            [item setImage: [NSImage imageNamed: on ? @"SyncLock.pdf" : @"Sync.pdf"]];
 }
 
 - (BOOL) sekhmetHPApplied { return sekhmetHPApplied; } // SekhVet Paket O
@@ -145,11 +162,6 @@ BOOL SekhmetMPRSyncing = NO;
     [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetBroadcastSync) object: nil];
     sekhmetSyncPending = NO;
     [sekhmetLastSyncFingerprint release]; sekhmetLastSyncFingerprint = [[self sekhmetCameraFingerprint] retain];
-}
-
-- (IBAction) sekhmetToggleZoomSync:(id) sender // SekhVet Paket P/Q: nur Horos-Zoomsync der drei Ansichten (Fenster-Massstab laeuft immer mit)
-{
-    [[NSUserDefaults standardUserDefaults] setBool: ([sender state] == NSControlStateValueOn) forKey: @"syncZoomLevelMPR"];
 }
 
 - (void) sekhmetScheduleSyncBroadcast
@@ -175,17 +187,21 @@ BOOL SekhmetMPRSyncing = NO;
 static NSString* const SekhmetMPRLastStateKey = @"SekhmetMPRLastState"; // seriesUID -> {preset, date, views: [ {pos, focal, up, scale, angle, roll, near, far, xf, yf, rot} x3 ]}
 #define SEKHMET_MPR_STATE_MAX 200
 
+// SekhVet Paket CS (review, unconfirmed "state saved under the wrong series"): the series of the volume THIS window
+// shows, read from its own first image. The 2D viewer's current series was asked before; when the viewer had already
+// switched to another series while this window closed, the state landed under the new series. The viewer is only
+// the fallback now.
 - (NSString*) sekhmetStateSeriesUID
 {
     NSString *uid = nil;
-    @try { uid = [[[self viewer] currentSeries] valueForKey: @"seriesInstanceUID"]; } @catch (NSException *e) { }
-    if( uid.length == 0) { DCMPix *p = [self sekhmetFirstPix]; if( p) uid = [self sekhmetFoRForPix: p]; }
+    DCMPix *p = [self sekhmetFirstPix];
+    @try { uid = [(id) [p seriesObj] valueForKey: @"seriesInstanceUID"]; } @catch (NSException *e) { uid = nil; }
+    if( uid.length == 0)
+    {
+        @try { uid = [[[self viewer] currentSeries] valueForKey: @"seriesInstanceUID"]; } @catch (NSException *e) { uid = nil; }
+    }
+    if( uid.length == 0 && p) uid = [self sekhmetFoRForPix: p];
     return uid.length ? uid : nil;
-}
-
-- (NSInteger) sekhmetStatePreset
-{
-    return [SekhmetOrientation presetForStudyUID: [[self viewer] studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: [self viewer]]];
 }
 
 static NSArray* sekhmetPoint( Point3D *p) { return [NSArray arrayWithObjects: [NSNumber numberWithFloat: p.x], [NSNumber numberWithFloat: p.y], [NSNumber numberWithFloat: p.z], nil]; }
@@ -198,13 +214,15 @@ static Point3D* sekhmetPointFrom( NSArray *a) { return [Point3D pointWithX: [[a 
 // Fadenkreuz passen sie nicht zu Horos' Kopplung, und beim ersten Scrollen springen zwei Ebenen.
 static BOOL sekhmetViewStateUsable( NSArray *views)
 {
-    if( views.count != 3) return NO;
+    if( ![views isKindOfClass: [NSArray class]] || views.count != 3) return NO;   // SekhVet Paket CS: type checks against damaged defaults
     float nrm[3][3];
     static const int defaultAxis[3] = { 0, 2, 1 };
     for( int i = 0; i < 3; i++)
     {
         NSDictionary *d = [views objectAtIndex: i];
+        if( ![d isKindOfClass: [NSDictionary class]]) return NO;
         NSArray *pos = [d objectForKey: @"pos"], *focal = [d objectForKey: @"focal"], *up = [d objectForKey: @"up"];
+        if( ![pos isKindOfClass: [NSArray class]] || ![focal isKindOfClass: [NSArray class]] || ![up isKindOfClass: [NSArray class]]) return NO;
         if( pos.count != 3 || focal.count != 3 || up.count != 3) return NO;
         float n[3], u[3];
         for( int k = 0; k < 3; k++)
@@ -230,23 +248,15 @@ static BOOL sekhmetViewStateUsable( NSArray *views)
     if( windowWillClose || sekhmetHPApplied == NO) return; // ohne HP ist die Lage noch nicht die des Betrachters
     NSString *uid = [self sekhmetStateSeriesUID];
     if( uid == nil) return;
-    NSMutableArray *views = [NSMutableArray array];
-    for( int i = 0; i < 3; i++)
-    {
-        MPRDCMView *v = [self sekhmetView: i];
-        Camera *c = v.camera;
-        if( c == nil || c.position == nil || c.focalPoint == nil || c.viewUp == nil) return;
-        [views addObject: [NSDictionary dictionaryWithObjectsAndKeys:
-                           sekhmetPoint( c.position), @"pos", sekhmetPoint( c.focalPoint), @"focal", sekhmetPoint( c.viewUp), @"up",
-                           [NSNumber numberWithFloat: c.parallelScale], @"scale", [NSNumber numberWithFloat: c.viewAngle], @"angle",
-                           [NSNumber numberWithFloat: c.rollAngle], @"roll", [NSNumber numberWithFloat: c.clippingRangeNear], @"near",
-                           [NSNumber numberWithFloat: c.clippingRangeFar], @"far", [NSNumber numberWithBool: v.xFlipped], @"xf",
-                           [NSNumber numberWithBool: v.yFlipped], @"yf", [NSNumber numberWithFloat: v.rotation], @"rot",
-                           [NSNumber numberWithFloat: v.angleMPR], @"amp", nil]];   // SekhVet Paket AX: Fadenkreuzwinkel
-    }
-    if( !sekhmetViewStateUsable( views)) { NSLog( @"SekhVet MPR state NOT saved for %@ (unusable camera)", uid); return; }
+    NSArray *views = [self sekhmetCurrentViews];   // SekhVet Paket DA: shared with the overlay's MPR rebuild
+    if( views == nil) return;
+    // SekhVet Paket CS (review finding 21): no series UID in the release log.
+    if( !sekhmetViewStateUsable( views)) { NSLog( @"SekhVet MPR state NOT saved (unusable camera)"); return; }
+    NSInteger preset = [SekhmetOrientation presetForMPR: self];
     NSMutableDictionary *all = [NSMutableDictionary dictionaryWithDictionary: [[NSUserDefaults standardUserDefaults] dictionaryForKey: SekhmetMPRLastStateKey]];
-    [all setObject: [NSDictionary dictionaryWithObjectsAndKeys: views, @"views", [NSNumber numberWithInteger: [self sekhmetStatePreset]], @"preset",
+    // SekhVet Paket CS (review finding 5): "rules" = rules and MPR layout of the protocol at the time of saving.
+    [all setObject: [NSDictionary dictionaryWithObjectsAndKeys: views, @"views", [NSNumber numberWithInteger: preset], @"preset",
+                     [SekhmetOrientation stateSignatureForPreset: preset], @"rules",
                      [NSNumber numberWithDouble: [NSDate timeIntervalSinceReferenceDate]], @"date", nil] forKey: uid];
     if( all.count > SEKHMET_MPR_STATE_MAX) // aelteste Eintraege verwerfen
     {
@@ -255,7 +265,7 @@ static BOOL sekhmetViewStateUsable( NSArray *views)
         for( NSUInteger i = 0; i + SEKHMET_MPR_STATE_MAX < sorted.count; i++) [all removeObjectForKey: [sorted objectAtIndex: i]];
     }
     [[NSUserDefaults standardUserDefaults] setObject: all forKey: SekhmetMPRLastStateKey];
-    NSLog( @"SekhVet MPR state saved for %@ (preset %d)", uid, (int) [self sekhmetStatePreset]);
+    NSLog( @"SekhVet MPR state saved (preset %d)", (int) preset);
 }
 
 - (BOOL) sekhmetRestoreViewState
@@ -264,10 +274,50 @@ static BOOL sekhmetViewStateUsable( NSArray *views)
     NSString *uid = [self sekhmetStateSeriesUID];
     if( uid == nil) return NO;
     NSDictionary *st = [[[NSUserDefaults standardUserDefaults] dictionaryForKey: SekhmetMPRLastStateKey] objectForKey: uid];
+    if( ![st isKindOfClass: [NSDictionary class]]) return NO;
     NSArray *views = [st objectForKey: @"views"];
-    if( views.count != 3) return NO;
-    if( [[st objectForKey: @"preset"] integerValue] != [self sekhmetStatePreset]) return NO; // Preset gewechselt -> HP gilt
-    if( !sekhmetViewStateUsable( views)) { NSLog( @"SekhVet MPR state for %@ ignored (unusable or rotated without angles)", uid); return NO; }
+    if( ![views isKindOfClass: [NSArray class]] || views.count != 3) return NO;
+    NSInteger preset = [SekhmetOrientation presetForMPR: self];
+    if( [[st objectForKey: @"preset"] integerValue] != preset) return NO; // Preset gewechselt -> HP gilt
+    // SekhVet Paket CS (review finding 5): the state belongs to the rules and the MPR layout it was saved under. After
+    // an edit of the rules or "Take from screen" the old camera and flips must not come back - the protocol applies.
+    // States saved before this package carry no signature and are dropped once for the same reason.
+    NSString *signature = [st objectForKey: @"rules"];
+    if( ![signature isKindOfClass: [NSString class]] || ![signature isEqualToString: [SekhmetOrientation stateSignatureForPreset: preset]])
+    {
+        NSLog( @"SekhVet MPR state ignored (rules or layout of the protocol changed since it was saved)");
+        return NO;
+    }
+    if( !sekhmetViewStateUsable( views)) { NSLog( @"SekhVet MPR state ignored (unusable or rotated without angles)"); return NO; }
+    [self sekhmetApplyViews: views];   // SekhVet Paket DA
+    NSLog( @"SekhVet MPR state restored");
+    return YES;
+}
+
+// SekhVet Paket DA: the camera part of sekhmetSaveViewState / sekhmetRestoreViewState, also used when the overlay
+// closes and reopens an MPR to stack more series (same position afterwards).
+- (NSArray*) sekhmetCurrentViews
+{
+    NSMutableArray *views = [NSMutableArray array];
+    for( int i = 0; i < 3; i++)
+    {
+        MPRDCMView *v = [self sekhmetView: i];
+        Camera *c = v.camera;
+        if( c == nil || c.position == nil || c.focalPoint == nil || c.viewUp == nil) return nil;
+        [views addObject: [NSDictionary dictionaryWithObjectsAndKeys:
+                           sekhmetPoint( c.position), @"pos", sekhmetPoint( c.focalPoint), @"focal", sekhmetPoint( c.viewUp), @"up",
+                           [NSNumber numberWithFloat: c.parallelScale], @"scale", [NSNumber numberWithFloat: c.viewAngle], @"angle",
+                           [NSNumber numberWithFloat: c.rollAngle], @"roll", [NSNumber numberWithFloat: c.clippingRangeNear], @"near",
+                           [NSNumber numberWithFloat: c.clippingRangeFar], @"far", [NSNumber numberWithBool: v.xFlipped], @"xf",
+                           [NSNumber numberWithBool: v.yFlipped], @"yf", [NSNumber numberWithFloat: v.rotation], @"rot",
+                           [NSNumber numberWithFloat: v.angleMPR], @"amp", nil]];   // SekhVet Paket AX: Fadenkreuzwinkel
+    }
+    return views;
+}
+
+- (BOOL) sekhmetApplyViews:(NSArray*) views
+{
+    if( windowWillClose || !sekhmetViewStateUsable( views)) return NO;
     for( int i = 0; i < 3; i++)   // SekhVet Paket AX: Fadenkreuzwinkel zuerst, die Kopplung beim Update rechnet damit
         [self sekhmetView: i].angleMPR = [[[views objectAtIndex: i] objectForKey: @"amp"] floatValue];
     SekhmetMPRSyncing = YES;
@@ -300,7 +350,6 @@ static BOOL sekhmetViewStateUsable( NSArray *views)
     @catch (NSException *e) { NSLog( @"SekhVet MPR state restore: %@", e); }
     SekhmetMPRSyncing = NO;
     [self sekhmetSettleAfterHP];
-    NSLog( @"SekhVet MPR state restored for %@", uid);
     return YES;
 }
 
@@ -344,7 +393,11 @@ static BOOL sekhmetViewStateUsable( NSArray *views)
     // DICOM Frame of Reference = gleicher Patientenraum. Ohne FoR-UID Rueckfall: gleiche Studie + gleiche Bildorientierung
     if( pix.frameofReferenceUID.length) return [@"FoR:" stringByAppendingString: pix.frameofReferenceUID];
     NSString *study = nil;
-    @try { study = [pix.imageObj valueForKeyPath: @"series.study.studyInstanceUID"]; } @catch (NSException *e) { }
+    @try { study = [pix.imageObj valueForKeyPath: @"series.study.studyInstanceUID"]; } @catch (NSException *e) { study = nil; }
+    // SekhVet Paket CS (review finding 14): without a study UID the key was "(null)|orientation" - the same for every
+    // such series, so MPR windows of different patients could sync. No frame of reference known = nil; every caller
+    // compares with isEqualToString:, which is NO for nil on either side, so such a window never syncs.
+    if( study.length == 0) return nil;
     float o[ 9]; [pix orientation: o];
     return [NSString stringWithFormat: @"%@|%.2f %.2f %.2f %.2f %.2f %.2f", study, o[0], o[1], o[2], o[3], o[4], o[5]];
 }
@@ -409,6 +462,128 @@ static BOOL sekhmetViewStateUsable( NSArray *views)
         [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetDelayedFullLODRendering) object: nil];
         [self performSelector: @selector(sekhmetDelayedFullLODRendering) withObject: nil afterDelay: 0.4];
     }
+}
+
+@end
+
+#pragma mark - SekhVet Paket CH: Curved MPR und Orthogonal MPR
+
+@implementation CPRController (SekhVet)
+
+- (void) sekhmetConfigurePresetItem:(NSToolbarItem*) toolbarItem
+{
+    [SekhmetOrientation configurePresetToolbarItem: toolbarItem viewer: [self viewer] target: self];
+}
+
+- (void) sekhmetApplyHangingProtocol
+{
+    if( [self windowWillClose]) return;   // SekhVet Paket CS (fork review 15): scheduled 0.5 s after showWindow:, the window may be gone
+    [SekhmetOrientation applyToCPR: self];
+}
+
+- (void) sekhmetPresetDidChange:(NSNotification*) n
+{
+    [SekhmetOrientation updatePresetToolbarItemInWindow: [self window] viewer: [self viewer]];
+}
+
+- (IBAction) sekhmetPresetChanged:(id) sender
+{
+    [SekhmetOrientation presetPopupChanged: sender viewer: [self viewer]];
+}
+
+@end
+
+@implementation OrthogonalMPRViewer (SekhVet)
+
+- (void) sekhmetConfigurePresetItem:(NSToolbarItem*) toolbarItem
+{
+    [SekhmetOrientation configurePresetToolbarItem: toolbarItem viewer: [self viewer] target: self];
+}
+
+- (void) sekhmetApplyHangingProtocol
+{
+    if( [self windowWillClose] || [self window] == nil) return;   // SekhVet Paket CS (fork review 15): scheduled 0.5 s after showWindow:; windowWillClose: also cancels it
+    [SekhmetOrientation applyToOrthogonalMPR: self];
+}
+
+- (void) sekhmetPresetDidChange:(NSNotification*) n
+{
+    [SekhmetOrientation updatePresetToolbarItemInWindow: [self window] viewer: [self viewer]];
+}
+
+- (IBAction) sekhmetPresetChanged:(id) sender
+{
+    [SekhmetOrientation presetPopupChanged: sender viewer: [self viewer]];
+}
+
+@end
+
+// SekhVet Paket CV: the MPR views hand the right mouse button to the VR view (zoom while dragging); a right click WITHOUT
+// drag did nothing. It now opens a menu at the pointer with the tools of the MPR tool palette and the ROI tools; the
+// choice becomes the tool of the left mouse button, exactly as a click into the palette (setTool:).
+@implementation MPRController (SekhVetToolsMenu)
+
+static NSString* sekhmetToolTitle( long tag)
+{
+    switch( tag)
+    {
+        case tWL:        return NSLocalizedString( @"Contrast", nil);
+        case tTranslate: return NSLocalizedString( @"Move", nil);
+        case tZoom:      return NSLocalizedString( @"Magnify", nil);
+        case tRotate:    return NSLocalizedString( @"Rotate", nil);
+        case tNext:      return NSLocalizedString( @"Scroll", nil);
+        default:         return nil;
+    }
+}
+
+- (NSMenu*) sekhmetToolsMenu
+{
+    NSMenu *menu = [[[NSMenu alloc] initWithTitle: NSLocalizedString( @"Tools", nil)] autorelease];
+    long current = [[toolsMatrix selectedCell] tag];
+    NSButtonCell *roiCell = ([toolsMatrix numberOfColumns] > 6) ? [toolsMatrix cellAtRow: 0 column: 6] : nil;
+
+    for( NSButtonCell *cell in [toolsMatrix cells])
+    {
+        if( cell == roiCell || [cell isEnabled] == NO) continue;
+        NSString *title = sekhmetToolTitle( [cell tag]);
+        if( title == nil) continue;
+        NSMenuItem *item = [[[NSMenuItem alloc] initWithTitle: title action: @selector(sekhmetToolFromMenu:) keyEquivalent: @""] autorelease];
+        [item setTarget: self];
+        [item setTag: [cell tag]];
+        NSImage *im = [[[cell image] copy] autorelease];
+        if( im) { [im setSize: NSMakeSize( 16, 16)]; [item setImage: im]; }
+        if( [cell tag] == current && [toolsMatrix selectedCell] != roiCell) [item setState: NSControlStateValueOn];
+        [menu addItem: item];
+    }
+
+    NSMenu *sub = [[[NSMenu alloc] initWithTitle: NSLocalizedString( @"ROI", nil)] autorelease];
+    for( NSMenuItem *pi in [popupRoi itemArray])
+    {
+        if( [pi isSeparatorItem]) { if( [sub numberOfItems]) [sub addItem: [NSMenuItem separatorItem]]; continue; }
+        if( [pi tag] <= 0 || [self imageForROI: (ToolMode) [pi tag]] == nil) continue;   // first item = the popup itself
+        NSMenuItem *item = [[[NSMenuItem alloc] initWithTitle: [pi title] action: @selector(sekhmetToolFromMenu:) keyEquivalent: @""] autorelease];
+        [item setTarget: self];
+        [item setTag: [pi tag]];
+        NSImage *im = [[[self imageForROI: (ToolMode) [pi tag]] copy] autorelease];
+        if( im) { [im setSize: NSMakeSize( 16, 16)]; [item setImage: im]; }
+        if( [toolsMatrix selectedCell] == roiCell && [pi tag] == current) [item setState: NSControlStateValueOn];
+        [sub addItem: item];
+    }
+    if( [sub numberOfItems])
+    {
+        if( [menu numberOfItems]) [menu addItem: [NSMenuItem separatorItem]];
+        NSMenuItem *roiItem = [[[NSMenuItem alloc] initWithTitle: NSLocalizedString( @"ROI", nil) action: nil keyEquivalent: @""] autorelease];
+        [roiItem setSubmenu: sub];
+        [menu addItem: roiItem];
+    }
+    return [menu numberOfItems] ? menu : nil;
+}
+
+- (IBAction) sekhmetToolFromMenu:(id) sender
+{
+    long tag = [sender tag];
+    [toolsMatrix selectCellWithTag: tag];   // the palette follows; an ROI tool is put into the ROI cell by setROIToolTag:
+    [self setTool: sender];                 // setToolIndex: + setROIToolTag: with the sender's tag
 }
 
 @end

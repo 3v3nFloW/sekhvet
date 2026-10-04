@@ -76,6 +76,10 @@
 	BOOL sekhmetDetached; // SekhVet Paket AB: Fenster geschlossen, nie mehr zeichnen
 	BOOL sekhmetZoomClick; // SekhVet Paket BK: Doppelklick-Zoom laeuft, mouseUp/mouseDragged nicht als Werkzeug (Fensterung) auswerten
 	BOOL sekhmetGLDetached; // SekhVet Paket BK: GL-Zeichenflaeche geloest, solange die Ansicht 0 Pixel hat (macOS 27)
+	BOOL sekhmetUniformLogged; // SekhVet Paket CS: "uniform slice image" already logged for the current incident
+	NSPoint sekhmetRightDownPoint; // SekhVet Paket CV: right click without drag = tools menu, as in the 2D viewer
+	BOOL sekhmetRightDragged;
+	NSPoint sekhmetRotatePrev; // SekhVet Paket CY: last mouse point (view coordinates) of a free-rotate drag
 }
 
 @property (readonly) DCMPix *pix;

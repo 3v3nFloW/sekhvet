@@ -67,24 +67,42 @@
 
 @synthesize password, buttonsDisabled, selectedUSB;
 
+// SekhVet Paket CT: the disc content is staged in a private folder of this user (mode 0700) inside the
+// temporary directory, no longer in the world-readable /tmp/<disc name> and /tmp/burnAnonymized.
+static NSString* SekhVetBurnStagingBase(void)
+{
+	static NSString *base = nil;
+	
+	@synchronized( [BurnerWindowController class])
+	{
+		if( base == nil)
+		{
+			base = [[NSTemporaryDirectory() stringByAppendingPathComponent: [NSString stringWithFormat: @"SekhVetBurn-%@", [[NSUUID UUID] UUIDString]]] retain];
+			[[NSFileManager defaultManager] createDirectoryAtPath: base withIntermediateDirectories: YES attributes: [NSDictionary dictionaryWithObject: [NSNumber numberWithShort: 0700] forKey: NSFilePosixPermissions] error: NULL];
+		}
+	}
+	
+	return base;
+}
+
+static NSString* SekhVetBurnAnonymizedPath(void)
+{
+	return [SekhVetBurnStagingBase() stringByAppendingPathComponent: @"burnAnonymized"];
+}
+
 - (void) createDMG:(NSString*) imagePath withSource:(NSString*) directoryPath
 {
+	if( imagePath.length == 0 || directoryPath.length == 0)
+		return;
+	
 	[[NSFileManager defaultManager] removeItemAtPath:imagePath error:NULL];
 	
+	// SekhVet Paket CT: hdiutil is started directly with an argument array. The old "/bin/sh -c" command line
+	// was built from the disc name (by default the patient name), which the shell would have interpreted.
 	NSTask* makeImageTask = [[[NSTask alloc] init] autorelease];
 
-	[makeImageTask setLaunchPath: @"/bin/sh"];
-	
-	imagePath = [imagePath stringByReplacingOccurrencesOfString: @"\"" withString: @"\\\""];
-	directoryPath = [directoryPath stringByReplacingOccurrencesOfString: @"\"" withString: @"\\\""];
-	
-	NSString* cmdString = [NSString stringWithFormat: @"hdiutil create \"%@\" -srcfolder \"%@\"",
-													  imagePath,
-													  directoryPath];
-
-	NSArray *args = [NSArray arrayWithObjects: @"-c", cmdString, nil];
-
-	[makeImageTask setArguments:args];
+	[makeImageTask setLaunchPath: @"/usr/bin/hdiutil"];
+	[makeImageTask setArguments: [NSArray arrayWithObjects: @"create", imagePath, @"-srcfolder", directoryPath, nil]];
 	[makeImageTask launch];
     while( [makeImageTask isRunning])
         [NSThread sleepForTimeInterval: 0.1];
@@ -263,7 +281,7 @@
         }
         
         [[NSFileManager defaultManager] removeItemAtPath:[self folderToBurn] error:NULL];
-        [[NSFileManager defaultManager] removeItemAtPath:[NSString stringWithFormat:@"/tmp/burnAnonymized"] error:NULL];
+        [[NSFileManager defaultManager] removeItemAtPath:SekhVetBurnAnonymizedPath() error:NULL];
         
         [writeVolumePath release];
         writeVolumePath = nil;
@@ -420,7 +438,7 @@
         
         if( anonymizationTags)
         {
-            NSDictionary* anonOut = [Anonymization anonymizeFiles:files dicomImages: dbObjects toPath:@"/tmp/burnAnonymized" withTags: anonymizationTags];
+            NSDictionary* anonOut = [Anonymization anonymizeFiles:files dicomImages: dbObjects toPath:SekhVetBurnAnonymizedPath() withTags: anonymizationTags];
             
             [anonymizedFiles release];
             anonymizedFiles = [[anonOut allValues] mutableCopy];
@@ -513,7 +531,12 @@
 
 -(NSString *)folderToBurn
 {
-	return [NSString stringWithFormat:@"/tmp/%@",cdName];
+	// SekhVet Paket CT: private staging folder; the last path component stays the disc name (it becomes the volume name)
+	NSString *name = [[cdName stringByReplacingOccurrencesOfString: @"/" withString: @"-"] stringByReplacingOccurrencesOfString: @":" withString: @"-"];
+	if( name.length == 0 || [name isEqualToString: @"."] || [name isEqualToString: @".."])
+		name = @"UNTITLED";
+	
+	return [[SekhVetBurnStagingBase() stringByAppendingPathComponent: @"disc"] stringByAppendingPathComponent: name];
 }
 
 -(NSArray*) volumes
@@ -730,7 +753,7 @@
 	else
 	{
 		[[NSFileManager defaultManager] removeItemAtPath: [self folderToBurn] error:NULL];
-		[[NSFileManager defaultManager] removeItemAtPath: [NSString stringWithFormat:@"/tmp/burnAnonymized"] error:NULL];
+		[[NSFileManager defaultManager] removeItemAtPath: SekhVetBurnAnonymizedPath() error:NULL];
 		
 		[filesToBurn release];
 		filesToBurn = nil;

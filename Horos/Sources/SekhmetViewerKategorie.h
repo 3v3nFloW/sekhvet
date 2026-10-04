@@ -19,21 +19,19 @@
 extern NSString* const SekhmetVetPresetToolbarItemIdentifier;  // „SekhmetVetPreset" — Vet-Orientierung: Preset je Studie
 extern NSString* const SekhmetSpineToolbarItemIdentifier;  // „SekhmetSpine" — Wirbel-Labels
 extern NSString* const SekhmetNorbergToolbarItemIdentifier;  // „SekhmetNorberg" — Norberg-Winkel (HD), Paket V
-extern NSString* const SekhmetNorbergDeleteToolbarItemIdentifier;  // „SekhmetNorbergDelete" — Messung entfernen, Paket W
 extern NSString* const SekhmetDIToolbarItemIdentifier;  // „SekhmetDI" — Distraktionsindex (PennHIP), Paket BD
 extern NSString* const SekhmetMPRSwapToolbarItemIdentifier;  // „SekhmetMPRSwap" — Double MPR tauschen, Paket BW-2 (auch im MPR-Fenster)
-extern NSString* const SekhmetDIDeleteToolbarItemIdentifier;  // „SekhmetDIDelete" — Distraktionsindex entfernen, Paket BD
 extern NSString* const SekhmetScreenAreaToolbarItemIdentifier;  // „SekhmetScreenArea" — Bildschirmflaeche
+extern NSString* const SekhmetReportPilotViewerToolbarItemIdentifier;  // "SekhmetReportPilotViewer" - privat: offene Studie an ReportPilot
 
 @interface ViewerController (SekhVet)
 - (IBAction) sekhmetShow3DPointTool:(id) sender;
+- (IBAction) sekhmetReportPilotViewer:(id) sender; // privat: offene Studie an ReportPilot
 - (void) sekhmetUpdatePresetPopup;
 - (void) sekhmetBorrowUSCalibration:(NSArray*) pixListArray; // SekhVet Paket BH
 - (IBAction) sekhmetSpineTool:(id) sender;
-- (IBAction) sekhmetNorbergTool:(id) sender;  // SekhVet Paket V
-- (IBAction) sekhmetNorbergDeleteTool:(id) sender;  // SekhVet Paket W
-- (IBAction) sekhmetDITool:(id) sender;  // SekhVet Paket BD
-- (IBAction) sekhmetDIDeleteTool:(id) sender;  // SekhVet Paket BD
+- (IBAction) sekhmetNorbergTool:(id) sender;  // SekhVet Paket V, CS: schaltet um (setzen / entfernen)
+- (IBAction) sekhmetDITool:(id) sender;  // SekhVet Paket BD, CS: schaltet um
 - (void) sekhmetEnsureNorbergToolbarItem;
 - (IBAction) sekhmetScreenAreaChanged:(id) sender;
 - (IBAction) sekhmetPresetChanged:(id) sender;

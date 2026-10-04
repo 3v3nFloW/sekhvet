@@ -5,6 +5,9 @@
  aenderbar fuer Uebergangswirbel). Die Zaehlrichtung ergibt sich aus den
  ersten zwei Klicks, ein Klick zwischen zwei Labels setzt die Bandscheibe
  (Alt-Klick erzwingt sie). ⌫ nimmt das letzte zurueck, Esc beendet.
+ SekhVet Paket CS: ⌫ belongs to the labelling only while it has a label to take
+ back and no other ROI is selected in that view; a disc exists only between
+ anatomically adjacent vertebrae; counting cranially ends at C1.
 
  Paket BR (19.09.2026): die ROIs bleiben die Wahrheit (ziehen, loeschen,
  umbenennen, Horos speichert sie mit der Serie); daneben haelt SekhVet je
@@ -40,6 +43,7 @@
     NSMutableDictionary *store;        // StudyInstanceUID -> { labels: [ {label,x,y,z,for,series,seriesName} ], formula: [C,T,L,S] }
     NSMutableDictionary *roiSeries;    // NSValue(ROI*) -> seriesDICOMUID (Loesch-Meldungen beim Serienwechsel/Schliessen aussortieren)
     NSMutableSet *notedViewers;        // "<Zeiger>|<SerienUID>": Bestand dieser Serie schon uebernommen
+    NSMutableDictionary *studyDirs;    // SekhVet Paket CS: StudyInstanceUID -> base folder of the database the study was shown from
     NSString *currentStudyUID;         // Studie, die das Panel zeigt
     NSArray *tableRows;
 }
@@ -53,7 +57,7 @@
 // Haken fuer DCMView (neue Punkt-ROI entsteht) und MPRDCMView (persistente Kopie)
 + (void) willCreatePointROI:(ROI*) roi inView:(DCMView*) view modifiers:(NSUInteger) flags;
 + (void) notePersistentROI:(ROI*) roi;
-+ (BOOL) handleKey:(unichar) c;     // YES = verbraucht
++ (BOOL) handleKey:(unichar) c;     // YES = verbraucht (SekhVet Paket CS: NO while another ROI is selected or nothing is to take back)
 + (void) filterPointCopiesInMPRView:(id) view;   // SekhVet Paket BT: Haken am Ende von MPRDCMView detect2DPointInThisSlice
 
 // Umbenennen mit Neuzaehlung ab dort: Labels parsen und zaehlen

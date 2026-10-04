@@ -3,7 +3,7 @@
 // SEKHVET_DICOMWEB_PW) gibt es NUR in einem Build mit dem Flag SEKHVET_TESTHAKEN=1.
 // Ohne das Flag liefert sekhvetTesthaken() immer NULL, der Compiler entfernt die
 // Zweige, und das Binary enthaelt die Variablennamen nicht (Nachweis:
-// `strings Horos.app/Contents/MacOS/Horos | grep -c SEKHVET_` = 0).
+// `strings Horos.app/Contents/MacOS/SekhVet | grep -c SEKHVET_` = 0).
 //
 // Grund (Review 12.09.2026): jede SEKHVET_*_TEST-Variable uebersprang den
 // Medizinprodukt-Hinweis, das Passwort kam aus der Umgebung, Import/STOW/WADO

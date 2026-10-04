@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "DCMPix.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 #import "DicomImage.h"
 #import "DicomSeries.h"
 #import "DicomStudy.h"
@@ -5303,7 +5304,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 NSData *data = [SRAnnotation roiFromDICOM: str];
                 if( data)
                 {
-                    NSMutableArray *array = [NSUnarchiver unarchiveObjectWithData: data];
+                    NSMutableArray *array = (NSMutableArray*) [SekhmetRestrictedUnarchiver unarchiveROIsWithData: data]; // Sekhmet (DE)
                     if( array)
                         [roiArray[ i] addObjectsFromArray: array];
                 }
@@ -5941,9 +5942,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         
         @try
         {
-            [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_osirix/"];
+            [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_sekhvet/"];
             
-            NSString *htmlpath = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent:self.srcFile.lastPathComponent] stringByAppendingPathExtension: @"xml"];
+            NSString *htmlpath = [[@"/tmp/dicomsr_sekhvet/" stringByAppendingPathComponent:self.srcFile.lastPathComponent] stringByAppendingPathExtension: @"xml"];
             
             if( [[NSFileManager defaultManager] fileExistsAtPath: htmlpath] == NO)
             {
@@ -9672,57 +9673,46 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             
         case 2:		// Maximum IP
         case 3:		// Minimum IP
-            if( stackDirection) next = pixPos-1;
-            else next = pixPos+1;
-            
-            if( next < pixArray.count  && next >= 0)
+        {
+            // Sekhmet (DG), nach ThalesMMS/horos e948e313 (Patch uebernommen):
+            // Every channel byte of the slab is reduced into fResult. The first
+            // slice that has pixels is compared with the current one; each later
+            // slice is compared with what has been reduced so far. The arm64
+            // branch used to compare every slice with the current one, so the
+            // slab was the current slice against the last one only (#781).
+            float *reduced = fImage;
+
+            for( long i = 1; i < stack; i++)
             {
+                if( stackDirection) next = pixPos-i;
+                else next = pixPos+i;
+
+                if( next < 0 || next >= (long) pixArray.count)
+                    break;
+
                 fNext = [[pixArray objectAtIndex: next] fImage];
-                if( fNext)
-                {
+                if( fNext == nil)
+                    continue;
+
 #if __arm64__
-                    if( stackMode == 2) vmax8ARM( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
-                    else vmin8ARM( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
+                if( stackMode == 2) vmax8ARM( (vUInt8*) reduced, (vUInt8*) fNext, (vUInt8*) fResult, height * width);
+                else vmin8ARM( (vUInt8*) reduced, (vUInt8*) fNext, (vUInt8*) fResult, height * width);
 #else
-                    if( stackMode == 2) vmax8Intel( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
-                    else vmin8Intel( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
+                if( stackMode == 2) vmax8Intel( (vUInt8*) reduced, (vUInt8*) fNext, (vUInt8*) fResult, height * width);
+                else vmin8Intel( (vUInt8*) reduced, (vUInt8*) fNext, (vUInt8*) fResult, height * width);
 #endif
-                }
-                
-                for( long i = 2; i < stack; i++)
-                {
-                    long res;
-                    if( stackDirection) res = pixPos-i;
-                    else res = pixPos+i;
-                    
-                    if( res < pixArray.count)
-                    {
-                        long res;
-                        if( stackDirection) res = pixPos-i;
-                        else res = pixPos+i;
-                        
-                        if( res < pixArray.count && res >= 0)
-                        {
-                            fNext = [[pixArray objectAtIndex: res] fImage];
-                            if( fNext)
-                            {
-#if __arm64__
-                                if( stackMode == 2) vmax8ARM( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
-                                else vmin8ARM( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
-#else
-                                if( stackMode == 2) vmax8Intel( (vUInt8*) fResult, (vUInt8*) fNext, (vUInt8*) fResult, height * width);
-                                else vmin8Intel( (vUInt8*) fResult, (vUInt8*) fNext, (vUInt8*) fResult, height * width);
-#endif
-                            }
-                        }
-                    }
-                }
+                reduced = fResult;
             }
-            else
-            {
+
+            // No other slice had pixels: the slab is the current slice.
+            if( reduced != fResult)
                 memcpy( fResult, fImage, height * width * sizeof(float));
-            }
-            break;			
+        }
+            break;
+
+        default:
+            memcpy( fResult, fImage, height * width * sizeof(float));
+            break;
     } //end of switch
     
     return fResult;
@@ -9982,6 +9972,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         {
                             start = i * (int) (height / numberOfThreadsForCompute);
                             end = (i+1) * (int) (height / numberOfThreadsForCompute);
+                            if( i == numberOfThreadsForCompute-1) end = height; // Sekhmet: Restzeilen (height % Threads) bekamen sonst kein Fenster (nach ThalesMMS/horos bc7a500)
                             
                             NSMutableDictionary *d = [nonLinearWLWWThreads objectAtIndex: i];
                             

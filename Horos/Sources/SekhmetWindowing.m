@@ -11,6 +11,13 @@
 #import "DicomSeries.h"
 #import "DCM.h"
 #import "Notifications.h"
+#include "SekhmetTesthaken.h"
+
+// SekhVet Paket CS: what a rule last set per series -- [ [seriesInstanceUID, wl, ww], ... ], newest last, bounded.
+// A series whose saved window differs from it was changed by the user and is left alone on open.
+static NSString* const SekhmetWLWWAppliedKey = @"SekhmetWLWWApplied";
+static NSString* const SekhmetWLWWKeepUserWindowKey = @"SekhmetWLWWKeepUserWindow";   // BOOL, default YES; NO = every open resets to the rule
+#define SEKHMET_WLWW_APPLIED_MAX 1000
 
 static NSString* const SekhmetWLWWRulesVersionKey = @"SekhmetWLWWRulesVersion"; // SekhVet Paket AH: 2 = Regeln nach Kernel
 #define SEKHMET_WLWW_RULES_VERSION 2
@@ -45,6 +52,7 @@ static NSDictionary* sekhmetRule( NSString *modality, NSString *keywords, float 
 {
     [defaultValues setObject: [self defaultRules] forKey: SekhmetWLWWRulesKey];
     [defaultValues setObject: [NSNumber numberWithBool: YES] forKey: SekhmetWLWWApplyOnOpenKey];
+    [defaultValues setObject: [NSNumber numberWithBool: YES] forKey: SekhmetWLWWKeepUserWindowKey];   // SekhVet Paket CS
     // Paket AH: im Panel gespeicherte Regeln der Version 1 (Kopf weich / Rest Knochen) einmalig durch die Kernel-Regeln ersetzen
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     if( [d integerForKey: SekhmetWLWWRulesVersionKey] < SEKHMET_WLWW_RULES_VERSION)
@@ -54,30 +62,39 @@ static NSDictionary* sekhmetRule( NSString *modality, NSString *keywords, float 
     }
 }
 
-+ (NSString*) kernelForViewer:(ViewerController*) v // SekhVet Paket AH: Faltungskern (0018,1210) + Koerperregion (0018,0015) der ersten Datei
+// SekhVet Paket AH: Faltungskern (0018,1210) + Koerperregion (0018,0015) der ersten Datei.
+// SekhVet Paket CS: returned separately as [ kernel, body part ] (both maybe @"") -- the kernel is matched on its own.
++ (NSArray*) headerForViewer:(ViewerController*) v
 {
     static NSMutableDictionary *cache = nil;
     if( cache == nil) cache = [[NSMutableDictionary alloc] init];
     NSString *path = nil;
     @try { path = [[[v imageView] curDCM] srcFile]; } @catch (NSException *e) { }
-    if( path.length == 0) return @"";
-    NSString *cached = [cache objectForKey: path];
+    if( path.length == 0) return [NSArray arrayWithObjects: @"", @"", nil];
+    NSArray *cached = [cache objectForKey: path];
     if( cached) return cached;
-    NSMutableString *s = [NSMutableString string];
+    NSString *kernel = @"", *part = @"";
     @try
     {
         DCMObject *o = [DCMObject objectWithContentsOfFile: path decodingPixelData: NO];
         NSString *k = [o attributeValueWithName: @"ConvolutionKernel"];
         NSString *b = [o attributeValueWithName: @"BodyPartExamined"];
-        if( k.length) [s appendString: k];
-        if( b.length) [s appendFormat: @" %@", b];
+        if( [k isKindOfClass: [NSString class]] && k.length) kernel = k;
+        if( [b isKindOfClass: [NSString class]] && b.length) part = b;
     }
     @catch (NSException *e) { }
+    NSArray *header = [NSArray arrayWithObjects: kernel, part, nil];
     if( cache.count > 500) [cache removeAllObjects];
-    [cache setObject: s forKey: path];
-    return s;
+    [cache setObject: header forKey: path];
+    return header;
 }
 
++ (NSString*) kernelForViewer:(ViewerController*) v
+{
+    return [[self headerForViewer: v] objectAtIndex: 0];
+}
+
+// Study name + series name + body part. SekhVet Paket CS: without the kernel, which is passed on its own.
 + (NSString*) descriptionForViewer:(ViewerController*) v
 {
     NSMutableString *s = [NSMutableString string];
@@ -87,8 +104,8 @@ static NSDictionary* sekhmetRule( NSString *modality, NSString *keywords, float 
         NSString *b = [[v currentSeries] valueForKey: @"name"];
         if( a) [s appendString: a];
         if( b) [s appendFormat: @" %@", b];
-        NSString *k = [self kernelForViewer: v]; // Paket AH: Kernel + Koerperregion gehoeren zum Suchtext
-        if( k.length) [s appendFormat: @" [%@]", k];
+        NSString *part = [[self headerForViewer: v] objectAtIndex: 1];
+        if( part.length) [s appendFormat: @" %@", part];
     }
     @catch (NSException *e) { }
     return s;
@@ -104,16 +121,21 @@ static NSDictionary* sekhmetRule( NSString *modality, NSString *keywords, float 
 
 + (NSDictionary*) ruleForViewer:(ViewerController*) v
 {
-    return [self ruleForModality: [self modalityForViewer: v] description: [self descriptionForViewer: v]];
+    return [self ruleForModality: [self modalityForViewer: v] kernel: [self kernelForViewer: v] description: [self descriptionForViewer: v] onOpen: NO];
 }
 
-// SekhVet Paket AU: Das Oeffnungsprotokoll braucht dieselbe Entscheidung, bevor ein Viewer
-// existiert — Modalitaet und Suchtext kommen dann aus der Datenbank statt aus dem Viewer.
-+ (NSDictionary*) ruleForModality:(NSString*) modality description:(NSString*) description
+// SekhVet Paket CS: the documented priority -- the convolution kernel decides. If the series has a kernel, the keywords
+// are compared with the kernel ONLY: a study called "Thorax Lunge" no longer puts its soft-kernel series into the lung
+// window; they fall through to the rule without keywords. Only without a kernel (e.g. CBCT, radiographs) the
+// description (study/series name, body part) is searched as before.
+// onOpen is kept for the callers; the built-in MR rule (400/800) applies on open as before (owner's decision).
++ (NSDictionary*) ruleForModality:(NSString*) modality kernel:(NSString*) kernel description:(NSString*) description onOpen:(BOOL) onOpen
 {
     modality = [modality uppercaseString];
     if( modality.length == 0) return nil;
     if( description == nil) description = @"";
+    kernel = [kernel stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+    NSString *text = kernel.length ? kernel : description;
     for( NSDictionary *r in [[NSUserDefaults standardUserDefaults] arrayForKey: SekhmetWLWWRulesKey])
     {
         NSString *rm = [[r objectForKey: @"modality"] uppercaseString];
@@ -123,27 +145,128 @@ static NSDictionary* sekhmetRule( NSString *modality, NSString *keywords, float 
         for( NSString *k in [kw componentsSeparatedByString: @"|"])
         {
             NSString *t = [k stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
-            if( t.length && [description rangeOfString: t options: NSCaseInsensitiveSearch].location != NSNotFound) return r;
+            if( t.length && [text rangeOfString: t options: NSCaseInsensitiveSearch].location != NSNotFound) return r;
         }
     }
     return nil;
 }
 
-+ (BOOL) applyToViewer:(ViewerController*) v
++ (NSDictionary*) ruleForModality:(NSString*) modality kernel:(NSString*) kernel description:(NSString*) description
 {
-    if( v == nil || [v imageView] == nil) return NO;
-    NSDictionary *r = [self ruleForViewer: v];
-    if( r == nil) return NO;
-    float wl = [[r objectForKey: @"wl"] floatValue], ww = [[r objectForKey: @"ww"] floatValue];
-    if( ww <= 0) return NO;
-    [[v imageView] setWLWW: wl :ww];   // wie ApplyWLWW: — DCMView setzt das Bild, die Serie folgt ueber OsirixChangeWLWWNotification
-    NSLog( @"SekhVet Window preset: %@ \"%@\" -> WL %.0f / WW %.0f (%@)", [self modalityForViewer: v], [self descriptionForViewer: v], wl, ww, [r objectForKey: @"name"]);
+    return [self ruleForModality: modality kernel: kernel description: description onOpen: NO];
+}
+
+// SekhVet Paket AU: Das Oeffnungsprotokoll braucht dieselbe Entscheidung, bevor ein Viewer
+// existiert — Modalitaet und Suchtext kommen dann aus der Datenbank statt aus dem Viewer.
+// SekhVet Paket CS: the callers put the kernel into the text as " [kernel]"; the last such bracket is taken out and
+// handed over as the kernel, so that this entry decides like the viewer does.
++ (NSDictionary*) ruleForModality:(NSString*) modality description:(NSString*) description
+{
+    NSString *kernel = nil;
+    NSRange open = description.length ? [description rangeOfString: @" [" options: NSBackwardsSearch] : NSMakeRange( NSNotFound, 0);
+    if( open.location != NSNotFound)
+    {
+        NSUInteger start = NSMaxRange( open);
+        NSRange close = [description rangeOfString: @"]" options: 0 range: NSMakeRange( start, description.length - start)];
+        if( close.location != NSNotFound)
+        {
+            kernel = [description substringWithRange: NSMakeRange( start, close.location - start)];
+            description = [[description substringToIndex: open.location] stringByAppendingString: [description substringFromIndex: NSMaxRange( close)]];
+        }
+    }
+    return [self ruleForModality: modality kernel: kernel description: description onOpen: NO];
+}
+
+#pragma mark - SekhVet Paket CS: a window the user saved with the series is not overridden on open
+
+static BOOL sekhmetWLWWNear( float a, float b)
+{
+    return fabsf( a - b) <= 1e-3f * MAX( 1.0f, MAX( fabsf( a), fabsf( b)));
+}
+
++ (NSString*) seriesUIDOfViewer:(ViewerController*) v
+{
+    NSString *uid = nil;
+    @try { uid = [[v currentSeries] valueForKey: @"seriesInstanceUID"]; } @catch (NSException *e) { }
+    return [uid isKindOfClass: [NSString class]] && uid.length ? uid : nil;
+}
+
++ (NSArray*) appliedRecordForSeries:(NSString*) uid
+{
+    if( uid == nil) return nil;
+    for( NSArray *e in [[NSUserDefaults standardUserDefaults] arrayForKey: SekhmetWLWWAppliedKey])
+        if( [e isKindOfClass: [NSArray class]] && e.count == 3 && [[e objectAtIndex: 0] isEqual: uid]) return e;
+    return nil;
+}
+
++ (void) noteAppliedWL:(float) wl WW:(float) ww forSeries:(NSString*) uid
+{
+    if( uid == nil) return;
+    NSArray *old = [self appliedRecordForSeries: uid];
+    if( old && sekhmetWLWWNear( [[old objectAtIndex: 1] floatValue], wl) && sekhmetWLWWNear( [[old objectAtIndex: 2] floatValue], ww)) return;
+    NSMutableArray *all = [NSMutableArray array];
+    for( NSArray *e in [[NSUserDefaults standardUserDefaults] arrayForKey: SekhmetWLWWAppliedKey])
+        if( [e isKindOfClass: [NSArray class]] && e.count == 3 && [[e objectAtIndex: 0] isEqual: uid] == NO) [all addObject: e];
+    [all addObject: [NSArray arrayWithObjects: uid, [NSNumber numberWithFloat: wl], [NSNumber numberWithFloat: ww], nil]];
+    while( all.count > SEKHMET_WLWW_APPLIED_MAX) [all removeObjectAtIndex: 0];
+    [[NSUserDefaults standardUserDefaults] setObject: all forKey: SekhmetWLWWAppliedKey];
+}
+
+// YES only when it is certain: a rule was applied to this series before, and the window saved with the series (Horos
+// writes every WL/WW change there and restores it on open) is neither that value, nor the rule's, nor a DICOM default
+// of the series. In every doubtful case the answer is NO and the rule is applied as it always was.
++ (BOOL) userWindowSavedInViewer:(ViewerController*) v ruleWL:(float) wl WW:(float) ww
+{
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetWLWWKeepUserWindowKey] == NO) return NO;
+    NSArray *rec = [self appliedRecordForSeries: [self seriesUIDOfViewer: v]];
+    if( rec == nil) return NO;
+    NSNumber *sww = nil, *swl = nil;
+    @try { sww = [[v currentSeries] valueForKey: @"windowWidth"]; swl = [[v currentSeries] valueForKey: @"windowLevel"]; } @catch (NSException *e) { }
+    if( [sww isKindOfClass: [NSNumber class]] == NO || [swl isKindOfClass: [NSNumber class]] == NO || [sww floatValue] <= 0) return NO;
+    float savedWL = [swl floatValue], savedWW = [sww floatValue];
+    if( sekhmetWLWWNear( savedWL, [[rec objectAtIndex: 1] floatValue]) && sekhmetWLWWNear( savedWW, [[rec objectAtIndex: 2] floatValue])) return NO;
+    if( sekhmetWLWWNear( savedWL, wl) && sekhmetWLWWNear( savedWW, ww)) return NO;
+    for( DCMPix *p in [v pixList])
+        if( sekhmetWLWWNear( savedWL, p.savedWL) && sekhmetWLWWNear( savedWW, p.savedWW)) return NO;
     return YES;
 }
 
+#pragma mark -
+
+// Called when a series opens (ViewerController finishLoadImageData:)
++ (BOOL) applyToViewer:(ViewerController*) v
+{
+    return [self applyToViewer: v onOpen: YES];
+}
+
++ (BOOL) applyToViewer:(ViewerController*) v onOpen:(BOOL) onOpen
+{
+    if( v == nil || [v imageView] == nil) return NO;
+    NSString *modality = [self modalityForViewer: v];
+    NSDictionary *r = [self ruleForModality: modality kernel: [self kernelForViewer: v] description: [self descriptionForViewer: v] onOpen: onOpen];
+    if( r == nil) return NO;
+    float wl = [[r objectForKey: @"wl"] floatValue], ww = [[r objectForKey: @"ww"] floatValue];
+    if( ww <= 0) return NO;
+    if( onOpen && [self userWindowSavedInViewer: v ruleWL: wl WW: ww])
+    {
+        NSLog( @"SekhVet Window preset: %@ keeps the window saved with the series (rule %@ not applied)", modality, [r objectForKey: @"name"]);
+        return NO;
+    }
+    [[v imageView] setWLWW: wl :ww];   // wie ApplyWLWW: — DCMView setzt das Bild, die Serie folgt ueber OsirixChangeWLWWNotification
+    [self noteAppliedWL: wl WW: ww forSeries: [self seriesUIDOfViewer: v]];
+    // SekhVet Paket CS: study and series descriptions are free text (owner or animal names) -- not in the log of a release build
+#if SEKHVET_TESTHAKEN
+    NSLog( @"SekhVet Window preset: %@ \"%@\" [%@] -> WL %.0f / WW %.0f (%@)", modality, [self descriptionForViewer: v], [self kernelForViewer: v], wl, ww, [r objectForKey: @"name"]);
+#else
+    NSLog( @"SekhVet Window preset: %@ -> WL %.0f / WW %.0f (%@)", modality, wl, ww, [r objectForKey: @"name"]);
+#endif
+    return YES;
+}
+
+// "Apply to open viewers": asked for by the user, so a saved window gives way
 + (void) applyToAllViewers
 {
-    for( ViewerController *v in [ViewerController getDisplayed2DViewers]) [self applyToViewer: v];
+    for( ViewerController *v in [ViewerController getDisplayed2DViewers]) [self applyToViewer: v onOpen: NO];
 }
 
 @end
@@ -216,7 +339,8 @@ static SekhmetWindowingPanel *sekhmetWindowingPanel = nil;
     NSView *cv = [[self window] contentView];
     float y = 650 - 36;
 
-    NSTextField *hint = [self label: NSLocalizedString( @"When a series opens, the first matching rule (top to bottom) sets WL/WW. Keywords: study/series description, convolution kernel (0018,1210) or body part contains one of the words, separated by | — empty = any. Modality empty = any.", nil) frame: NSMakeRect( 20, y - 20, 600, 40) bold: NO];
+    // SekhVet Paket CS: text follows the matching (kernel first)
+    NSTextField *hint = [self label: NSLocalizedString( @"When a series opens, the first matching rule (top to bottom) sets WL/WW. Keywords (separated by |, empty = any) are compared with the convolution kernel (0018,1210) if there is one, otherwise with study/series description and body part. Modality empty = any.", nil) frame: NSMakeRect( 20, y - 20, 600, 40) bold: NO];
     [hint setFont: [NSFont systemFontOfSize: 11]];
     [[hint cell] setWraps: YES];
     [cv addSubview: hint];
@@ -227,6 +351,8 @@ static SekhmetWindowingPanel *sekhmetWindowingPanel = nil;
     [applyOnOpenButton setTitle: NSLocalizedString( @"Apply window presets when a series opens", nil)];
     [applyOnOpenButton setFont: [NSFont systemFontOfSize: 12]];
     [applyOnOpenButton setTarget: self]; [applyOnOpenButton setAction: @selector(applyOnOpenChanged:)];
+    // SekhVet Paket CS
+    [applyOnOpenButton setToolTip: NSLocalizedString( @"A window you changed yourself is saved with the series and kept when it opens again.", nil)];
     [cv addSubview: applyOnOpenButton];
 
     y -= 210;

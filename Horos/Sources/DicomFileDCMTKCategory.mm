@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "DicomFileDCMTKCategory.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 #import "DCMAbstractSyntaxUID.h"
 #import "DICOMToNSString.h"
 #import "MutableArrayCategory.h"
@@ -1044,7 +1045,7 @@ extern NSRecursiveLock *PapyrusLock;
                     if( referencedSOPInstanceUID)
                         [dicomElements setObject: referencedSOPInstanceUID forKey: @"referencedSOPInstanceUID"];
                     
-                    int numberOfROIs = [[NSUnarchiver unarchiveObjectWithData: [SRAnnotation roiFromDICOM: filePath]] count];
+                    int numberOfROIs = (int) [[SekhmetRestrictedUnarchiver unarchiveROIsWithData: [SRAnnotation roiFromDICOM: filePath]] count]; // Sekhmet (DE): bei JEDEM Import einer ROI-SR, auch von fremden CDs
                     [dicomElements setObject: [NSNumber numberWithInt: numberOfROIs] forKey: @"numberOfROIs"];
                 }
             }

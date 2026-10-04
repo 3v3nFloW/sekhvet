@@ -162,7 +162,7 @@ function shareDestinationChange(select) {
                         
                         %[IF:Info.isMacOS%
                         %[IF:Info.proposeWADORetrieve%
-                            <a href="osirix://?methodName=DownloadURL&Display=YES&URL='%Info.WADOBaseURL%?requestType=WADO&studyUID=%U:ComparativeStudy.studyInstanceUID%&token=%Info.newToken%'"><img src="images/osirixSmall.png" style="vertical-align:middle"/></a>
+                            <a href="sekhvet://?methodName=DownloadURL&Display=YES&URL='%Info.WADOBaseURL%?requestType=WADO&studyUID=%U:ComparativeStudy.studyInstanceUID%&token=%Info.newToken%'">Open in SekhVet</a>
                         %]IF:Info.proposeWADORetrieve%
                         %]IF:Info.isMacOS%
                    
@@ -260,7 +260,7 @@ function shareDestinationChange(select) {
                         %[IF:Info.isMacOS||Info.isIOS%
 						%[IF:Info.proposeWADORetrieve%
 						<td class="narrow middle">
-							<a href="osirix://?methodName=DownloadURL&Display=YES&URL='%Info.WADOBaseURL%?requestType=WADO&studyUID=%U:Study.studyInstanceUID%&seriesUID=%U:Series.seriesDICOMUID%&token=%Info.newToken%'"><img src="images/osirix.png"/></a>
+							<a href="sekhvet://?methodName=DownloadURL&Display=YES&URL='%Info.WADOBaseURL%?requestType=WADO&studyUID=%U:Study.studyInstanceUID%&seriesUID=%U:Series.seriesDICOMUID%&token=%Info.newToken%'">Open in SekhVet</a>
 						</td>
 						%]IF:Info.proposeWADORetrieve%
 						%]IF:Info.isMacOS||Info.isIOS%

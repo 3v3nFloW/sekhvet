@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "CLUTOpacityView.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 #import "BrowserController.h"
 #import "DicomDatabase.h"
 #import "Notifications.h"
@@ -1844,7 +1845,8 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 	if([type isEqualToString:@"osirixCLUTOpacityCurve"])
 	{
 		NSData* curveData = [pasteboard dataForType:type];
-		NSMutableDictionary *dict = [NSUnarchiver unarchiveObjectWithData:curveData];
+		NSMutableDictionary *dict = [SekhmetRestrictedUnarchiver unarchiveCLUTWithData:curveData]; // Sekhmet (DE): Zwischenablage
+		if( [dict isKindOfClass: [NSDictionary class]] == NO) dict = nil;
 		NSMutableArray *aCurve = [dict objectForKey:@"curve"];
 		NSMutableArray *newColors = [dict objectForKey:@"colors"];
 		
@@ -1885,7 +1887,8 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 					if((int) selectedPoint.x==(int) pt.x && (float) selectedPoint.y==(float) pt.y)
 					{
 						NSData* colorData = [pasteboard dataForType:type];
-						NSColor *color = [NSUnarchiver unarchiveObjectWithData:colorData];
+						NSColor *color = [SekhmetRestrictedUnarchiver unarchiveObjectWithData:colorData allowedClassNames: [SekhmetRestrictedUnarchiver colorClassNames]]; // Sekhmet (DE)
+						if( [color isKindOfClass: [NSColor class]] == NO) color = nil;
 						[self setColor:color forPointAtIndex:j inCurveAtIndex:i];
 						[self updateView];
 					}
@@ -2023,7 +2026,8 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 	{
 		if([[path pathExtension] isEqualToString:@""])
 		{
-			NSMutableDictionary *clut = [NSUnarchiver unarchiveObjectWithFile:path];
+			NSMutableDictionary *clut = [SekhmetRestrictedUnarchiver unarchiveCLUTWithFile:path]; // Sekhmet (DE)
+			if( [clut isKindOfClass: [NSDictionary class]] == NO) clut = nil;
 			return clut;
 		}
 		else

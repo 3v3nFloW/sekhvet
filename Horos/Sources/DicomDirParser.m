@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "N2Debug.h"
+#include <signal.h> // Sekhmet (DG): kill()
 #import "DicomDirParser.h"
 
 static NSString *singeDcmDump = @"singeDcmDump";
@@ -197,27 +198,26 @@ static int validFilePathDepth = 0;
 {
 	NSMutableArray *result = [NSMutableArray array];
 	long i, start, length;
-	char *buffer;
 	
-	buffer = (char*) [data UTF8String];
+	// Sekhmet (DG): ueber die Zeichen gehen, nicht ueber die Bytes von -UTF8String bis -length (UTF-16-Einheiten) - das
+	// Ende einer Ausgabe mit Umlauten wurde nicht gelesen (nach ThalesMMS/horos e948e313)
+	NSString *text = data ? data : @"";
 	
 	i = 0;
-	length = [data length];
+	length = [text length];
 	
 	while( i < length)
 	{
-		if( buffer[ i] == '[')
+		if( [text characterAtIndex: i] == '[')
 		{
 			start = i;
-			while( buffer[i] != ']' && i < length)
-			{
-				if( buffer[i] == '\\') buffer[i] = '/';
+			while( i < length && [text characterAtIndex: i] != ']')
 				i++;
-			}
 			
 			if( i-start-1 > 0)
 			{
-				NSString *file = [dirpath stringByAppendingString:[[[NSString alloc] initWithBytes:&(buffer[start+1]) length:i-start-1 encoding:NSUTF8StringEncoding] autorelease]];
+				NSString *piece = [[text substringWithRange: NSMakeRange( start+1, i-start-1)] stringByReplacingOccurrencesOfString: @"\\" withString: @"/"];
+				NSString *file = [dirpath stringByAppendingString: piece];
 				
 				NSString *ext = [file pathExtension];
 				
@@ -283,33 +283,62 @@ static int validFilePathDepth = 0;
         
         [aTask setArguments:theArguments];
         
-        [aTask launch];
-        
-        NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
-        
 #define TIMEOUT 20
         
-        @autoreleasepool
+        // Sekhmet (DG): (1) ein dcmdump, der nicht startet, hat keine Ausgabe - die alte Leseschleife wartete ewig und
+        // hielt dabei die Sperre, die jedes DICOMDIR-Lesen nimmt; (2) availableData blockiert, die Frist griff nicht;
+        // (3) jedes Teilstueck wurde einzeln als UTF-8 gelesen und verworfen, wenn das scheiterte - ein Name in
+        // Latin-1 oder ein zwischen zwei Lesevorgaengen geteiltes Zeichen kostete Dateien. Jetzt: Start abgesichert,
+        // Lesen in einem eigenen Thread mit Frist, ganze Ausgabe auf einmal dekodiert (UTF-8, sonst Latin-1)
+        // (nach ThalesMMS/horos e948e313)
+        BOOL launched = NO;
+        @try
         {
-            while( [inData = [[newPipe fileHandleForReading] availableData] length] > 0 || [aTask isRunning]) 
-            {
-                if( inData.length > 0 && inData.length < 2000UL * 1024UL)
-                {
-                    NSString *r = [[NSString alloc] initWithData:inData encoding:NSUTF8StringEncoding];
-                    if( r)
-                    {
-                        [s appendString: r];
-                        [r release];
-                    }
-                }
-                
-                if( [NSDate timeIntervalSinceReferenceDate] - start > TIMEOUT)
-                    break;
-            }
+            [aTask launch];
+            launched = YES;
+        }
+        @catch( NSException *e)
+        {
+            NSLog( @"****** dcmdump failed for %@: %@", srcFile, e);
         }
         
-        if( [NSDate timeIntervalSinceReferenceDate] - start > TIMEOUT)
-            [aTask interrupt];
+        if( launched)
+        {
+            [[newPipe fileHandleForWriting] closeFile];
+            
+            __block NSData *output = nil;
+            NSFileHandle *reader = [newPipe fileHandleForReading];
+            dispatch_semaphore_t finished = dispatch_semaphore_create( 0);
+            dispatch_async( dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+                @autoreleasepool
+                {
+                    @try { output = [[reader readDataToEndOfFile] retain]; }
+                    @catch( NSException *e) { output = nil; }
+                }
+                dispatch_semaphore_signal( finished);
+            });
+            if( dispatch_semaphore_wait( finished, dispatch_time( DISPATCH_TIME_NOW, (int64_t) TIMEOUT * NSEC_PER_SEC)))
+            {
+                NSLog( @"****** dcmdump timed out for %@", srcFile);
+                [aTask terminate];
+                if( dispatch_semaphore_wait( finished, dispatch_time( DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)))
+                {
+                    kill( [aTask processIdentifier], SIGKILL);
+                    dispatch_semaphore_wait( finished, DISPATCH_TIME_FOREVER);
+                }
+            }
+            dispatch_release( finished);
+            
+            if( output.length)
+            {
+                NSString *r = [[NSString alloc] initWithData: output encoding: NSUTF8StringEncoding];
+                if( r == nil) r = [[NSString alloc] initWithData: output encoding: NSISOLatin1StringEncoding];
+                if( r) [s appendString: r];
+                [r release];
+            }
+            [output release];
+        }
+        (void) inData;
         
         //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
         

@@ -1626,7 +1626,9 @@ const NSString* const GenerateMovieDicomImagesParamKey = @"dicomImageArray";
         
         NSString* sha1internal = user.passwordHash;
         
-        if( [sha1internal length] > 0 && [sha1 compare:sha1internal options:NSLiteralSearch|NSCaseInsensitiveSearch] == NSOrderedSame)
+        // Sekhmet (DG): ohne sha1-Parameter lieferte [nil compare:] 0 == NSOrderedSame - das alte Passwort galt als bestaetigt
+        // (nach ThalesMMS/horos e948e313)
+        if( [sha1internal length] > 0 && [sha1 length] > 0 && [sha1 compare:sha1internal options:NSLiteralSearch|NSCaseInsensitiveSearch] == NSOrderedSame)
         {
 			if ([[parameters valueForKey:@"password"] isEqualToString:[parameters valueForKey:@"password2"]])
 			{
@@ -2762,7 +2764,7 @@ const NSString* const GenerateMovieDicomImagesParamKey = @"dicomImageArray";
 	}
 	
 	if ([DCMAbstractSyntaxUID isStructuredReport:series.seriesSOPClassUID]) {
-		NSString* path = [NSFileManager.defaultManager confirmDirectoryAtPath:@"/tmp/dicomsr_osirix"];
+		NSString* path = [NSFileManager.defaultManager confirmDirectoryAtPath:@"/tmp/dicomsr_sekhvet"]; // SekhVet Paket CT: own folder, not shared with a running Horos
 		NSString* htmlpath = [path stringByAppendingPathComponent:[[[series.images.anyObject valueForKey:@"completePath"] lastPathComponent] stringByAppendingPathExtension:@"xml"]];
 		
 		if (![NSFileManager.defaultManager fileExistsAtPath:htmlpath]) {

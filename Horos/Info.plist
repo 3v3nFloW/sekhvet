@@ -73,7 +73,7 @@
 				<string>text/sql</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>OsiriX database</string>
+			<string>Database Index (SQL)</string>
 			<key>CFBundleTypeOSTypes</key>
 			<array>
 				<string>sql </string>
@@ -93,7 +93,7 @@
 				<string>text/roi</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>OsiriX Region Of Interest</string>
+			<string>Region Of Interest</string>
 			<key>CFBundleTypeOSTypes</key>
 			<array>
 				<string>roi </string>
@@ -113,7 +113,7 @@
 				<string>text/roi</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>OsiriX Regions Of Interest</string>
+			<string>Regions Of Interest</string>
 			<key>CFBundleTypeOSTypes</key>
 			<array>
 				<string>rois_series</string>
@@ -133,7 +133,7 @@
 				<string>text/lsm</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>OsiriX LSM</string>
+			<string>LSM Image</string>
 			<key>CFBundleTypeOSTypes</key>
 			<array>
 				<string>lsm </string>
@@ -153,7 +153,7 @@
 				<string>text/PIC</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>OsiriX BioRAD PIC</string>
+			<string>BioRAD PIC Image</string>
 			<key>CFBundleTypeOSTypes</key>
 			<array>
 				<string>PIC </string>
@@ -169,7 +169,7 @@
 			<key>CFBundleTypeIconFile</key>
 			<string>horosplugin.png</string>
 			<key>CFBundleTypeName</key>
-			<string>Horos Plugin</string>
+			<string>Viewer Plugin</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSTypeIsPackage</key>
@@ -183,7 +183,7 @@
 			<key>CFBundleTypeIconFile</key>
 			<string>osirixplugin.icns</string>
 			<key>CFBundleTypeName</key>
-			<string>OsiriX Plugin</string>
+			<string>Viewer Plugin (legacy format)</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSTypeIsPackage</key>
@@ -191,7 +191,7 @@
 		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
-	<string>Horos</string>
+	<string>SekhVet</string>
 	<key>CFBundleGetInfoString</key>
 	<string>$(HUMAN_READABLE_VERSION)</string>
 	<key>CFBundleIconFile</key>
@@ -205,7 +205,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0 beta</string>
+	<string>1.0</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>SekhVet uses the local network to query, retrieve and receive studies from DICOM nodes such as PACS servers and modalities.</string>
 	<key>CFBundleSignature</key>
 	<string>OsiX</string>
 	<key>CFBundleSupportedPlatforms</key>
@@ -218,25 +220,11 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>Horos Remote Access</string>
+			<string>SekhVet Remote Access</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>horos</string>
+				<string>sekhvet</string>
 			</array>
-			<key>LSIsAppleDefaultForType</key>
-			<string>Yes</string>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>OsiriX Remote Access</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>osirix</string>
-			</array>
-			<key>LSIsAppleDefaultForType</key>
-			<string>Yes</string>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
@@ -263,7 +251,7 @@
 	<key>NSAppleScriptEnabled</key>
 	<string>YES</string>
 	<key>NSContactsUsageDescription</key>
-	<string>Your account will be used for the built-in iChat sharing service. If you don't allow access, you cannot use the iChat functions.</string>
+	<string>Contacts are only used by legacy sharing functions. SekhVet works without this access.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(HUMAN_READABLE_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>

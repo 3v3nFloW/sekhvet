@@ -160,7 +160,7 @@
 
 			[panel setCanSelectHiddenExtension:NO];
             panel.allowedFileTypes = @[@"xml"];
-            panel.nameFieldStringValue = @"OsiriX Fly Through";
+            panel.nameFieldStringValue = @"SekhVet Fly Through";
             
 			if( [panel runModal] == NSFileHandlingPanelOKButton)
 			{
@@ -205,7 +205,7 @@
 
     NSPasteboard* pboard = [info draggingPasteboard];
     NSData* rowData = [pboard dataForType:FlyThruTableViewDataType];
-    NSIndexSet* rowIndexes = [NSKeyedUnarchiver unarchiveObjectWithData:rowData];
+    NSIndexSet* rowIndexes = [NSKeyedUnarchiver unarchivedObjectOfClass: [NSIndexSet class] fromData: rowData error: NULL]; // Sekhmet (DE): sicher entpacken
 	int rowIndex = [rowIndexes firstIndex];
 	if (rowIndex  < row)
 		row--;

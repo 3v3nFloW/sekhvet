@@ -166,7 +166,7 @@
         [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
         [[NSFileManager defaultManager] createDirectoryAtPath:path withIntermediateDirectories: YES attributes: nil error: nil];
         
-        fileName = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"OsiriXMovie.mov"];
+        fileName = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"SekhVetMovie.mov"];
     }
     else
     {

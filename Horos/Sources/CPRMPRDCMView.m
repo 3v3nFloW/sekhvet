@@ -187,6 +187,14 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
     draggedToken = CPRCurvedPathControlTokenNone;
 }
 
+// Sekhmet (DH): windowController ist nur zugewiesen, nicht gehalten. Nach dem dealloc des CPRController
+// zeichnete Core Animation die Ansicht noch einmal und colorForView: schickte eine Nachricht an den freigegebenen Controller (Absturz beim Schliessen des CPR-Fensters).
+- (void) sekhmetDetachWindowController
+{
+	windowController = nil;
+	vrView = nil; // das Hilfsfenster gibt CPRController schon in windowWillClose frei
+}
+
 - (void) setVRView: (VRView*) v viewID:(int) i
 {
 	viewID = i;
@@ -202,6 +210,8 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 
 - (void) drawRect:(NSRect)rect
 {
+	if( windowController == nil) return; // Sekhmet (DH): Controller schon freigegeben
+	
 	if( rect.size.width > 10)
 	{
 		[super drawRect: rect];
@@ -1095,7 +1105,7 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
             if( c == NSLeftArrowFunctionKey)
                 c = NSRightArrowFunctionKey;
             
-            if( c == NSRightArrowFunctionKey)
+            else if( c == NSRightArrowFunctionKey) // Sekhmet (DC): ohne else lief die zweite Abfrage gleich wieder zurueck, links und rechts gingen in dieselbe Richtung (nach ThalesMMS/horos 32cc286b)
                 c = NSLeftArrowFunctionKey;
         }
         
@@ -1104,7 +1114,7 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
             if( c == NSUpArrowFunctionKey)
                 c = NSDownArrowFunctionKey;
             
-            if( c == NSDownArrowFunctionKey)
+            else if( c == NSDownArrowFunctionKey) // Sekhmet (DC): ohne else lief die zweite Abfrage gleich wieder zurueck, links und rechts gingen in dieselbe Richtung (nach ThalesMMS/horos 32cc286b)
                 c = NSUpArrowFunctionKey;
         }
         
@@ -1565,6 +1575,8 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 {
     CGFloat relativePositionOnCurve;
     CGFloat distanceToCurve;
+
+    sekhmetRotatePrev = [self convertPoint: [theEvent locationInWindow] fromView: nil]; // SekhVet Paket CY
 	
 	if( [[self window] firstResponder] != self)
 	{
@@ -2095,9 +2107,20 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 			windowController.lowLOD = YES;
 			
 			if( [vrView _tool] == tRotate)
+			{
 				[self.pix orientation: before];
 			
-			[vrView mouseDragged: theEvent];
+				// SekhVet Paket CY: roll the camera ourselves. [vrView mouseDragged:] handed VTK's Spin the mouse in
+				// WINDOW coordinates while Spin pivots on the centre of the hidden render window, so the pivot sat
+				// somewhere else than the viewport centre and the angle gain was 1/r; the helper damps it near the centre.
+				NSPoint sekhmetCur = [self convertPoint: [theEvent locationInWindow] fromView: nil];
+				float sekhmetDelta = [DCMView sekhmetRotateDeltaFrom: sekhmetRotatePrev to: sekhmetCur viewSize: [self frame].size];
+				if( xFlipped != yFlipped) sekhmetDelta = -sekhmetDelta; // a single flip mirrors the sense of rotation on screen
+				[vrView Roll: sekhmetDelta];
+				sekhmetRotatePrev = sekhmetCur;
+			}
+			else
+				[vrView mouseDragged: theEvent];
 			
 			if( [vrView _tool] == tRotate)
 			{

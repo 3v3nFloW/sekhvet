@@ -96,6 +96,7 @@
 - (NSString*) modalities;
 + (NSString*) displayedModalitiesForSeries: (NSArray*) seriesModalities;
 - (NSArray*) imageSeries;
+- (NSUInteger) numberOfImageSeries; // Sekhmet (P3)
 - (NSArray*) imageSeriesContainingPixels:(BOOL) pixels;
 - (NSArray*) keyObjectSeries;
 - (NSArray*) keyObjects;

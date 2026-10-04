@@ -44,6 +44,7 @@
 #import "ROI.h"
 #import "SekhmetSpine.h" // SekhVet
 #import "SekhmetUSKalibrierung.h" // SekhVet Paket BH
+#import "SekhmetUeberlagerung.h" // SekhVet Paket CJ: Ueberlagern
 #import "DCMView.h"
 #import "DCMPix.h"
 #import "ITKSegmentation3D.h"
@@ -4306,6 +4307,7 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
 	tPt = [curView ConvertFromGL2View: ctPt];
 	drawRect.origin = tPt;
 	
+	[SekhmetUeberlagerung ergaenzeTextboxVonROI: self]; // SekhVet Paket CJ: "Native 42 · Contrast 168 · Δ +126 HU" im Stapel
 	NSString *sekhmetCalSource = [SekhmetUSKalibrierung borrowedSourceForPix: [self pix]]; // SekhVet Paket BH: geborgte US-Kalibrierung kenntlich machen
 	if( sekhmetCalSource && (textualBoxLine1.length || textualBoxLine2.length))
 	{

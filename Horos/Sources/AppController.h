@@ -62,7 +62,7 @@
 
 @class PreferenceController;
 @class BrowserController;
-@class SplashScreen;
+
 @class DCMNetServiceDelegate;
 @class WebPortal;
 
@@ -125,10 +125,9 @@ extern AppController* OsiriX;
 	
 	BOOL							showRestartNeeded;
 		
-    SplashScreen					*splashController;
-	
+
     volatile BOOL					quitting;
-	BOOL							verboseUpdateCheck;
+
 	NSNetService					*BonjourDICOMService;
 	
 	NSTimer							*updateTimer;
@@ -216,11 +215,7 @@ extern AppController* OsiriX;
 
 //===============HELP==========================
 - (IBAction) openHorosWebPage: (id) sender;
-- (IBAction) help: (id) sender;
-- (IBAction) openHorosSupport: (id) sender;
-- (IBAction) openCommunityPage: (id) sender;
 - (IBAction) openBugReportPage:(id)sender;
-- (IBAction) sendEmail: (id) sender;
 - (IBAction) osirix64bit: (id) sender;
 //=============================================
 

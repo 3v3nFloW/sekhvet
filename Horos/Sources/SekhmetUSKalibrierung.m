@@ -6,10 +6,17 @@
 
 #import "SekhmetUSKalibrierung.h"
 #import "DCMPix.h"
+#import "DCM.h"
 
 static NSString * const kFallbackKey = @"SekhmetUSCalibrationFallback";
+// SekhVet Paket CS: manufacturers (0008,0070) the borrowing is allowed for, separated by |, compared case-insensitively
+// as substrings; "*" = any. Unset = "Mindray", the only device the strip comparison was validated on.
+static NSString * const kVendorsKey = @"SekhmetUSCalibrationFallbackVendors";
 static const double kMinIoU = 0.9;
 static const int kMinMaskPixels = 100;
+// SekhVet Paket CS: the donor's strip compared with itself, moved vertically by a few pixels, must NOT match any more.
+// A grey bar or another block that survives such a shift says nothing about the depth, and an IoU of 1 means nothing.
+static const double kMaxShiftedIoU = 0.5;
 
 @implementation SekhmetBorrowedUSRegion
 
@@ -163,6 +170,64 @@ static int rulerMask( double *lum, int n, BOOL *mask)
     return iou;
 }
 
+// SekhVet Paket CS: Manufacturer of the file of this image, read once per file ("" if unknown)
++ (NSString*) manufacturerOfPix:(DCMPix*) p
+{
+    static NSMutableDictionary *cache = nil;
+    if( cache == nil) cache = [[NSMutableDictionary alloc] init];
+    NSString *path = [p srcFile];
+    if( path.length == 0) return @"";
+    NSString *m = [cache objectForKey: path];
+    if( m) return m;
+    m = @"";
+    @try
+    {
+        NSString *v = [[DCMObject objectWithContentsOfFile: path decodingPixelData: NO] attributeValueWithName: @"Manufacturer"];
+        if( [v isKindOfClass: [NSString class]]) m = v;
+    }
+    @catch (NSException *e) { }
+    if( cache.count > 500) [cache removeAllObjects];
+    [cache setObject: m forKey: path];
+    return m;
+}
+
+// SekhVet Paket CS: a wrong mm/px is worse than none. Whether the right strip really holds the depth scale cannot be
+// judged from the pixels alone (static text or a logo there looks "structured" too), so images of other manufacturers
+// stay uncalibrated unless the user names them in the defaults.
++ (BOOL) vendorAllowsBorrowingForPix:(DCMPix*) p
+{
+    NSString *list = [[NSUserDefaults standardUserDefaults] stringForKey: kVendorsKey];
+    if( list.length == 0) list = @"Mindray";
+    NSString *m = [self manufacturerOfPix: p];
+    for( NSString *raw in [list componentsSeparatedByString: @"|"])
+    {
+        NSString *t = [raw stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+        if( [t isEqualToString: @"*"]) return YES;
+        if( t.length && m.length && [m rangeOfString: t options: NSCaseInsensitiveSearch].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
+// SekhVet Paket CS: ruler-like = the strip no longer matches itself when moved by 3 or by 7 pixels. Two shifts and the
+// smaller IoU of the two, so that a real ruler whose tick spacing happens to equal one shift is not mistaken for a static
+// block. Returns -1 if not comparable.
++ (double) shiftedSelfIoUOf:(DCMPix*) p region:(DCMUSRegion*) r
+{
+    double a = [self rulerIoUBetween: p and: p region: r offsetB: 3];
+    double b = [self rulerIoUBetween: p and: p region: r offsetB: 7];
+    if( a < 0 || b < 0) return -1;
+    return MIN( a, b);
+}
+
+// SekhVet Paket CS: every frame of a multiframe file carries the same "image N" -- add the frame so the source is unambiguous
++ (NSString*) labelAtIndex:(NSUInteger) k labels:(NSArray*) labels pixList:(NSArray*) pixList
+{
+    NSString *l = [labels objectAtIndex: k];
+    BOOL shared = (k > 0 && [l isEqual: [labels objectAtIndex: k - 1]]) || (k + 1 < labels.count && [l isEqual: [labels objectAtIndex: k + 1]]);
+    if( shared == NO) return l;
+    return [NSString stringWithFormat: @"%@, frame %ld", l, (long) [(DCMPix*) [pixList objectAtIndex: k] frameNo] + 1];
+}
+
 + (NSUInteger) borrowCalibrationInPixList:(NSArray*) pixList labels:(NSArray*) labels
 {
     NSNumber *enabled = [[NSUserDefaults standardUserDefaults] objectForKey: kFallbackKey];
@@ -170,10 +235,12 @@ static int rulerMask( double *lum, int n, BOOL *mask)
     if( pixList.count < 2 || labels.count != pixList.count) return 0;
 
     NSUInteger done = 0;
+    BOOL refusalLogged = NO;
     for( NSUInteger i = 0; i < pixList.count; i++)
     {
         DCMPix *p = [pixList objectAtIndex: i];
         if( [self isUS: p] == NO || [p hasUSRegions] || ([p pixelSpacingX] != 0 && [p pixelSpacingY] != 0)) continue;
+        if( [self vendorAllowsBorrowingForPix: p] == NO) continue;   // SekhVet Paket CS: not validated for this device -- stays uncalibrated
 
         // naechstgelegenen passenden Spender suchen: i-1, i+1, i-2, ...
         for( NSUInteger d = 1; d < pixList.count; d++)
@@ -189,15 +256,23 @@ static int rulerMask( double *lum, int n, BOOL *mask)
                 DCMUSRegion *r = [self calibrated2DRegionOf: c];
                 if( r == nil || [self isUS: c] == NO || [self borrowedSourceForPix: c]) continue;
                 double iou = [self rulerIoUBetween: p and: c region: r offsetB: 0];
-                if( iou >= kMinIoU)
+                if( iou < kMinIoU) continue;
+                // SekhVet Paket CS: the match only counts if the strip is sensitive to a vertical shift at all
+                double shifted = [self shiftedSelfIoUOf: c region: r];
+                if( shifted < 0 || shifted > kMaxShiftedIoU)
+                {
+                    if( refusalLogged == NO) { refusalLogged = YES;   // once per series is enough
+                    NSLog( @"SekhVet US calibration: %@ not taken as source for %@ -- right strip is not ruler-like (IoU %.3f, shifted %.3f)", [self labelAtIndex: k labels: labels pixList: pixList], [self labelAtIndex: i labels: labels pixList: pixList], iou, shifted); }
+                    continue;
+                }
                 {
                     donor = c;
-                    NSString *label = [labels objectAtIndex: k];
+                    NSString *label = [self labelAtIndex: k labels: labels pixList: pixList];
                     NSMutableArray *copies = [NSMutableArray array];
                     for( DCMUSRegion *dr in [c usRegions])
                         [copies addObject: [SekhmetBorrowedUSRegion borrowedRegionFrom: dr label: label]];
                     [p sekhmetSetBorrowedUSRegions: copies spacingX: fabs( r.physicalDeltaX) * 10. spacingY: fabs( r.physicalDeltaY) * 10.];
-                    NSLog( @"SekhVet US calibration: %@ takes calibration of %@ (depth scale IoU %.3f, %.4f mm/px)", [labels objectAtIndex: i], label, iou, [p pixelSpacingX]);
+                    NSLog( @"SekhVet US calibration: %@ takes calibration of %@ (depth scale IoU %.3f, shifted %.3f, %.4f mm/px)", [self labelAtIndex: i labels: labels pixList: pixList], label, iou, shifted, [p pixelSpacingX]);
                     done++;
                 }
             }
@@ -222,16 +297,17 @@ static int rulerMask( double *lum, int n, BOOL *mask)
         [labels addObject: f];
     }
     for( NSUInteger i = 0; i < pixs.count; i++)
-        [log appendFormat: @"  before %@: US=%d regions=%d spacing=%.4f\n", labels[i], [self isUS: pixs[i]], [pixs[i] hasUSRegions], [pixs[i] pixelSpacingX]];
+        [log appendFormat: @"  before %@: US=%d regions=%d spacing=%.4f manufacturer=\"%@\" allowed=%d\n", labels[i], [self isUS: pixs[i]], [pixs[i] hasUSRegions], [pixs[i] pixelSpacingX], [self manufacturerOfPix: pixs[i]], [self vendorAllowsBorrowingForPix: pixs[i]]];
 
     // Gegenprobe: Spender gegen sich selbst, senkrecht verschoben (andere Tiefe verschiebt die Striche)
     for( DCMPix *p in pixs)
     {
         DCMUSRegion *r = [self calibrated2DRegionOf: p];
         if( r == nil) continue;
-        [log appendFormat: @"  shift test on first calibrated image: 0px %.3f, 1px %.3f, 4px %.3f, 12px %.3f\n",
+        [log appendFormat: @"  shift test on first calibrated image: 0px %.3f, 1px %.3f, 4px %.3f, 12px %.3f; ruler check (min of 3px/7px, must be <= %.2f) %.3f\n",
             [self rulerIoUBetween: p and: p region: r offsetB: 0], [self rulerIoUBetween: p and: p region: r offsetB: 1],
-            [self rulerIoUBetween: p and: p region: r offsetB: 4], [self rulerIoUBetween: p and: p region: r offsetB: 12]];
+            [self rulerIoUBetween: p and: p region: r offsetB: 4], [self rulerIoUBetween: p and: p region: r offsetB: 12],
+            kMaxShiftedIoU, [self shiftedSelfIoUOf: p region: r]];
         break;
     }
 

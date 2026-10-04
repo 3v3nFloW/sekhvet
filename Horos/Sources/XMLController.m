@@ -942,21 +942,28 @@ extern int delayedTileWindows;
          [cell setTextColor: [NSColor redColor]];
 }
 
-- (void) traverse: (NSXMLNode*) node string:(NSMutableString*) string
+// Sekhmet (DG): Trenner nach dem ersten Wert, nicht nach dem ersten nicht-leeren - ein leerer erster Wert verschob sonst
+// alle folgenden um eine Stelle (nach ThalesMMS/horos 32cc286b)
+static void SekhmetTraverse( NSXMLNode *node, NSMutableString *string, BOOL *first)
 {
-	int i;
-	
-	for( i = 0; i < [node childCount]; i++)
+	for( int i = 0; i < [node childCount]; i++)
 	{
 		if( [[node childAtIndex: i] stringValue] && [[node childAtIndex: i] childCount] == 0)
 		{
-			if( [string length]) [string appendFormat:@"\\%@", [[node childAtIndex: i] stringValue]];
-			else [string appendString: [[node childAtIndex: i] stringValue]];
+			if( *first == NO) [string appendString: @"\\"];
+			[string appendString: [[node childAtIndex: i] stringValue]];
+			*first = NO;
 		}
 		
 		if( [[node childAtIndex: i] childCount])
-			[self traverse: [node childAtIndex: i] string: string];
+			SekhmetTraverse( [node childAtIndex: i], string, first);
 	}
+}
+
+- (void) traverse: (NSXMLNode*) node string:(NSMutableString*) string
+{
+	BOOL first = ([string length] == 0);
+	SekhmetTraverse( node, string, &first);
 }
 
 - (NSString*) stringsSeparatedForNode:(NSXMLNode*) node
@@ -1134,16 +1141,19 @@ extern int delayedTileWindows;
 		{
 			if( [[[[item children] objectAtIndex: 0] children] count] == 0)
 			{
-				int index = [[path substringWithRange: NSMakeRange( [path length]-2, 1)] intValue];
+				// Sekhmet (DG): Index zwischen dem letzten '[' und ']' - vorher nur eine Ziffer, ab Wert 10 falsch
+				NSRange open = [path rangeOfString: @"[" options: NSBackwardsSearch];
+				int index = open.location != NSNotFound ? [[path substringFromIndex: open.location+1] intValue] : 0;
 				
-				path = [path substringToIndex: [path length]-3];
+				path = open.location != NSNotFound ? [path substringToIndex: open.location] : path;
 				
 				NSLog( @"%@", path);
 				NSLog( @"%d", index);
 				
 				NSMutableArray	*values = [NSMutableArray arrayWithArray: [[self stringsSeparatedForNode: [item parent]] componentsSeparatedByString:@"\\"]];
 				
-				[values replaceObjectAtIndex: index withObject: object];
+				if( index >= 0 && index < (int) values.count) // Sekhmet (DG)
+					[values replaceObjectAtIndex: index withObject: object];
 				
 				[groupsAndElements addObjectsFromArray: [NSArray arrayWithObjects: @"-i", [NSString stringWithFormat: @"%@=%@", path, [values componentsJoinedByString:@"\\"]], nil]];
 			}
@@ -1421,16 +1431,19 @@ extern int delayedTileWindows;
 						{
 							if( [[[[item children] objectAtIndex: 0] children] count] == 0)
 							{
-								int index = [[path substringWithRange: NSMakeRange( [path length]-2, 1)] intValue];
+								// Sekhmet (DG): Index zwischen dem letzten '[' und ']' - vorher nur eine Ziffer
+								NSRange open = [path rangeOfString: @"[" options: NSBackwardsSearch];
+								int index = open.location != NSNotFound ? [[path substringFromIndex: open.location+1] intValue] : 0;
 								
-								path = [path substringToIndex: [path length]-3];
+								path = open.location != NSNotFound ? [path substringToIndex: open.location] : path;
 								
 								NSLog( @"%@",  path);
 								NSLog( @"%d", index);
 								
 								NSMutableArray	*values = [NSMutableArray arrayWithArray: [[self stringsSeparatedForNode: [item parent]] componentsSeparatedByString:@"\\"]];
 								
-								[values removeObjectAtIndex: index];
+								if( index >= 0 && index < (int) values.count) // Sekhmet (DG)
+									[values removeObjectAtIndex: index];
 								
 								[groupsAndElements addObjectsFromArray: [NSArray arrayWithObjects: @"-i", [NSString stringWithFormat: @"%@=%@", path, [values componentsJoinedByString:@"\\"]], nil]];
 							}

@@ -2147,7 +2147,7 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
     
     bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
     
-    NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Horos.jpg"];
+    NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"SekhVet.jpg"];
     [bitmapData writeToFile:path atomically:YES];
 				
     email = [[Mailer alloc] init];
@@ -2537,7 +2537,7 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
             @try
             {
                 if( exportDCM == nil) exportDCM = [[DICOMExport alloc] init];
-                [exportDCM setSeriesNumber:5300 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];	//Try to create a unique series number... Do you have a better idea??
+                [exportDCM beginSeriesWithNumber:5300 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]]; // Sekhmet (DD): immer neue Serie	//Try to create a unique series number... Do you have a better idea??
                 [exportDCM setSeriesDescription: [dcmSeriesName stringValue]];
                 
                 if( [[NSUserDefaults standardUserDefaults] boolForKey: @"export3modalities"] == NO)

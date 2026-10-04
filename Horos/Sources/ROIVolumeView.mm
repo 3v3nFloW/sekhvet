@@ -141,7 +141,7 @@
 		
 		//Add the small OsiriX logo at the bottom right of the image
 		NSImage				*logo = [NSImage imageNamed:@"SmallLogo.tif"];
-		NSBitmapImageRep	*TIFFRep = [[NSBitmapImageRep alloc] initWithData: [logo TIFFRepresentation]];
+		NSBitmapImageRep	*TIFFRep = nil; (void) logo; // SekhVet Paket CU: no logo stamped into 3D captures (was the Horos logo)
 		
 		for( i = 0; i < [TIFFRep pixelsHigh]; i++)
 		{

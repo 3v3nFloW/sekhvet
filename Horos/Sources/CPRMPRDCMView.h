@@ -95,6 +95,7 @@ typedef NSInteger CPRMPRDCMViewCPRType;
 	BOOL lastRenderingWasMoveCenter;
 	
 	float rotateLinesStartAngle;
+	NSPoint sekhmetRotatePrev; // SekhVet Paket CY: last mouse point (view coordinates) of a free-rotate drag
 	
 	BOOL dontReenterCrossReferenceLines;
 	
@@ -116,6 +117,7 @@ typedef NSInteger CPRMPRDCMViewCPRType;
 - (BOOL)is2DTool:(ToolMode)tool;
 - (void) setDCMPixList:(NSMutableArray*)pix filesList:(NSArray*)files roiList:(NSMutableArray*)rois firstImage:(short)firstImage type:(char)type reset:(BOOL)reset;
 - (void) setVRView: (VRView*) v viewID:(int) i;
+- (void) sekhmetDetachWindowController; // Sekhmet (DH): CPRController ruft das im dealloc
 - (void) updateViewMPROnLoading:(BOOL) isLoading;
 - (void) updateViewMPR;
 - (void) updateViewMPR:(BOOL) computeCrossReferenceLines;

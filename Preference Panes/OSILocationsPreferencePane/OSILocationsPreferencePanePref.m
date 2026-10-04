@@ -39,6 +39,8 @@
 #import "N2Debug.h"
 #import "url.h"
 
+extern NSString* const OsirixDataDirName; // defined in DicomDatabase.mm ("SekhVet Data")
+
 //#import "DDKeychain.h"
 
 /************ Transfer Syntaxes *******************
@@ -418,8 +420,8 @@
 - (IBAction) osirixNewServer:(id)sender
 {
     NSMutableDictionary *aServer = [NSMutableDictionary dictionary];
-    [aServer setObject:@"osirix.hcuge.ch" forKey:@"Address"];
-    [aServer setObject:@"OsiriX PACS Server" forKey:@"Description"];
+    [aServer setObject:@"server.example.org" forKey:@"Address"];
+    [aServer setObject:@"SekhVet Database" forKey:@"Description"];
     
     [osiriXServers addObject: aServer];
 	
@@ -815,12 +817,12 @@
         
 		NSString	*location = oPanel.URL.path;
 		
-		if( [[location lastPathComponent] isEqualToString:@"Horos Data"])
+		if( [[location lastPathComponent] isEqualToString: OsirixDataDirName])
 		{
 			location = [location stringByDeletingLastPathComponent];
 		}
 
-		if( [[location lastPathComponent] isEqualToString:@"DATABASE"] && [[[location stringByDeletingLastPathComponent] lastPathComponent] isEqualToString:@"Horos Data"])
+		if( ([[location lastPathComponent] isEqualToString:@"DATABASE.noindex"] || [[location lastPathComponent] isEqualToString:@"DATABASE"]) && [[[location stringByDeletingLastPathComponent] lastPathComponent] isEqualToString: OsirixDataDirName])
 		{
 			location = [[location stringByDeletingLastPathComponent] stringByDeletingLastPathComponent];
 		}

@@ -130,6 +130,12 @@ typedef char* DcmFileFormat;
 - (NSString*) seriesDescription;
 - (void) setSeriesDescription: (NSString*) desc;
 - (void) setSeriesNumber: (long) no;
+
+// Sekhmet (DD): beginnt eine neue Serie, wie ein Export, der anfaengt: setzt die Seriennummer, erzeugt IMMER eine neue
+// SeriesInstanceUID (auch bei gleicher Nummer - -setSeriesNumber: tut das nur bei geaenderter Nummer) und zaehlt die
+// Bilder ab 1. Zwei Exporte desselben Viewers mit zufaellig gleicher Nummer (10:09 und 09:10, gleiche Sekunde)
+// landen nicht mehr in derselben Serie (nach ThalesMMS/horos 32cc286b)
+- (void) beginSeriesWithNumber: (long) no;
 - (void) setDefaultWWWL: (long) ww :(long) wl;
 - (void) setSlope: (float) s;
 - (void) setPixelSpacing: (float) x :(float) y;

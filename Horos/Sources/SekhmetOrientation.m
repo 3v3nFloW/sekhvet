@@ -2,8 +2,87 @@
  Sekhmet — veterinaere Orientierung, Implementierung. Siehe Header.
  ============================================================================*/
 
-#import "SekhmetMPRKategorie.h" // SekhVet Stufe 6c
 #import "SekhmetOrientation.h"
+
+// SekhVet Paket CS: the keyword matching is plain Foundation logic and stands above the rest of the file, so that
+// SekhVet/test/keyword-test.sh compiles exactly this code (with SEKHVET_LOGIC_TEST) without the viewer classes.
+//
+// Rules (review finding 2: "Hindlimb" / "Pelvic limb" / "Hinterextremitaet" went to the forelimb protocol because the
+// first substring hit won and the generic "Limb" / "Extremit" stood before the specific words; "Femoral head" went
+// to head / spine):
+//  - every keyword is tried, the LONGEST matching keyword wins; on equal length the earlier list entry wins.
+//    This also repairs keyword lists already stored in the user defaults.
+//  - a keyword of up to 3 letters (Hip, HWS) must be a whole word, a 4-letter keyword (Head, Neck, Limb, Kopf, Knie)
+//    must start a word ("Kniegelenk" yes, "Femurkopf" no). Longer keywords match anywhere, as before.
+static BOOL sekhmetKeywordMatches( NSString *text, NSString *keyword)
+{
+    NSUInteger kl = keyword.length, tl = text.length;
+    if( kl == 0 || tl < kl) return NO;
+    NSCharacterSet *letters = [NSCharacterSet letterCharacterSet];
+    NSRange search = NSMakeRange( 0, tl);
+    while( search.length >= kl)
+    {
+        NSRange r = [text rangeOfString: keyword options: NSCaseInsensitiveSearch range: search];
+        if( r.location == NSNotFound) return NO;
+        BOOL startOK = kl > 4 || r.location == 0 || ![letters characterIsMember: [text characterAtIndex: r.location - 1]];
+        BOOL endOK = kl > 3 || NSMaxRange( r) >= tl || ![letters characterIsMember: [text characterAtIndex: NSMaxRange( r)]];
+        if( startOK && endOK) return YES;
+        search.location = r.location + 1;
+        search.length = tl - search.location;
+    }
+    return NO;
+}
+
+// Preset of the longest matching keyword, or -1. presetExists filters keywords of deleted protocols (may be nil).
+static NSInteger sekhmetPresetForDescription( NSString *description, NSArray *keywords, BOOL (^presetExists)( NSInteger preset))
+{
+    NSInteger best = -1;
+    NSUInteger bestLength = 0;
+    if( description.length == 0) return -1;
+    for( NSDictionary *k in keywords)
+    {
+        if( ![k isKindOfClass: [NSDictionary class]]) continue;
+        NSString *keyword = [k objectForKey: @"keyword"];
+        NSNumber *preset = [k objectForKey: @"preset"];
+        if( ![keyword isKindOfClass: [NSString class]] || ![preset respondsToSelector: @selector(integerValue)]) continue;
+        if( keyword.length <= bestLength) continue;   // only a longer keyword can still win
+        if( sekhmetKeywordMatches( description, keyword) == NO) continue;
+        if( presetExists && presetExists( [preset integerValue]) == NO) continue;
+        best = [preset integerValue];
+        bestLength = keyword.length;
+    }
+    return best;
+}
+
+// Keywords added with Paket CS; +migrateKeywordsIfNeeded appends the missing ones once to a list the user has stored.
+static NSArray* sekhmetKeywordsAddedCS( BOOL hind)
+{
+    if( hind) return [NSArray arrayWithObjects: @"Hintergliedma", @"Hinterextremit", @"Hinterpfote", @"Hind limb", @"Pelvic limb", @"Rear limb",
+                      @"Femoral", @"Schenkel", @"Hüft", @"Hueft", @"Hips", nil];
+    return [NSArray arrayWithObjects: @"Vordergliedma", @"Vorderextremit", @"Fore limb", @"Thoracic limb", @"Front limb", nil];
+}
+
+static NSArray* sekhmetDefaultKeywords( void)
+{
+    NSMutableArray *a = [NSMutableArray array];
+    NSArray *head = [NSArray arrayWithObjects: @"Kopf", @"Schädel", @"Schaedel", @"Skull", @"Head", @"Wirbel", @"Spine", @"HWS", @"BWS", @"LWS", @"Hals", @"Neck", @"Gehirn", @"Brain", nil];
+    // "Extremit" and "Limb" are the generic fallback; the hind words below are longer and therefore win.
+    NSMutableArray *fore = [NSMutableArray arrayWithObjects: @"Ellbogen", @"Elbow", @"Schulter", @"Shoulder", @"Karpus", @"Carpus", @"Vorderbein", @"Forelimb", @"Humerus", @"Radius", @"Ulna", @"Extremit", @"Limb", @"Zehe", @"Pfote", nil]; // SekhVet Paket AF
+    NSMutableArray *hind = [NSMutableArray arrayWithObjects: @"Knie", @"Stifle", @"Tarsus", @"Sprunggelenk", @"Hip", @"Hinterbein", @"Hindlimb", @"Femur", @"Tibia", @"Becken", @"Pelvis", nil];
+    [fore addObjectsFromArray: sekhmetKeywordsAddedCS( NO)];
+    [hind addObjectsFromArray: sekhmetKeywordsAddedCS( YES)];
+    for( NSString *k in head)
+        [a addObject: [NSDictionary dictionaryWithObjectsAndKeys: k, @"keyword", [NSNumber numberWithInteger: SekhmetPresetHeadSpine], @"preset", nil]];
+    for( NSString *k in fore)
+        [a addObject: [NSDictionary dictionaryWithObjectsAndKeys: k, @"keyword", [NSNumber numberWithInteger: SekhmetPresetForelimb], @"preset", nil]];
+    for( NSString *k in hind)
+        [a addObject: [NSDictionary dictionaryWithObjectsAndKeys: k, @"keyword", [NSNumber numberWithInteger: SekhmetPresetHindlimb], @"preset", nil]];
+    return a;
+}
+
+#ifndef SEKHVET_LOGIC_TEST   // everything below needs the application classes
+
+#import "SekhmetMPRKategorie.h" // SekhVet Stufe 6c
 #import "SekhmetTesthaken.h" // SekhVet: Testhaken nur mit Build-Flag SEKHVET_TESTHAKEN=1
 #if SEKHVET_TESTHAKEN
 #import "SekhmetDCMViewKategorie.h" // only the point tests call into this category
@@ -17,6 +96,11 @@
 #import "DCM.h"
 #import "MPRController.h"
 #import "MPRDCMView.h"
+#import "CPRController.h"   // SekhVet Paket CH: Hanging Protocol im Curved MPR
+#import "CPRMPRDCMView.h"
+#import "OrthogonalMPRViewer.h"   // SekhVet Paket CH: Hanging Protocol im Orthogonal MPR
+#import "OrthogonalMPRController.h"
+#import "OrthogonalMPRView.h"
 #import "VRView.h"
 #import "Camera.h"
 #import "Point3D.h"
@@ -41,7 +125,9 @@ static const int sekhmetDefaultMPRAxis[3] = { 0, 2, 1 };
 typedef enum { SekhmetPlaneOblique = 0, SekhmetPlaneTransversal, SekhmetPlaneSagittal, SekhmetPlaneDorsal } SekhmetPlane;
 
 static NSMutableDictionary *sekhmetOverrides = nil;      // studyUID -> preset
+static NSMutableArray *sekhmetOverrideOrder = nil;       // SekhVet Paket CS: studyUIDs, oldest first (cap, see setPresetOverride:)
 static NSMutableDictionary *sekhmetStatus = nil;         // NSValue(viewer) -> status
+static NSMutableDictionary *sekhmetApplied2D = nil;      // SekhVet Paket CS: NSValue(viewer) -> seriesUID the protocol turned ("Off" undoes it)
 static NSMutableDictionary *sekhmetStationCache = nil;   // srcFile -> StationName
 
 @interface SekhmetOrientation ()
@@ -55,6 +141,12 @@ static NSMutableDictionary *sekhmetStationCache = nil;   // srcFile -> StationNa
 + (SekhmetPlane) planeForPix:(DCMPix*) pix;
 + (NSDictionary*) defaultRulesForPreset:(NSInteger) preset;
 + (NSArray*) defaultKeywords;
++ (void) migrateKeywordsIfNeeded;
++ (void) saveOverrides;
++ (NSString*) seriesUIDOfViewer:(ViewerController*) v;
++ (int) orientMPRView:(MPRDCMView*) v index:(int) i preset:(NSInteger) preset layout:(NSArray*) layout controllerClass:(Class) controllerClass;
++ (NSString*) statusForPreset:(NSInteger) preset done:(int) done of:(int) total reasons:(NSArray*) reasons;
++ (int) mprAxisForView:(int) i preset:(NSInteger) preset;
 + (void) viewerWillClose:(NSNotification*) n;
 + (void) straightenMPR:(MPRController*) c preset:(NSInteger) preset;   // SekhVet Paket AN, AX: Achse je Fenster aus dem Preset
 + (BOOL) crossPointOfMPR:(MPRController*) c into:(float*) K;   // SekhVet Paket AN
@@ -81,6 +173,18 @@ NSString* SekhmetVetLetter( NSString* letter)
         sekhmetOverrides = [[NSMutableDictionary alloc] init];
         NSDictionary *saved = [[NSUserDefaults standardUserDefaults] dictionaryForKey: @"SekhmetVetPresetOverrides"]; // SekhVet Paket AF: Wahl je Studie bleibt ueber Neustarts erhalten
         if( saved) [sekhmetOverrides addEntriesFromDictionary: saved];
+        // SekhVet Paket CS: order of the overrides (oldest first). Overrides stored before this package have no
+        // order yet; they count as the oldest.
+        sekhmetOverrideOrder = [[NSMutableArray alloc] init];
+        for( NSString *uid in [[NSUserDefaults standardUserDefaults] arrayForKey: @"SekhmetVetPresetOverrideOrder"])
+            if( [uid isKindOfClass: [NSString class]] && [sekhmetOverrides objectForKey: uid] && ![sekhmetOverrideOrder containsObject: uid]) [sekhmetOverrideOrder addObject: uid];
+        {
+            NSSet *ordered = [NSSet setWithArray: sekhmetOverrideOrder];
+            NSUInteger at = 0;
+            for( NSString *uid in [[sekhmetOverrides allKeys] sortedArrayUsingSelector: @selector(compare:)])
+                if( ![ordered containsObject: uid]) [sekhmetOverrideOrder insertObject: uid atIndex: at++];
+        }
+        sekhmetApplied2D = [[NSMutableDictionary alloc] init];
         sekhmetStatus = [[NSMutableDictionary alloc] init];
         sekhmetStationCache = [[NSMutableDictionary alloc] init];
         [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(viewerWillClose:) name: OsirixCloseViewerNotification object: nil];
@@ -90,7 +194,10 @@ NSString* SekhmetVetLetter( NSString* letter)
 + (void) viewerWillClose:(NSNotification*) n
 {
     if( [n object])
+    {
         [sekhmetStatus removeObjectForKey: [NSValue valueWithPointer: [n object]]];
+        [sekhmetApplied2D removeObjectForKey: [NSValue valueWithPointer: [n object]]];
+    }
 }
 
 #pragma mark - Defaults
@@ -111,17 +218,37 @@ NSString* SekhmetVetLetter( NSString* letter)
 
 + (NSArray*) defaultKeywords
 {
-    NSMutableArray *a = [NSMutableArray array];
-    NSArray *head = [NSArray arrayWithObjects: @"Kopf", @"Schädel", @"Schaedel", @"Skull", @"Head", @"Wirbel", @"Spine", @"HWS", @"BWS", @"LWS", @"Hals", @"Neck", @"Gehirn", @"Brain", nil];
-    NSArray *fore = [NSArray arrayWithObjects: @"Ellbogen", @"Elbow", @"Schulter", @"Shoulder", @"Karpus", @"Carpus", @"Vordergliedmasse", @"Vorderbein", @"Forelimb", @"Humerus", @"Radius", @"Ulna", @"Extremit", @"Limb", @"Zehe", @"Pfote", nil]; // SekhVet Paket AF
-    NSArray *limb = [NSArray arrayWithObjects: @"Knie", @"Stifle", @"Tarsus", @"Sprunggelenk", @"Hüfte", @"Huefte", @"Hip", @"Hintergliedmasse", @"Hinterbein", @"Hindlimb", @"Femur", @"Tibia", @"Becken", @"Pelvis", nil];
-    for( NSString *k in head)
-        [a addObject: [NSDictionary dictionaryWithObjectsAndKeys: k, @"keyword", [NSNumber numberWithInteger: SekhmetPresetHeadSpine], @"preset", nil]];
-    for( NSString *k in fore)
-        [a addObject: [NSDictionary dictionaryWithObjectsAndKeys: k, @"keyword", [NSNumber numberWithInteger: SekhmetPresetForelimb], @"preset", nil]];
-    for( NSString *k in limb)
-        [a addObject: [NSDictionary dictionaryWithObjectsAndKeys: k, @"keyword", [NSNumber numberWithInteger: SekhmetPresetHindlimb], @"preset", nil]];
-    return a;
+    return sekhmetDefaultKeywords();   // SekhVet Paket CS: list and matching stand at the top of the file (unit test)
+}
+
+// SekhVet Paket CS: a keyword list the user has edited is stored as a whole and therefore lacks the specific hind /
+// fore words added with this package ("Pelvic limb" would still fall to the generic "Limb"). Append the missing ones
+// once; nothing the user entered is changed or removed, and deleting them afterwards is final.
++ (void) migrateKeywordsIfNeeded
+{
+    static BOOL checked = NO;
+    if( checked) return;
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    NSArray *stored = [ud arrayForKey: SekhmetVetKeywordsKey];
+    if( stored == nil) return;   // defaults not registered yet - try again at the next call
+    checked = YES;
+    if( [ud boolForKey: @"SekhmetVetKeywordsAddedCS"]) return;
+    NSMutableArray *list = [NSMutableArray arrayWithArray: stored];
+    NSMutableSet *have = [NSMutableSet set];
+    for( NSDictionary *k in stored)
+        if( [k isKindOfClass: [NSDictionary class]] && [[k objectForKey: @"keyword"] isKindOfClass: [NSString class]])
+            [have addObject: [[k objectForKey: @"keyword"] lowercaseString]];
+    for( int hind = 0; hind < 2; hind++)
+        for( NSString *k in sekhmetKeywordsAddedCS( hind == 1))
+            if( ![have containsObject: [k lowercaseString]])
+                [list addObject: [NSDictionary dictionaryWithObjectsAndKeys: k, @"keyword",
+                                  [NSNumber numberWithInteger: hind ? SekhmetPresetHindlimb : SekhmetPresetForelimb], @"preset", nil]];
+    if( list.count != stored.count)   // an untouched list (registered defaults) already has them all: nothing is written
+    {
+        [ud setObject: list forKey: SekhmetVetKeywordsKey];
+        NSLog( @"SekhVet Hanging Protocol: %d keyword(s) added to the stored keyword list", (int) (list.count - stored.count));
+    }
+    [ud setBool: YES forKey: @"SekhmetVetKeywordsAddedCS"];
 }
 
 + (void) registerDefaults:(NSMutableDictionary*) defaultValues
@@ -224,14 +351,32 @@ NSString* SekhmetVetLetter( NSString* letter)
     [ud setObject: kw forKey: SekhmetVetKeywordsKey];
     if( [ud integerForKey: SekhmetVetPresetKey] == preset) [ud setInteger: SekhmetPresetHeadSpine forKey: SekhmetVetPresetKey];
     for( NSString *uid in [sekhmetOverrides allKeys])
-        if( [[sekhmetOverrides objectForKey: uid] integerValue] == preset) [sekhmetOverrides removeObjectForKey: uid];
-    [ud setObject: sekhmetOverrides forKey: @"SekhmetVetPresetOverrides"];
+        if( [[sekhmetOverrides objectForKey: uid] integerValue] == preset) { [sekhmetOverrides removeObjectForKey: uid]; [sekhmetOverrideOrder removeObject: uid]; }
+    [self saveOverrides];
     [self setProtocolList: list];
 }
 
+// SekhVet Paket CS (review finding 6): the toolbar popups (2D viewer, MPR, Curved MPR, Orthogonal MPR) get a first
+// entry "Automatic (by keywords)" with the tag SekhmetPresetAutomatic. Choosing it removes the override of the study;
+// the popup then shows the protocol the keywords select. The settings panel uses presetMenuIncludingOff:automatic:
+// without that entry.
 + (NSMenu*) presetMenuIncludingOff:(BOOL) off
 {
+    return [self presetMenuIncludingOff: off automatic: YES];
+}
+
++ (NSMenu*) presetMenuIncludingOff:(BOOL) off automatic:(BOOL) automatic
+{
     NSMenu *m = [[[NSMenu alloc] initWithTitle: @""] autorelease];
+    if( automatic)
+    {
+        NSMenuItem *mi = [m addItemWithTitle: NSLocalizedString( @"Automatic (by keywords)", nil) action: nil keyEquivalent: @""];
+        [mi setTag: SekhmetPresetAutomatic];
+        [mi setToolTip: NSLocalizedString( @"Removes the protocol chosen by hand for this study; the keywords decide again", nil)];
+        NSMenuItem *separator = [NSMenuItem separatorItem];
+        [separator setTag: SekhmetPresetAutomatic - 1];   // a menu item has tag 0 by default = SekhmetPresetOff; selectItemWithTag: must never land on the separator
+        [m addItem: separator];
+    }
     if( off) [[m addItemWithTitle: NSLocalizedString( @"Off", nil) action: nil keyEquivalent: @""] setTag: SekhmetPresetOff];
     for( NSDictionary *d in [self protocolList])
         [[m addItemWithTitle: [d objectForKey: @"name"] action: nil keyEquivalent: @""] setTag: [[d objectForKey: @"id"] integerValue]];
@@ -276,26 +421,42 @@ NSString* SekhmetVetLetter( NSString* letter)
     if( uid && [sekhmetOverrides objectForKey: uid] && [self presetExists: [[sekhmetOverrides objectForKey: uid] integerValue]]) // SekhVet Paket BP
         return [[sekhmetOverrides objectForKey: uid] integerValue];
 
-    if( description.length)
-    {
-        for( NSDictionary *k in [[NSUserDefaults standardUserDefaults] arrayForKey: SekhmetVetKeywordsKey])
-        {
-            NSString *keyword = [k objectForKey: @"keyword"];
-            if( keyword.length && [description rangeOfString: keyword options: NSCaseInsensitiveSearch].location != NSNotFound
-               && [self presetExists: [[k objectForKey: @"preset"] integerValue]])
-                return [[k objectForKey: @"preset"] integerValue];
-        }
-    }
+    // SekhVet Paket CS: the longest matching keyword wins (see the top of this file), no longer the first in the list.
+    [self migrateKeywordsIfNeeded];
+    NSInteger byKeyword = sekhmetPresetForDescription( description, [[NSUserDefaults standardUserDefaults] arrayForKey: SekhmetVetKeywordsKey],
+                                                       ^BOOL( NSInteger p) { return [SekhmetOrientation presetExists: p]; });
+    if( byKeyword >= 0) return byKeyword;
     NSInteger def = [[NSUserDefaults standardUserDefaults] integerForKey: SekhmetVetPresetKey];
     return [self presetExists: def] ? def : SekhmetPresetHeadSpine;
+}
+
+// SekhVet Paket CS (review finding 6): a negative preset (SekhmetPresetAutomatic, the popup entry "Automatic (by
+// keywords)") removes the override. The stored overrides are study UIDs and grew without limit; only the newest
+// SEKHMET_OVERRIDES_MAX are kept.
+#define SEKHMET_OVERRIDES_MAX 500
+
++ (void) saveOverrides
+{
+    [[NSUserDefaults standardUserDefaults] setObject: sekhmetOverrides forKey: @"SekhmetVetPresetOverrides"]; // SekhVet Paket AF
+    [[NSUserDefaults standardUserDefaults] setObject: sekhmetOverrideOrder forKey: @"SekhmetVetPresetOverrideOrder"];
 }
 
 + (void) setPresetOverride:(NSInteger) preset forStudyUID:(NSString*) uid
 {
     if( uid == nil) return;
+    [sekhmetOverrideOrder removeObject: uid];
     if( preset < 0) [sekhmetOverrides removeObjectForKey: uid];
-    else [sekhmetOverrides setObject: [NSNumber numberWithInteger: preset] forKey: uid];
-    [[NSUserDefaults standardUserDefaults] setObject: sekhmetOverrides forKey: @"SekhmetVetPresetOverrides"]; // SekhVet Paket AF
+    else
+    {
+        [sekhmetOverrides setObject: [NSNumber numberWithInteger: preset] forKey: uid];
+        [sekhmetOverrideOrder addObject: uid];   // newest last
+        while( sekhmetOverrideOrder.count > SEKHMET_OVERRIDES_MAX)
+        {
+            [sekhmetOverrides removeObjectForKey: [sekhmetOverrideOrder objectAtIndex: 0]];
+            [sekhmetOverrideOrder removeObjectAtIndex: 0];
+        }
+    }
+    [self saveOverrides];
 }
 
 #pragma mark - Geometrie
@@ -324,17 +485,6 @@ NSString* SekhmetVetLetter( NSString* letter)
     return SekhmetVetLetter( letter);
 }
 
-+ (NSString*) oppositeDisplayedLetter:(NSString*) d // SekhVet Paket AF: Gegenrichtung eines angezeigten Buchstabens (V<->D, Cr<->Cd, L<->R)
-{
-    NSArray *pairs = [NSArray arrayWithObjects: @"A", @"P", @"S", @"I", @"L", @"R", nil];
-    for( int k = 0; k < 6; k += 2)
-    {
-        if( [d isEqualToString: [self L: [pairs objectAtIndex: k]]]) return [self L: [pairs objectAtIndex: k + 1]];
-        if( [d isEqualToString: [self L: [pairs objectAtIndex: k + 1]]]) return [self L: [pairs objectAtIndex: k]];
-    }
-    return d;
-}
-
 + (BOOL) view:(DCMView*) view showsTop:(NSString*) top left:(NSString*) left
 {
     NSString *shownLeft = nil, *shownTop = nil;
@@ -361,6 +511,20 @@ NSString* SekhmetVetLetter( NSString* letter)
     NSString *A = NSLocalizedString( @"A", @"A: Anterior"), *P = NSLocalizedString( @"P", @"P: Posterior");
     NSString *S = NSLocalizedString( @"S", @"S: Superior"), *L = NSLocalizedString( @"L", @"L: Left"), *R = NSLocalizedString( @"R", @"R: Right");
     NSString *I = NSLocalizedString( @"I", @"I: Inferior");
+    // SekhVet Paket CP (30.09.2026, Knie-MRT: sagittale Serie lag im 2D-Fenster quer, im MPR stand sie richtig):
+    // Hat das Protokoll eine MPR-Anordnung aus "Take from screen", gilt sie je Ebene auch fuer die 2D-Serien und das
+    // Orthogonal-MPR. Die vier Regeln unten greifen nur noch fuer Protokolle ohne eigene Anordnung.
+    {
+        int axis = plane == SekhmetPlaneSagittal ? 0 : plane == SekhmetPlaneDorsal ? 1 : plane == SekhmetPlaneTransversal ? 2 : -1;
+        if( axis >= 0 && preset != SekhmetPresetOff)
+            for( NSDictionary *e in [self mprLayoutForPreset: preset])
+                if( [[e objectForKey: @"axis"] intValue] == axis)
+                {
+                    *top = [self L: [e objectForKey: @"top"]];
+                    *left = [self L: [e objectForKey: @"left"]];
+                    return YES;
+                }
+    }
     NSString *up = proximalCaudal ? I : S;            // SekhVet Paket AF: "oben" der Laengsachse = kranial oder kaudal
     NSString *sagLeft = proximalCaudal ? P : A;       // 180-Grad-Drehung der Sagittalen: kaudal oben, dorsal links
     NSString *t = nil, *l = nil;
@@ -398,6 +562,38 @@ NSString* SekhmetVetLetter( NSString* letter)
 }
 
 #if SEKHVET_TESTHAKEN
+// SekhVet Paket CP: 2D-Fenster folgt der MPR-Anordnung des Protokolls. Setzt fuer das Protokoll des Viewers kurz eine
+// ungewoehnliche Anordnung je Ebene, wendet an, liest die Randbuchstaben, stellt die alte Anordnung wieder her.
++ (NSString*) debugLayout2DTest:(ViewerController*) v
+{
+    NSInteger preset = [self presetForStudyUID: [v studyInstanceUID] description: [self descriptionForViewer: v]];
+    SekhmetPlane plane = [self planeForPix: [[v imageView] curDCM]];
+    int axis = plane == SekhmetPlaneSagittal ? 0 : plane == SekhmetPlaneDorsal ? 1 : plane == SekhmetPlaneTransversal ? 2 : -1;
+    if( preset == SekhmetPresetOff || axis < 0) return @"uebersprungen (Protokoll aus oder schraege Serie)";
+    NSString *vorL = nil, *vorT = nil;
+    [self lettersForView: [v imageView] left: &vorL top: &vorT];
+    id altRoh = [[[[NSUserDefaults standardUserDefaults] dictionaryForKey: SekhmetMPRLayoutsKey] objectForKey: [NSString stringWithFormat: @"%d", (int) preset]] retain];
+    // je Ebene ein Ziel, das die Regeln nie liefern: transversal oben A links L, sagittal oben I links A, dorsal oben I links L
+    NSArray *test = [NSArray arrayWithObjects:
+                     [NSDictionary dictionaryWithObjectsAndKeys: @0, @"axis", @"I", @"top", @"A", @"left", nil],
+                     [NSDictionary dictionaryWithObjectsAndKeys: @1, @"axis", @"I", @"top", @"L", @"left", nil],
+                     [NSDictionary dictionaryWithObjectsAndKeys: @2, @"axis", @"A", @"top", @"L", @"left", nil], nil];
+    [self setMPRLayout: test forPreset: preset];
+    NSString *status = [self applyToViewer: v];
+    NSString *istL = nil, *istT = nil;
+    [self lettersForView: [v imageView] left: &istL top: &istT];
+    NSDictionary *soll = [test objectAtIndex: axis];
+    BOOL ok = [istT hasPrefix: [self L: [soll objectForKey: @"top"]]] && [istL hasPrefix: [self L: [soll objectForKey: @"left"]]];
+    [self setMPRLayout: altRoh forPreset: preset];
+    [altRoh release];
+    [self applyToViewer: v];
+    NSString *nachL = nil, *nachT = nil;
+    [self lettersForView: [v imageView] left: &nachL top: &nachT];
+    return [NSString stringWithFormat: @"Protokoll %d, Ebene %d: vorher oben %@ links %@; mit Test-Anordnung oben %@ links %@ (Soll %@/%@) %@, Status '%@'; zurueckgestellt oben %@ links %@ %@",
+            (int) preset, axis, vorT, vorL, istT, istL, [self L: [soll objectForKey: @"top"]], [self L: [soll objectForKey: @"left"]], ok ? @"OK" : @"FEHLER", status,
+            nachT, nachL, ([nachT isEqualToString: vorT] && [nachL isEqualToString: vorL]) ? @"OK" : @"ANDERS ALS VORHER"];
+}
+
 + (NSString*) debugLettersForView:(DCMView*) view
 {
     NSString *l = nil, *t = nil;
@@ -416,15 +612,8 @@ static void sekhmetRotate( float *v, const float *axis, float deg)
     v[0] = r0; v[1] = r1; v[2] = r2;
 }
 
-// 3D-MPR: VRView legt das Volumen im Patientenraum ab, die Kamera-Achsen sind also DICOM-Richtungen. Je Ebene werden
-// Seite (Kamera vor/hinter der Ebene = Spiegelung) und Aufwaerts-Vektor (0/90/180/270 Grad) probiert, bis die Randbuchstaben
-// oben/links den Regeln entsprechen; geprueft wird mit denselben Buchstaben-Funktionen wie in der 2D-Ansicht.
-// SekhVet Paket AN: Die drei MPR-Ebenen wieder auf die Volumenachsen stellen, ohne den Ort zu verlieren.
-// Grund (Rueckmeldung 13.09.): von der Wirbelsaeule zum Knie scrollen, Protokoll auf Hindlimbs wechseln, spaeter zurueck
-// auf Kopf/Wirbelsaeule -- die Ebenen blieben schraeg stehen, die Kandidatensuche in applyToMPR probiert aber nur
-// 4x90 Grad um die AKTUELLE Normale und findet dann keine passende Lage ("nicht korrigierbar"). Darum vor der Suche:
-// Normale und Aufwaertsvektor je Ansicht auf die naechste Hauptachse runden (jede Achse nur einmal vergeben) und
-// alle drei Ansichten auf den bisherigen Kreuzungspunkt der Ebenen zentrieren.
+// 3D-MPR: VRView places the volume in patient space, so the camera axes are DICOM directions.
+// SekhVet Paket CS: the history of straightening (Paket AN) now stands above straightenMPR:preset:, where it belongs.
 static int sekhmetMainAxis( const float *v, int taken)   // Index der groessten Komponente, die noch frei ist
 {
     int best = -1; float bestVal = -1;
@@ -499,6 +688,11 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     for( int i = 0; i < 3; i++) { [[c sekhmetView: i] restoreCamera]; [[c sekhmetView: i] updateViewMPR]; }
 }
 
+// SekhVet Paket AN: put the three MPR planes back on the volume axes without losing the place.
+// Reason (feedback 13.09.): scroll from the spine to the stifle, switch the protocol to Hindlimbs, later back to
+// Head / Spine -- the planes stayed oblique, and the candidate search in orientMPRView only tries 4 x 90 degrees around
+// the CURRENT normal and then finds no matching position. Therefore straighten before the search, around the previous
+// crossing point of the planes.
 + (void) straightenMPR:(MPRController*) c preset:(NSInteger) preset
 {
     // SekhVet Paket AX: Horos' eigenen Reset (MPRController showWindow:) nachbauen — um den Kreuzungspunkt
@@ -531,7 +725,20 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     {
         // Aus einem kaputten Stand laesst sich nichts ableiten: Horos' eigener Reset (Werkzeugleiste "Reset").
         // showWindow: plant danach das Hanging Protocol selbst wieder ein.
-        NSLog( @"SekhVet HP MPR: unusable camera state - Horos reset");
+        // SekhVet Paket CS (review, unconfirmed "reset loop"): showWindow: schedules the hanging protocol again after
+        // 0.5 s. If the cameras are still unusable then, the same window would be reset for ever - so at most one
+        // reset per window within 5 s.
+        static void *lastResetWindow = NULL;
+        static NSTimeInterval lastResetTime = 0;
+        NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+        if( lastResetWindow == (void*) c && now - lastResetTime < 5)
+        {
+            NSLog( @"SekhVet HP MPR: camera state still unusable after a reset - giving up (press Reset in the toolbar)");
+            return;
+        }
+        lastResetWindow = (void*) c;
+        lastResetTime = now;
+        NSLog( @"SekhVet HP MPR: unusable camera state - default reset");
         [c showWindow: nil];
         return;
     }
@@ -580,6 +787,145 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     NSLog( @"SekhVet HP MPR reset: axes %d/%d/%d, crossing point (%.1f %.1f %.1f)", ax[0], ax[1], ax[2], K[0], K[1], K[2]);
 }
 
+// SekhVet Paket CH: eine MPR-Ansicht nach dem Preset richten (aus applyToMPR herausgeloest, damit Curved MPR dieselbe
+// Logik nutzt). CPRMPRDCMView ist eine Kopie von MPRDCMView mit denselben Methoden; es werden nur Nachrichten
+// geschickt (Punktsyntax = Methodenaufruf), deshalb reicht der Typ MPRDCMView. controllerClass liefert
+// angleBetweenVector:andPlane: (MPRController bzw. CPRController).
+// SekhVet Paket CS (review finding 3): the result says WHY a view was not set, so that the window title can tell:
+// SekhmetOrientDone = set, SekhmetOrientNotReady = no camera yet, SekhmetOrientOblique = oblique plane,
+// SekhmetOrientAxisMismatch = the layout wants another plane in this view, SekhmetOrientNoRotation = no rotation /
+// flip shows the wanted letters.
+enum { SekhmetOrientDone = 1, SekhmetOrientNotReady = 0, SekhmetOrientOblique = -1, SekhmetOrientAxisMismatch = -2, SekhmetOrientNoRotation = -3 };
+
++ (int) orientMPRView:(MPRDCMView*) v index:(int) i preset:(NSInteger) preset layout:(NSArray*) layout controllerClass:(Class) controllerClass
+{
+    Camera *cam = v.camera;
+    if( cam == nil || cam.position == nil || cam.focalPoint == nil) { NSLog( @"SekhVet Hanging Protocol MPR: view %d without camera - skipped", i); return SekhmetOrientNotReady; }
+
+    float n[3] = { cam.position.x - cam.focalPoint.x, cam.position.y - cam.focalPoint.y, cam.position.z - cam.focalPoint.z };
+    float len = sqrtf( n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
+    if( !(len > 0)) return SekhmetOrientNotReady;
+    n[0] /= len; n[1] /= len; n[2] /= len;
+
+    float ax = fabsf( n[0]), ay = fabsf( n[1]), az = fabsf( n[2]);
+    const float limit = 0.85;
+    SekhmetPlane plane = SekhmetPlaneOblique;
+    if( az >= limit && az >= ax && az >= ay) plane = SekhmetPlaneTransversal;
+    else if( ax >= limit && ax >= ay && ax >= az) plane = SekhmetPlaneSagittal;
+    else if( ay >= limit && ay >= ax && ay >= az) plane = SekhmetPlaneDorsal;
+    if( plane == SekhmetPlaneOblique) return SekhmetOrientOblique;
+
+    NSString *top = nil, *left = nil;
+    if( layout)   // SekhVet Paket AX: Buchstaben aus "Take from screen"
+    {
+        NSDictionary *lv = [layout objectAtIndex: i];
+        int want = [[lv objectForKey: @"axis"] intValue];
+        int have = plane == SekhmetPlaneSagittal ? 0 : plane == SekhmetPlaneDorsal ? 1 : 2;
+        if( want != have) { NSLog( @"SekhVet Hanging Protocol MPR: view %d shows axis %d, the layout wants axis %d - skipped", i, have, want); return SekhmetOrientAxisMismatch; }
+        top = [self L: [lv objectForKey: @"top"]];
+        left = [self L: [lv objectForKey: @"left"]];
+    }
+    else if( [self targetTop: &top left: &left forPlane: plane preset: preset] == NO) { NSLog( @"SekhVet Hanging Protocol MPR: view %d plane %d without target in preset %d", i, (int) plane, (int) preset); return SekhmetOrientNoRotation; }
+
+    // Acht Moeglichkeiten (4 Kameradrehungen x Spiegelung) decken jede Kombination von oben/links ab.
+    // SekhVet Paket CS (stale comment corrected): the order of the candidates does not matter - each of the eight
+    // shows a different pair of top / left letters, so at most one of them matches.
+    float before[9];
+    [v.pix orientation: before];
+    Camera *base = [[[Camera alloc] initWithCamera: cam] autorelease];
+    float U[3] = { base.viewUp.x, base.viewUp.y, base.viewUp.z };
+    BOOL xf0 = v.xFlipped, yf0 = v.yFlipped, found = NO;
+    NSString *sl = nil, *st = nil;
+    int turn = 0;
+    v.rotation = 0;
+    for( int k = 0; k < 4 && !found; k++)
+    {
+        if( k > 0)
+        {
+            float u[3] = { U[0], U[1], U[2] };
+            sekhmetRotate( u, n, 90.f * k);
+            Camera *t = [[[Camera alloc] initWithCamera: base] autorelease];
+            t.viewUp = [Point3D pointWithX: u[0] y: u[1] z: u[2]];
+            t.forceUpdate = YES;
+            v.camera = t;
+            [v restoreCamera];
+            [v updateViewMPR: NO];   // nur diese Ansicht rendern, ohne Kopplung — wie Horos' Drehwerkzeug
+        }
+        for( int f = 0; f < 2 && !found; f++)
+        {
+            v.yFlipped = NO;
+            v.xFlipped = (f == 0);
+            [self lettersForView: v left: &sl top: &st];
+            if( [sl hasPrefix: left] && [st hasPrefix: top]) { found = YES; turn = k; }
+        }
+    }
+    if( found)
+    {
+        float delta = 0;
+        if( turn > 0)
+        {
+            float after[9];
+            [v.vrView getCosMatrix: after];
+            delta = [controllerClass angleBetweenVector: after andPlane: before];
+            v.angleMPR -= delta;
+        }
+        NSLog( @"SekhVet Hanging Protocol MPR: view %d plane %d -> top %@ left %@ (camera %d x 90 deg, crosshair %+.0f, flipped %d)",
+              i, (int) plane, st, sl, turn, -delta, v.xFlipped);
+    }
+    else
+    {
+        base.forceUpdate = YES;
+        v.camera = base;
+        [v restoreCamera];
+        [v updateViewMPR: NO];
+        v.xFlipped = xf0; v.yFlipped = yf0;
+        NSLog( @"SekhVet Hanging Protocol MPR: view %d plane %d - no rotation/flip shows top %@ left %@", i, (int) plane, top, left);
+    }
+    [v setNeedsDisplay: YES];
+    return found ? SekhmetOrientDone : SekhmetOrientNoRotation;
+}
+
+// SekhVet Paket CS (review finding 3): badge text for a 3D window. "HP: name" only if every view was set; otherwise
+// the badge says how many views were set and why the others were not.
++ (NSString*) statusForPreset:(NSInteger) preset done:(int) done of:(int) total reasons:(NSArray*) reasons
+{
+    NSString *name = [self nameForPreset: preset];
+    if( done >= total) return [NSString stringWithFormat: @"HP: %@", name];
+    NSMutableArray *unique = [NSMutableArray array];
+    for( NSString *r in reasons) if( ![unique containsObject: r]) [unique addObject: r];
+    NSString *why = unique.count ? [unique componentsJoinedByString: @", "] : NSLocalizedString( @"view not ready", nil);
+    if( done == 0) return [NSString stringWithFormat: NSLocalizedString( @"HP: %@ (not applied: %@)", nil), name, why];
+    return [NSString stringWithFormat: NSLocalizedString( @"HP: %@ (only %d of %d views: %@)", nil), name, done, total, why];
+}
+
+static NSString* sekhmetOrientReason( int r)
+{
+    switch( r)
+    {
+        case SekhmetOrientOblique:      return NSLocalizedString( @"oblique", nil);
+        case SekhmetOrientAxisMismatch: return NSLocalizedString( @"other plane than in the layout", nil);
+        case SekhmetOrientNoRotation:   return NSLocalizedString( @"no matching rotation", nil);
+        default:                        return NSLocalizedString( @"view not ready", nil);
+    }
+}
+
+// SekhVet Paket CS (review finding 3): the title of a 3D window is "<kind>: <title of the 2D viewer>" and so carried
+// the badge of the 2D viewer, whatever happened in the 3D window itself. Replace that badge by the state of THIS
+// window (nil = no badge). The badge is the part behind the last " — " if it starts like one of our status texts.
++ (void) setBadge:(NSString*) status inTitleOfWindow:(NSWindow*) w
+{
+    NSString *t = [w title];
+    if( w == nil || t == nil) return;
+    NSRange r = [t rangeOfString: @" — " options: NSBackwardsSearch];
+    if( r.location != NSNotFound)
+    {
+        NSString *tail = [t substringFromIndex: NSMaxRange( r)];
+        if( [tail hasPrefix: @"HP"] || [tail hasPrefix: @"DX rule"]) t = [t substringToIndex: r.location];
+    }
+    if( status.length) t = [NSString stringWithFormat: @"%@ — %@", t, status];
+    if( ![t isEqualToString: [w title]]) [w setTitle: t];
+}
+
 + (NSString*) applyToMPR:(MPRController*) c
 {
     return [self applyToMPR: c straighten: NO];
@@ -590,6 +936,11 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     if( c == nil || [c windowWillClose]) return nil;
     NSInteger preset = [self presetForMPR: c];
     NSArray *layout = preset == SekhmetPresetOff ? nil : [self mprLayoutForPreset: preset];
+    // SekhVet Paket CS (review finding 4): while one view is zoomed by double-click the other two are collapsed and
+    // are neither rendered nor read correctly. Apply as far as possible now and once more, from a defined state,
+    // as soon as the views are back (MPRDCMView sekhmetFinishZoomSecondPass -> sekhmetApplyPendingHangingProtocol).
+    BOOL zoomed = c.sekhmetFrameZoomed;
+    c.sekhmetHPPending = zoomed;   // a complete application (not zoomed) also settles an older pending one
     // SekhVet Paket AX: beim Oeffnen stehen die Ebenen in Horos' Grundbelegung; weicht die Anordnung des
     // Presets davon ab, muss auch dann umgelegt werden.
     if( !straighten && layout)
@@ -597,7 +948,21 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     float crossBefore[3] = { 0, 0, 0 };
     BOOL keepCross = straighten && [self crossPointOfMPR: c into: crossBefore];
     if( straighten) [self straightenMPR: c preset: preset];   // SekhVet Paket AN/AX: Ebenen auf die Achsen des Presets
-    if( preset == SekhmetPresetOff) return nil;
+    if( preset == SekhmetPresetOff)
+    {
+        // SekhVet Paket CS (review finding 15): "Off" after a protocol is Horos' plain state - straightened planes
+        // (above) AND no mirrored display. Horos never mirrors an MPR view itself; the flips came from the protocol.
+        if( straighten)
+            for( int i = 0; i < 3; i++)
+            {
+                MPRDCMView *v = [c sekhmetView: i];
+                if( v.xFlipped) v.xFlipped = NO;
+                if( v.yFlipped) v.yFlipped = NO;
+                [v setNeedsDisplay: YES];
+            }
+        [self setBadge: nil inTitleOfWindow: [c window]];
+        return nil;
+    }
 
     // SekhVet Paket AX: oben/links ueber (a) eine Drehung der Kamera um ihre eigene Blickrichtung und
     // (b) die Spiegelung der Anzeige. Die Blickseite bleibt, wie Horos' Kopplung sie ableitet. Nach der Drehung
@@ -606,92 +971,12 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     // und kehrte die Blickseite um; gemessen 16.09.: zwei Ebenen vertauscht). Eine Anzeige-Drehung geht im MPR
     // nicht: MPRDCMView subDrawRect: setzt rotation bei jedem Zeichnen auf 0.
     int done = 0, skipped = 0;
+    NSMutableArray *reasons = [NSMutableArray array];
     for( int i = 0; i < 3; i++)
     {
-        MPRDCMView *v = [c sekhmetView: i];
-        Camera *cam = v.camera;
-        if( cam == nil || cam.position == nil || cam.focalPoint == nil) { NSLog( @"SekhVet Hanging Protocol MPR: view %d without camera - skipped", i); continue; }
-
-        float n[3] = { cam.position.x - cam.focalPoint.x, cam.position.y - cam.focalPoint.y, cam.position.z - cam.focalPoint.z };
-        float len = sqrtf( n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
-        if( !(len > 0)) continue;
-        n[0] /= len; n[1] /= len; n[2] /= len;
-
-        float ax = fabsf( n[0]), ay = fabsf( n[1]), az = fabsf( n[2]);
-        const float limit = 0.85;
-        SekhmetPlane plane = SekhmetPlaneOblique;
-        if( az >= limit && az >= ax && az >= ay) plane = SekhmetPlaneTransversal;
-        else if( ax >= limit && ax >= ay && ax >= az) plane = SekhmetPlaneSagittal;
-        else if( ay >= limit && ay >= ax && ay >= az) plane = SekhmetPlaneDorsal;
-        if( plane == SekhmetPlaneOblique) { skipped++; continue; }
-
-        NSString *top = nil, *left = nil;
-        if( layout)   // SekhVet Paket AX: Buchstaben aus "Take from screen"
-        {
-            NSDictionary *lv = [layout objectAtIndex: i];
-            int want = [[lv objectForKey: @"axis"] intValue];
-            int have = plane == SekhmetPlaneSagittal ? 0 : plane == SekhmetPlaneDorsal ? 1 : 2;
-            if( want != have) { NSLog( @"SekhVet Hanging Protocol MPR: view %d shows axis %d, the layout wants axis %d - skipped", i, have, want); continue; }
-            top = [self L: [lv objectForKey: @"top"]];
-            left = [self L: [lv objectForKey: @"left"]];
-        }
-        else if( [self targetTop: &top left: &left forPlane: plane preset: preset] == NO) { NSLog( @"SekhVet Hanging Protocol MPR: view %d plane %d without target in preset %d", i, (int) plane, (int) preset); continue; }
-
-        // Acht Moeglichkeiten (4 Kameradrehungen x Spiegelung) decken jede Kombination von oben/links ab.
-        // Drehung 0 und xFlipped zuerst: das ist Horos' Grundzustand, bei Gleichstand bleibt es dabei.
-        float before[9];
-        [v.pix orientation: before];
-        Camera *base = [[[Camera alloc] initWithCamera: cam] autorelease];
-        float U[3] = { base.viewUp.x, base.viewUp.y, base.viewUp.z };
-        BOOL xf0 = v.xFlipped, yf0 = v.yFlipped, found = NO;
-        NSString *sl = nil, *st = nil;
-        int turn = 0;
-        v.rotation = 0;
-        for( int k = 0; k < 4 && !found; k++)
-        {
-            if( k > 0)
-            {
-                float u[3] = { U[0], U[1], U[2] };
-                sekhmetRotate( u, n, 90.f * k);
-                Camera *t = [[[Camera alloc] initWithCamera: base] autorelease];
-                t.viewUp = [Point3D pointWithX: u[0] y: u[1] z: u[2]];
-                t.forceUpdate = YES;
-                v.camera = t;
-                [v restoreCamera];
-                [v updateViewMPR: NO];   // nur diese Ansicht rendern, ohne Kopplung — wie Horos' Drehwerkzeug
-            }
-            for( int f = 0; f < 2 && !found; f++)
-            {
-                v.yFlipped = NO;
-                v.xFlipped = (f == 0);
-                [self lettersForView: v left: &sl top: &st];
-                if( [sl hasPrefix: left] && [st hasPrefix: top]) { found = YES; turn = k; }
-            }
-        }
-        if( found)
-        {
-            float delta = 0;
-            if( turn > 0)
-            {
-                float after[9];
-                [v.vrView getCosMatrix: after];
-                delta = [MPRController angleBetweenVector: after andPlane: before];
-                v.angleMPR -= delta;
-            }
-            done++;
-            NSLog( @"SekhVet Hanging Protocol MPR: view %d plane %d -> top %@ left %@ (camera %d x 90 deg, crosshair %+.0f, flipped %d)",
-                  i, (int) plane, st, sl, turn, -delta, v.xFlipped);
-        }
-        else
-        {
-            base.forceUpdate = YES;
-            v.camera = base;
-            [v restoreCamera];
-            [v updateViewMPR: NO];
-            v.xFlipped = xf0; v.yFlipped = yf0;
-            NSLog( @"SekhVet Hanging Protocol MPR: view %d plane %d - no rotation/flip shows top %@ left %@", i, (int) plane, top, left);
-        }
-        [v setNeedsDisplay: YES];
+        int r = [self orientMPRView: [c sekhmetView: i] index: i preset: preset layout: layout controllerClass: [MPRController class]];
+        if( r == SekhmetOrientDone) done++;
+        else { [reasons addObject: sekhmetOrientReason( r)]; if( r == SekhmetOrientOblique) skipped++; }
     }
     // SekhVet Paket AN: den Versatz einer Slab-Dicke zuruecknehmen, damit man nach mehreren Wechseln
     // noch an derselben Stelle steht.
@@ -710,8 +995,120 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
         }
     }
     NSLog( @"SekhVet Hanging Protocol MPR: %d planes set, %d oblique skipped (preset %@%@)", done, skipped, [self nameForPreset: preset],
-          layout ? @", eigene Anordnung" : @"");
-    return [NSString stringWithFormat: @"HP: %@", [self nameForPreset: preset]];
+          layout ? @", own layout" : @"");
+    // SekhVet Paket CS (review finding 3): the result is shown in the window title instead of being dropped.
+    NSString *status = zoomed ? [NSString stringWithFormat: NSLocalizedString( @"HP: %@ (completes when the view is un-zoomed)", nil), [self nameForPreset: preset]]
+                              : [self statusForPreset: preset done: done of: 3 reasons: reasons];
+    [self setBadge: status inTitleOfWindow: [c window]];
+    return status;
+}
+
+// SekhVet Paket CH: Curved MPR -- dieselben Regeln auf die drei MPR-Ansichten des CPR-Fensters. Nur Drehen/Spiegeln
+// um die Blickrichtung; die Achsen der Ansichten werden hier nicht umgelegt. "Off" laesst die Lage, wie sie ist
+// (zurueck zu Horos: Knopf Reset).
+// SekhVet Paket CS (review finding 3): a protocol with its own MPR layout ("Take from screen") assigns a plane to each
+// VIEW INDEX. The Curved MPR keeps Horos' assignment, so with such a layout every view whose plane differed was
+// skipped silently. Now each view gets the top / left letters the layout holds for the PLANE it shows - the same
+// lookup the 2D viewer and the Orthogonal MPR use (targetTop:left:forPlane:preset:, Paket CP); no view index involved.
++ (NSString*) applyToCPR:(CPRController*) c
+{
+    if( c == nil || [c windowWillClose] || [[c window] isVisible] == NO) return nil;   // Paket CS: closing window (fork review 15)
+    NSInteger preset = [self presetForMPR: (MPRController*) c];   // liest nur [c viewer]
+    if( preset == SekhmetPresetOff) { [self setBadge: nil inTitleOfWindow: [c window]]; return nil; }
+    NSArray *views = [NSArray arrayWithObjects: c.mprView1, c.mprView2, c.mprView3, nil];
+    if( views.count != 3) return nil;
+    int done = 0, skipped = 0;
+    NSMutableArray *reasons = [NSMutableArray array];
+    for( int i = 0; i < 3; i++)
+    {
+        int r = [self orientMPRView: (MPRDCMView*) [views objectAtIndex: i] index: i preset: preset layout: nil controllerClass: [CPRController class]];
+        if( r == SekhmetOrientDone) done++;
+        else { [reasons addObject: sekhmetOrientReason( r)]; if( r == SekhmetOrientOblique) skipped++; }
+    }
+    [[c window] makeFirstResponder: c.mprView1];   // Kopplung einmal neu rechnen (Querlinien)
+    [c.mprView1 updateViewMPR];
+    NSLog( @"SekhVet Hanging Protocol CPR: %d planes set, %d oblique skipped (preset %@)", done, skipped, [self nameForPreset: preset]);
+    NSString *status = [self statusForPreset: preset done: done of: 3 reasons: reasons];
+    [self setBadge: status inTitleOfWindow: [c window]];
+    return status;
+}
+
+// SekhVet Paket CH: Orthogonal MPR -- Horos dreht/spiegelt dort selbst die Anzeige je Ansicht (applyOrientation) und
+// behaelt Drehung/Spiegelung beim Neuschneiden bei. Deshalb wie im 2D-Viewer: je Ansicht Ebene aus dem Pix, dann die
+// acht Kombinationen Drehung x Spiegelung, bis die Randbuchstaben passen.
++ (NSString*) applyToOrthogonalMPR:(OrthogonalMPRViewer*) o
+{
+    ViewerController *v2d = [o viewer];
+    if( o == nil || v2d == nil || [o windowWillClose] || [o window] == nil) return nil;   // SekhVet Paket CS: closing window (fork review 15)
+    NSInteger preset = [self presetForStudyUID: [v2d studyInstanceUID] description: [self descriptionForViewer: v2d]];
+    if( preset == SekhmetPresetOff) { [self setBadge: nil inTitleOfWindow: [o window]]; return nil; }
+    OrthogonalMPRController *c = [o controller];
+    NSArray *views = [NSArray arrayWithObjects: [c originalView], [c xReslicedView], [c yReslicedView], nil];
+    int done = 0;
+    NSMutableArray *reasons = [NSMutableArray array];   // SekhVet Paket CS (review finding 3)
+    for( DCMView *view in views)
+    {
+        DCMPix *pix = view.curDCM;
+        if( pix == nil) { [reasons addObject: sekhmetOrientReason( SekhmetOrientNotReady)]; continue; }
+        SekhmetPlane plane = [self planeForPix: pix];
+        NSString *top = nil, *left = nil;
+        if( plane == SekhmetPlaneOblique) { [reasons addObject: sekhmetOrientReason( SekhmetOrientOblique)]; continue; }
+        if( [self targetTop: &top left: &left forPlane: plane preset: preset] == NO) { [reasons addObject: sekhmetOrientReason( SekhmetOrientNoRotation)]; continue; }
+        float origRot = view.rotation;
+        BOOL origX = view.xFlipped, origY = view.yFlipped, found = NO;
+        for( int xf = 0; xf < 2 && !found; xf++)
+            for( int r = 0; r < 4 && !found; r++)
+            {
+                [self setView: view rotation: 90 * r xFlipped: (xf == 1) yFlipped: NO];
+                found = [self view: view showsTop: top left: left];
+            }
+        if( found) done++;
+        else
+        {
+            [self setView: view rotation: origRot xFlipped: origX yFlipped: origY];
+            [reasons addObject: sekhmetOrientReason( SekhmetOrientNoRotation)];
+        }
+        [view setNeedsDisplay: YES];
+    }
+    NSLog( @"SekhVet Hanging Protocol Ortho MPR: %d of %d views set (preset %@)", done, (int) views.count, [self nameForPreset: preset]);
+    NSString *status = [self statusForPreset: preset done: done of: 3 reasons: reasons];
+    [self setBadge: status inTitleOfWindow: [o window]];
+    return status;
+}
+
++ (void) configurePresetToolbarItem:(NSToolbarItem*) item viewer:(ViewerController*) v target:(id) target
+{
+    NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 0, 0, 150, 22) pullsDown: NO] autorelease];
+    [pb setMenu: [self presetMenuIncludingOff: YES]];
+    [[pb cell] setControlSize: NSControlSizeSmall];
+    [pb setFont: [NSFont systemFontOfSize: 11]];
+    [pb selectItemWithTag: [self presetForStudyUID: [v studyInstanceUID] description: [self descriptionForViewer: v]]];
+    [pb setTarget: target];
+    [pb setAction: @selector(sekhmetPresetChanged:)];
+    [item setLabel: NSLocalizedString( @"Hanging Protocol", nil)];
+    [item setPaletteLabel: NSLocalizedString( @"Hanging Protocol (SekhVet)", nil)];
+    [item setToolTip: NSLocalizedString( @"Hanging protocol preset for this study: rotates the three MPR planes", nil)];
+    [item setView: pb];
+    [item setMinSize: NSMakeSize( 150, 22)];
+    [item setMaxSize: NSMakeSize( 150, 22)];
+}
+
++ (void) updatePresetToolbarItemInWindow:(NSWindow*) w viewer:(ViewerController*) v
+{
+    for( NSToolbarItem *item in [[w toolbar] items])
+        if( [[item itemIdentifier] isEqualToString: @"SekhmetVetPreset"])
+        {
+            NSPopUpButton *pb = (NSPopUpButton*) [item view];   // Liste kann sich geaendert haben (Paket BP)
+            [pb setMenu: [self presetMenuIncludingOff: YES]];
+            [pb selectItemWithTag: [self presetForStudyUID: [v studyInstanceUID] description: [self descriptionForViewer: v]]];
+        }
+}
+
++ (void) presetPopupChanged:(NSPopUpButton*) sender viewer:(ViewerController*) v
+{
+    NSString *uid = [v studyInstanceUID];
+    [self setPresetOverride: [[sender selectedItem] tag] forStudyUID: uid];   // SekhVet Paket CS: tag < 0 = "Automatic (by keywords)"
+    [self applyToAllViewersOfStudyUID: uid];   // 2D-Viewer, 3D-MPR, Curved MPR und Orthogonal MPR der Studie
 }
 
 #pragma mark - SekhVet Paket AX: MPR-Anordnung je Preset ("Take from screen")
@@ -744,6 +1141,25 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
     if( layout) [all setObject: layout forKey: key];
     else [all removeObjectForKey: key];
     [[NSUserDefaults standardUserDefaults] setObject: all forKey: SekhmetMPRLayoutsKey];
+}
+
+// SekhVet Paket CS (review finding 5): everything of a protocol that decides how the MPR planes lie - the five rules
+// and the layout from "Take from screen". SekhmetMPRKategorie stores it with a remembered MPR state and drops the
+// state when the text differs, i.e. when the rules or the layout were edited since.
++ (NSString*) stateSignatureForPreset:(NSInteger) preset
+{
+    if( preset == SekhmetPresetOff) return @"off";
+    NSDictionary *rules = [self rulesForPreset: preset];
+    NSMutableString *s = [NSMutableString string];
+    for( NSString *key in [NSArray arrayWithObjects: SekhmetRuleTransversalDorsalUp, SekhmetRuleSagittalCranialLeft, SekhmetRuleDorsalCranialUp,
+                           SekhmetRuleLeftOnRight, SekhmetRuleProximalCaudal, nil])
+        [s appendString: [[rules objectForKey: key] boolValue] ? @"1" : @"0"];
+    NSArray *layout = [self mprLayoutForPreset: preset];
+    if( layout == nil) [s appendString: @"|-"];
+    else
+        for( NSDictionary *v in layout)
+            [s appendFormat: @"|%d%@%@", [[v objectForKey: @"axis"] intValue], [v objectForKey: @"top"], [v objectForKey: @"left"]];
+    return s;
 }
 
 + (int) mprAxisForView:(int) i preset:(NSInteger) preset
@@ -861,9 +1277,9 @@ static BOOL sekhmetPlanesIntersection( float n[3][3], float d[3], float *out)
 // Ansichtshoehen (unabhaengiger Beleg, dass der Zoom wirklich griff) und das Fadenkreuz.
 // Erwartet: nur das geklickte Fenster zoomt, das zweite behaelt seine Ansichten und sein Fadenkreuz.
 // Braucht zwei Fenster, also zusammen mit SEKHVET_MPR_TEST=all.
-static MPRDCMView *sekhmetZoomTestView = nil;
-
 #if SEKHVET_TESTHAKEN
+static MPRDCMView *sekhmetZoomTestView = nil;   // SekhVet Paket CS: only the test hooks use it, so it lives inside the #if
+
 + (void) debugDoubleMPRZoomLog:(NSString*) phase
 {
     for( NSWindow *w in [NSApp windows])
@@ -1236,7 +1652,7 @@ static MPRDCMView *sekhmetZoomTestView = nil;
                  xFlipped: [[rule objectForKey: @"xFlipped"] boolValue]
                  yFlipped: [[rule objectForKey: @"yFlipped"] boolValue]];
             [view setNeedsDisplay: YES];
-            return [NSString stringWithFormat: NSLocalizedString( @"DX rule \"%@\"", nil), match];
+            return [NSString stringWithFormat: NSLocalizedString( @"DX rule \"%@\"", nil), match];   // applyToViewerInternal notes the series for "Off"
         }
     }
     return nil;
@@ -1268,6 +1684,13 @@ static MPRDCMView *sekhmetZoomTestView = nil;
     return status;
 }
 
++ (NSString*) seriesUIDOfViewer:(ViewerController*) v
+{
+    NSString *uid = nil;
+    @try { uid = [[v currentSeries] valueForKey: @"seriesInstanceUID"]; } @catch (NSException *e) { }
+    return uid.length ? uid : @"?";
+}
+
 + (NSString*) applyToViewerInternal:(ViewerController*) v
 {
     DCMView *view = [v imageView];
@@ -1277,13 +1700,30 @@ static MPRDCMView *sekhmetZoomTestView = nil;
     DCMPix *pix = view.curDCM;
     if( pix == nil) pix = [pixList objectAtIndex: 0];
 
+    NSValue *viewerKey = [NSValue valueWithPointer: v];
     NSInteger preset = [self presetForStudyUID: [v studyInstanceUID] description: [self descriptionForViewer: v]];
-    if( preset == SekhmetPresetOff) return nil;
+    if( preset == SekhmetPresetOff)
+    {
+        // SekhVet Paket CS (review finding 15): "Off" is Horos' plain display. If a protocol (or a DX rule) turned THIS
+        // series in this viewer before, take that back: no rotation, no flip. A series the protocol never touched
+        // keeps whatever Horos restored for it.
+        if( [[sekhmetApplied2D objectForKey: viewerKey] isEqualToString: [self seriesUIDOfViewer: v]])
+        {
+            [self setView: view rotation: 0 xFlipped: NO yFlipped: NO];
+            [view setNeedsDisplay: YES];
+        }
+        [sekhmetApplied2D removeObjectForKey: viewerKey];
+        return nil;
+    }
 
     NSString *modality = [v modality];
     NSArray *projection = [NSArray arrayWithObjects: @"DX", @"CR", @"MG", @"XA", @"RF", @"OT", nil];
     if( modality && [projection containsObject: modality])
-        return [self applyDXRulesToView: view pix: pix modality: modality];
+    {
+        NSString *dx = [self applyDXRulesToView: view pix: pix modality: modality];
+        if( dx) [sekhmetApplied2D setObject: [self seriesUIDOfViewer: v] forKey: viewerKey];
+        return dx;
+    }
 
     if( pix.imageType.length && [[pix.imageType uppercaseString] rangeOfString: @"LOCALIZER"].location != NSNotFound)   // ohne Laengenpruefung liefert nil eine Range {0,0} = Treffer (Reslice-Pix haben keinen imageType)
         return NSLocalizedString( @"HP: localizer, not rotated", nil);
@@ -1318,7 +1758,7 @@ static MPRDCMView *sekhmetZoomTestView = nil;
     {
         [self setView: view rotation: origRot xFlipped: origX yFlipped: origY];
         [view setNeedsDisplay: YES];
-        NSLog( @"SekhVet Vet HP: no rotation reaches target top=%@ left=%@ (series %@)", top, left, [self descriptionForViewer: v]);
+        NSLog( @"SekhVet Vet HP: no rotation reaches target top=%@ left=%@", top, left);   // SekhVet Paket CS: no study / series description in the log (review finding 21)
         return NSLocalizedString( @"HP: no matching rotation", nil);
     }
 
@@ -1332,6 +1772,7 @@ static MPRDCMView *sekhmetZoomTestView = nil;
     }
 
     [view setNeedsDisplay: YES];
+    [sekhmetApplied2D setObject: [self seriesUIDOfViewer: v] forKey: viewerKey];   // SekhVet Paket CS: "Off" takes this rotation back
     return [NSString stringWithFormat: @"HP: %@", [self nameForPreset: preset]];
 }
 
@@ -1347,24 +1788,41 @@ static MPRDCMView *sekhmetZoomTestView = nil;
     }
     // SekhVet Paket AF: waehrend des Protokollwechsels kein Fenster-Gleichlauf, sonst ueberschreibt das erste MPR-Fenster
     // das zweite mit seinem alten Stand (Double MPR: nur ein Fenster richtig)
+    // SekhVet Paket CS (review finding 13): the flag is global; an exception between setting and clearing it left MPR
+    // sync and the three-view zoom sync off until the next start. @finally always clears it.
     [MPRController sekhmetSetSyncSuppressed: YES];
-    NSMutableArray *done = [NSMutableArray array];
-    for( NSWindow *w in [NSApp windows])   // 3D-MPR-Fenster derselben Studie
+    @try
     {
-        id wc = [w windowController];
-        if( [wc isKindOfClass: [MPRController class]] && [(MPRController*) wc windowWillClose] == NO)
+        NSMutableArray *done = [NSMutableArray array];
+        for( NSWindow *w in [NSApp windows])   // 3D-MPR-Fenster derselben Studie
         {
-            if( uid == nil || [[[(id) wc viewer] studyInstanceUID] isEqualToString: uid])
+            id wc = [w windowController];
+            if( [wc isKindOfClass: [MPRController class]] && [(MPRController*) wc windowWillClose] == NO)
             {
-                [self applyToMPR: wc straighten: YES]; [done addObject: wc];   // SekhVet Paket AN: Protokollwechsel = definierter Ausgangszustand
-                NSString *t = [w title]; NSRange r = [t rangeOfString: @": "]; // Titel "MPR: <2D-Titel>" mit dem neuen HP-Badge erneuern (Paket AG)
-                [w setTitle: [NSString stringWithFormat: @"%@: %@", (r.location == NSNotFound ? @"MPR" : [t substringToIndex: r.location]), [[[(id) wc viewer] window] title]]];
+                if( uid == nil || [[[(id) wc viewer] studyInstanceUID] isEqualToString: uid])
+                {
+                    // SekhVet Paket AN: Protokollwechsel = definierter Ausgangszustand.
+                    // SekhVet Paket CS (review finding 3): applyToMPR writes its own badge into the window title; the
+                    // title used to be rebuilt here from the 2D viewer's title and showed the 2D badge.
+                    [self applyToMPR: wc straighten: YES]; [done addObject: wc];
+                }
             }
         }
+        for( MPRController *c in done) [c sekhmetSettleAfterHP];
     }
-    for( MPRController *c in done) [c sekhmetSettleAfterHP];
-    [MPRController sekhmetSetSyncSuppressed: NO];
+    @catch (NSException *e) { NSLog( @"SekhVet Hanging Protocol MPR: %@", e); }
+    @finally { [MPRController sekhmetSetSyncSuppressed: NO]; }
+    for( NSWindow *w in [NSApp windows])   // SekhVet Paket CH: Curved- und Orthogonal-MPR-Fenster derselben Studie
+    {
+        id wc = [w windowController];
+        if( [wc isKindOfClass: [CPRController class]] && (uid == nil || [[[(id) wc viewer] studyInstanceUID] isEqualToString: uid]))
+            [self applyToCPR: wc];
+        else if( [wc isKindOfClass: [OrthogonalMPRViewer class]] && (uid == nil || [[[(id) wc viewer] studyInstanceUID] isEqualToString: uid]))
+            [self applyToOrthogonalMPR: wc];
+    }
     [[NSNotificationCenter defaultCenter] postNotificationName: SekhmetVetPresetDidChangeNotification object: uid];
 }
 
 @end
+
+#endif // SEKHVET_LOGIC_TEST

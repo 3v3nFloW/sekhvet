@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "options.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 
 #import "CPRController.h"
 #import "BrowserController.h"
@@ -64,11 +65,12 @@
 #import <N2Debug.h>
 #import "PluginManager.h"
 #import "DicomDatabase.h"
+#import "SekhmetMPRKategorie.h" // SekhVet Paket CH: Hanging Protocol im Curved MPR
+#import "SekhmetOrientation.h"
 
 static NSString *MPRPlaneObservationContext = @"MPRPlaneObservationContext";
 
 
-extern void setvtkMeanIPMode( int m);
 extern short intersect3D_2Planes( float *Pn1, float *Pv1, float *Pn2, float *Pv2, float *u, float *iP);
 static float deg2rad = M_PI / 180.0; 
 
@@ -158,8 +160,9 @@ static float deg2rad = M_PI / 180.0;
             
             if( succeed == NO)
             {
-                if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot compute the high resolution data.\r\rUpgrade to SekhVet 64-bit or SekhVet MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"SekhVet 64-bit", nil), nil) == NSAlertAlternateReturn)
-                    [[AppController sharedAppController] osirix64bit: self];
+                // SekhVet Paket CS (review finding 9): the text advertised an upgrade to "SekhVet 64-bit or SekhVet MD" (a
+                // blind Horos -> SekhVet replacement; neither product exists) with a button leading to it.
+                NSRunAlertPanel( NSLocalizedString(@"High resolution",nil), NSLocalizedString( @"Cannot compute the high resolution data: not enough memory.",nil), NSLocalizedString(@"OK", nil), nil, nil);
                 
                 [HR_PixList release];
                 HR_PixList = nil;
@@ -435,6 +438,7 @@ static float deg2rad = M_PI / 180.0;
 
         [[NSNotificationCenter defaultCenter] addObserver:self selector: @selector(updateCurvedPathCost) name:OsirixUpdateCurvedPathCostNotification object: nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector: @selector(resetSlider) name:OsirixDeletedCurvedPathNotification object: nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector: @selector(sekhmetPresetDidChange:) name: SekhmetVetPresetDidChangeNotification object: nil]; // SekhVet Paket CH
 
 //        [shadingCheck setAction:@selector(switchShading:)];
 //        [shadingCheck setTarget:self];
@@ -608,6 +612,9 @@ static float deg2rad = M_PI / 180.0;
 	[mprView3 updateViewMPROnLoading:isInitializing];
 	
 	[super showWindow: sender];
+	// SekhVet Paket CH: Hanging Protocol wie im 3D-MPR, nachdem Horos die Ansichten gelegt hat
+	[NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetApplyHangingProtocol) object: nil];
+	[self performSelector: @selector(sekhmetApplyHangingProtocol) withObject: nil afterDelay: 0.5 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
 	
 	[self setTool: toolsMatrix];
 	
@@ -771,6 +778,9 @@ static float deg2rad = M_PI / 180.0;
     mprView1.delegate = nil;
     mprView2.delegate = nil;
     mprView3.delegate = nil;   
+    [mprView1 sekhmetDetachWindowController]; // Sekhmet (DH): sonst zeigen die Ansichten nach dem dealloc noch auf diesen Controller
+    [mprView2 sekhmetDetachWindowController];
+    [mprView3 sekhmetDetachWindowController];
     cprView.delegate = nil;
     topTransverseView.delegate = nil;
     middleTransverseView.delegate = nil;
@@ -1202,8 +1212,8 @@ static float deg2rad = M_PI / 180.0;
             int err = [assistant createCenterline:centerline FromPointA:pta ToPointB:ptb withSmoothing:NO];
             if(!err)
             {
-                unsigned int lineCount = [centerline count] - 1;
-                for( unsigned int i = 0; i < lineCount ; ++i)
+                // Sekhmet (DF): ohne Unterlauf bei leerer Mittellinie (count - 1 als unsigned) (nach ThalesMMS/horos 32cc286b)
+                for( NSUInteger i = 0; i + 1 < [centerline count] ; ++i)
                 {
                     pt = [centerline objectAtIndex:i];
                     node.x = pt.x;
@@ -1232,8 +1242,14 @@ static float deg2rad = M_PI / 180.0;
                     err= [assistant createCenterline:centerline FromPointA:pta ToPointB:ptb withSmoothing:NO];
                     if(err!=ERROR_DISTTRANSNOTFINISH)
                         break;
-                    
-                    for(unsigned int i=0;i<[centerline count] - 1;i++)
+                }
+                // Sekhmet (DF): die Knoten erst nach einem gelungenen Versuch uebernehmen. Vorher wurden sie nur nach
+                // einem GESCHEITERTEN Versuch angefuegt (mit count - 1 als unsigned: Unterlauf bei leerer Linie), nach
+                // dem gelungenen brach die Schleife vorher ab - der Pfad bestand nur aus dem Endpunkt
+                // (nach ThalesMMS/horos 32cc286b)
+                if( err == 0)
+                {
+                    for( NSUInteger i = 0; i + 1 < [centerline count]; i++)
                     {
                         pt = [centerline objectAtIndex:i];
                         node.x = pt.x;
@@ -1257,10 +1273,13 @@ static float deg2rad = M_PI / 180.0;
             }
         }
         pt = [centerline lastObject];
-        node.x = pt.x;
-        node.y = pt.y;
-        node.z = pt.z;
-        [newCP addPatientNode:N3VectorApplyTransform(node, volumeData2PatientTransform)];
+        if( pt) // Sekhmet (DF): ohne Mittellinie kein Knoten bei (0,0,0) (nach ThalesMMS/horos 32cc286b)
+        {
+            node.x = pt.x;
+            node.y = pt.y;
+            node.z = pt.z;
+            [newCP addPatientNode:N3VectorApplyTransform(node, volumeData2PatientTransform)];
+        }
         
         self.curvedPath = newCP;
         
@@ -1473,7 +1492,7 @@ static float deg2rad = M_PI / 180.0;
 			
 			[self updateViewsAccordingToFrame: nil];
 		} else if( [[[u lastObject] objectForKey: @"type"] isEqualToString:@"curvedPath"]) {
-			self.curvedPath = [NSKeyedUnarchiver unarchiveObjectWithData:[[u lastObject] objectForKey:@"curvedPath"]];
+			self.curvedPath = [SekhmetRestrictedUnarchiver unarchiveKeyedObjectWithData:[[u lastObject] objectForKey:@"curvedPath"] allowedClassNames: [SekhmetRestrictedUnarchiver curvedPathClassNames]]; // Sekhmet (DE)
 			mprView1.curvedPath = curvedPath;
 			mprView2.curvedPath = curvedPath;
 			mprView3.curvedPath = curvedPath;
@@ -2278,10 +2297,7 @@ static float deg2rad = M_PI / 180.0;
     
 	if( clippingRangeMode == 1 || clippingRangeMode == 3 || clippingRangeMode == 2)	// MIP - Mean - minIP
 	{
-		if( clippingRangeMode == 3) //mean
-			setvtkMeanIPMode( 1);
-		else
-			setvtkMeanIPMode( 0);
+		// Sekhmet (P2): Mean steht jetzt je Mapper (VRView setMode:), kein prozessweiter setvtkMeanIPMode mehr
 		
 		[mprView1.vrView prepareFullDepthCapture];
 		
@@ -3458,7 +3474,7 @@ static float deg2rad = M_PI / 180.0;
 	
 	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 	
-    NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Horos.jpg"];
+    NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"SekhVet.jpg"];
     [bitmapData writeToFile:path atomically:YES];
     
 	ifoto = [[Photos alloc] init];
@@ -3619,7 +3635,8 @@ static float deg2rad = M_PI / 180.0;
     NSData *data = [NSData dataWithContentsOfFile: path];
     if( data)
     {
-        CPRCurvedPath *newCurvedPath = [NSKeyedUnarchiver unarchiveObjectWithData: data];
+        CPRCurvedPath *newCurvedPath = [SekhmetRestrictedUnarchiver unarchiveKeyedObjectWithData: data allowedClassNames: [SekhmetRestrictedUnarchiver curvedPathClassNames]]; // Sekhmet (DE): Pfad-Datei
+        if( [newCurvedPath isKindOfClass: [CPRCurvedPath class]] == NO) newCurvedPath = nil;
         
         if( newCurvedPath)
         {
@@ -3667,6 +3684,9 @@ static float deg2rad = M_PI / 180.0;
 		[[self window] setAcceptsMouseMovedEvents: NO];
 		
 		windowWillClose = YES;
+		
+		// SekhVet Paket CS (fork review 15): the hanging protocol is scheduled 0.5 s after showWindow: - never on a closing window
+		[NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetApplyHangingProtocol) object: nil];
 		
 		[[NSUserDefaults standardUserDefaults] setBool: self.displayMousePosition forKey: @"MPRDisplayMousePosition"];
         [[NSUserDefaults standardUserDefaults] setInteger: self.cprType forKey: @"SavedCPRType"];
@@ -3778,7 +3798,8 @@ static float deg2rad = M_PI / 180.0;
 
 - (void) setupToolbar
 {
-	toolbar = [[NSToolbar alloc] initWithIdentifier: @"3DMPR Toolbar Identifier"];
+	// SekhVet Paket CH: eigener Schluessel -- Horos teilte ihn mit dem 3D-MPR, beide Fenster ueberschrieben sich die gespeicherte Toolbar
+	toolbar = [[NSToolbar alloc] initWithIdentifier: @"SekhVet CPR Toolbar Identifier"];
     
     [toolbar setAllowsUserCustomization: YES];
     [toolbar setAutosavesConfiguration: YES];
@@ -3845,6 +3866,11 @@ static float deg2rad = M_PI / 180.0;
 {
     NSToolbarItem *toolbarItem = [[[NSToolbarItem alloc] initWithItemIdentifier: itemIdent] autorelease];
     
+    if ([itemIdent isEqualToString: @"SekhmetVetPreset"]) // SekhVet Paket CH: Hanging Protocol je Studie, auch im Curved MPR
+    {
+        [self sekhmetConfigurePresetItem: toolbarItem];
+        return toolbarItem;
+    }
     if ([itemIdent isEqualToString: @"tbLOD"])
     {
         [toolbarItem setLabel: NSLocalizedString(@"LOD",nil)];
@@ -4077,7 +4103,7 @@ static float deg2rad = M_PI / 180.0;
 
 - (NSArray *) toolbarDefaultItemIdentifiers: (NSToolbar *) toolbar
 {
-    return [NSArray arrayWithObjects: @"tbTools", @"tbWLWW", @"tbLOD", @"tbStraightenedCPRAngle", @"tbCPRType", @"tbHighRes", @"tbPathAssistant", @"testDelNode", @"tbCPRPathMode", @"tbViewsPosition", @"tbThickSlab", NSToolbarFlexibleSpaceItemIdentifier, @"Reset.pdf", @"Export.icns", @"curvedPath.icns", @"BestRendering.pdf", @"AxisShowHide", @"CPRAxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", nil];
+    return [NSArray arrayWithObjects: @"tbTools", @"tbWLWW", @"SekhmetVetPreset", @"tbLOD", @"tbStraightenedCPRAngle", @"tbCPRType", @"tbHighRes", @"tbPathAssistant", @"testDelNode", @"tbCPRPathMode", @"tbViewsPosition", @"tbThickSlab", NSToolbarFlexibleSpaceItemIdentifier, @"Reset.pdf", @"Export.icns", @"curvedPath.icns", @"BestRendering.pdf", @"AxisShowHide", @"CPRAxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", nil];
 }
 
 - (NSArray *) toolbarAllowedItemIdentifiers: (NSToolbar *) toolbar
@@ -4086,7 +4112,7 @@ static float deg2rad = M_PI / 180.0;
             NSToolbarFlexibleSpaceItemIdentifier,
             NSToolbarSpaceItemIdentifier,
             NSToolbarSeparatorItemIdentifier,
-            @"tbTools", @"tbWLWW", @"tbLOD", @"tbStraightenedCPRAngle", @"tbCPRType", @"tbHighRes", @"tbPathAssistant", @"tbCPRPathMode", @"tbViewsPosition", @"tbThickSlab", @"Reset.pdf", @"Export.icns", @"curvedPath.icns", @"BestRendering.pdf", @"AxisColors", @"AxisShowHide", @"CPRAxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"tbInterpolationMode", nil];
+            @"tbTools", @"tbWLWW", @"SekhmetVetPreset", @"tbLOD", @"tbStraightenedCPRAngle", @"tbCPRType", @"tbHighRes", @"tbPathAssistant", @"tbCPRPathMode", @"tbViewsPosition", @"tbThickSlab", @"Reset.pdf", @"Export.icns", @"curvedPath.icns", @"BestRendering.pdf", @"AxisColors", @"AxisShowHide", @"CPRAxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"tbInterpolationMode", nil];
     
     for (id key in [PluginManager plugins])
     {
@@ -5094,10 +5120,15 @@ static float deg2rad = M_PI / 180.0;
 {
     if ([centerline count] && [[curvedPath nodes] count] > 2)
     {
-        int targetValue = ([centerline count] - 3) * [pathSimplificationSlider floatValue] / 100 + 3;
-        while ([[curvedPath nodes] count] != targetValue)
+        // Sekhmet (DF): vorzeichenbehaftet rechnen (weniger als 3 Punkte liessen das Ziel ueberlaufen) und aufhoeren,
+        // wenn ein Schritt nichts aendert - ein Knoten, der weder weg noch zurueck konnte, hielt die Schleife ewig am
+        // Laufen (nach ThalesMMS/horos 32cc286b)
+        long targetValue = ((long) [centerline count] - 3) * [pathSimplificationSlider floatValue] / 100 + 3;
+        if( targetValue < 2) targetValue = 2;
+        while ((long) [[curvedPath nodes] count] != targetValue)
         {
-            if (targetValue < [[curvedPath nodes] count])
+            NSUInteger before = [[curvedPath nodes] count];
+            if (targetValue < (long) [[curvedPath nodes] count])
             {
                 [self removeNode];
             }
@@ -5105,6 +5136,8 @@ static float deg2rad = M_PI / 180.0;
             {
                 [self undoLastNodeRemoval];
             }
+            if ([[curvedPath nodes] count] == before)
+                break;
         }
     }
     [self willChangeValueForKey: @"onSliderEnabled"];

@@ -10,12 +10,12 @@ PID_PAT=${1:?PatientID angeben}
 TILT=${2:-90,0,v0}
 SEQ=${3:-2,1,3,2}
 TAKE=${4:-}
-APP=~/Projects/horos-vet/build/Build/Products/Release/Horos.app/Contents/MacOS/Horos
+APP=~/Projects/horos-vet/build/Build/Products/Release/Horos.app/Contents/MacOS/SekhVet
 LOG=/tmp/sekhvet-hp-dreh.log
 
 curl -s -m 5 -X POST http://127.0.0.1:8085/ -d '<?xml version="1.0"?><methodCall><methodName>KillOsiriX</methodName><params></params></methodCall>' >/dev/null 2>&1
 sleep 3
-pgrep -f "horos-vet/build.*MacOS/Horos" >/dev/null && { pkill -f "horos-vet/build.*MacOS/Horos"; sleep 3; }
+pgrep -f "horos-vet/build.*MacOS/SekhVet" >/dev/null && { pkill -f "horos-vet/build.*MacOS/SekhVet"; sleep 3; }
 
 defaults write vet.kappa1.sekhvet.horos CloseAllWindowsBeforeXMLRPCOpen -bool NO
 # gespeicherte MPR-Lagen voriger Laeufe raus — sonst spielt Paket AH einen alten Stand zurueck

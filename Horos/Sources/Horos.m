@@ -107,7 +107,8 @@
 }
 
 + (NSArray<NSString *> *)WeasisCustomizationPaths {
-    return @[ [@"~/Library/Application Support/Horos/Weasis" stringByExpandingTildeInPath], @"/Library/Application Support/Horos/Weasis" ];
+    // SekhVet Paket CT: own folders, not those of Horos
+    return @[ [@"~/Library/Application Support/SekhVet/Weasis" stringByExpandingTildeInPath], @"/Library/Application Support/SekhVet/Weasis" ];
 }
 
 @end

@@ -130,8 +130,9 @@ static NSDate *CachedHorosPluginsListDate = nil;
     
 	plugins = [[NSMutableArray arrayWithArray:[PluginManager pluginsList]] retain];
 	
-	osirixPluginListURLs = [[NSArray arrayWithObjects:OSIRIX_PLUGIN_LIST_URL, OSIRIX_PLUGIN_LIST_ALT_URL, nil] retain];
-    horosPluginListURLs = [[NSArray arrayWithObjects:HOROS_PLUGIN_LIST_URL, HOROS_PLUGIN_LIST_ALT_URL, nil] retain];
+	// SekhVet Paket CT: no remote plugin lists (they came over plain http from horosproject.org); the two web tabs stay empty.
+	osirixPluginListURLs = [[NSArray array] retain];
+    horosPluginListURLs = [[NSArray array] retain];
 	 
 	return self;
 }
@@ -325,7 +326,7 @@ static NSDate *CachedHorosPluginsListDate = nil;
                 [osirixPluginDownloadButton setEnabled:NO];
                 
                 [osirixPluginStatusTextField setHidden:NO];
-                [osirixPluginStatusTextField setStringValue:NSLocalizedString(@"No OsiriX plugin server available.", nil)];
+                [osirixPluginStatusTextField setStringValue:NSLocalizedString(@"SekhVet has no plugin server. To install a plugin, double-click its file.", nil)];
             }
             else
             {
@@ -347,22 +348,12 @@ static NSDate *CachedHorosPluginsListDate = nil;
                 [horosPluginDownloadButton setEnabled:NO];
                 
                 [horosPluginStatusTextField setHidden:NO];
-                [horosPluginStatusTextField setStringValue:NSLocalizedString(@"No SekhVet plugin server available.", nil)];
+                [horosPluginStatusTextField setStringValue:NSLocalizedString(@"SekhVet has no plugin server. To install a plugin, double-click its file.", nil)];
             }
             else
             {
                 [self generateAvailableHorosPluginsMenu];
                 
-                if (NO) // Sekhmet: HorosCloud entfernt, keine Vorauswahl
-                {
-                    NSInteger idx = [horosPluginListPopUp indexOfItemWithTitle:@"HorosCloud"];
-                    
-                    [horosPluginListPopUp selectItemAtIndex:idx];
-                    
-                    [self setURLforHorosPluginWithName:[[[self availableHorosPlugins] objectAtIndex:idx] valueForKey:@"name"]];
-                    [self setHorosPluginDownloadURL:[[[self availableHorosPlugins] objectAtIndex:idx] valueForKey:@"download_url"]];
-                }
-                else
                 {
                     [self setURLforHorosPluginWithName:[[[self availableHorosPlugins] objectAtIndex:0] valueForKey:@"name"]];
                     [self setHorosPluginDownloadURL:[[[self availableHorosPlugins] objectAtIndex:0] valueForKey:@"download_url"]];
@@ -801,8 +792,8 @@ NSInteger sortPluginArrayByName(id plugin1, id plugin2, void *context)
         NSAlert *alert = [[NSAlert alloc] init];
         [alert addButtonWithTitle:NSLocalizedString(@"Yes",nil)];
         [alert addButtonWithTitle:NSLocalizedString(@"No",nil)];
-        [alert setMessageText:NSLocalizedString(@"Not validated OsiriX plugin.",nil)];
-        [alert setInformativeText:NSLocalizedString(@"Not validated OsiriX plugins may cause SekhVet run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. Continue installing?",nil)];
+        [alert setMessageText:NSLocalizedString(@"Not validated plugin.",nil)];
+        [alert setInformativeText:NSLocalizedString(@"Plugins that are not validated may cause SekhVet run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. Continue installing?",nil)];
         [alert setAlertStyle:NSWarningAlertStyle];
         
         if ([alert runModal] != NSAlertFirstButtonReturn)
@@ -1134,7 +1125,7 @@ NSInteger sortPluginArrayByName(id plugin1, id plugin2, void *context)
 
 - (void)loadSubmitPluginPage;
 {
-    [self setHorosPluginURL:HOROS_PLUGIN_SUBMISSION_URL];
+    // SekhVet Paket CT: there is no plugin submission page
 }
 
 

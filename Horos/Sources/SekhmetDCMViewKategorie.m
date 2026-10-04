@@ -2,11 +2,7 @@
  DCMView (SekhVet) — Umsetzung.
  Teil des SekhVet-Forks von Horos, LGPL-3.0.
 
- Stufe 6c des Reviews vom 12.09.2026: Diese Methoden standen bis zum
- 14.09.2026 mitten in DCMView.m — zusammen rund 450 Zeilen fremder Code in
- Horos-eigenen Dateien. Als Kategorie stehen sie jetzt fuer sich; in
- DCMView.m bleiben nur die Haken, die sie rufen, und die
- Instanzvariablen (die kann eine Kategorie nicht tragen).
+ Beschreibung im Header.
  ============================================================================*/
 
 #import "SekhmetDCMViewKategorie.h"
@@ -56,7 +52,9 @@
 {
     NSString *name = [[self seriesObj] valueForKey: @"name"];
     if( slicePoint3D[ 0] == HUGE_VALF || self.curDCM == nil) { NSLog( @"SekhVet Point-Test Lage %@: img %d von %d, kein Kreuz, eigener Punkt %@", name, curImage, (int) [dcmPixList count], sekhmetOwnPointSet ? @"JA" : @"nein"); return; }
-    float d[ 3], px = slicePoint3D[ 0] / self.curDCM.pixelSpacingX, py = slicePoint3D[ 1] / self.curDCM.pixelSpacingY;
+    // SekhVet Paket CS: uncalibrated images have pixel spacing 0 — no division by zero in the log line
+    float sx = self.curDCM.pixelSpacingX > 0 ? self.curDCM.pixelSpacingX : 1, sy = self.curDCM.pixelSpacingY > 0 ? self.curDCM.pixelSpacingY : 1;
+    float d[ 3], px = slicePoint3D[ 0] / sx, py = slicePoint3D[ 1] / sy;
     [self.curDCM convertPixX: px pixY: py toDICOMCoords: d pixelCenter: YES];
     NSLog( @"SekhVet Point-Test Lage %@: img %d von %d, slicePt (%.2f %.2f) = pix (%.1f %.1f) -> DICOM (%.2f %.2f %.2f), eigener Punkt %@", name, curImage, (int) [dcmPixList count], slicePoint3D[ 0], slicePoint3D[ 1], px, py, d[ 0], d[ 1], d[ 2], sekhmetOwnPointSet ? @"JA" : @"nein");
 }

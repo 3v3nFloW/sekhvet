@@ -936,7 +936,7 @@
                                                     <menuItem isSeparatorItem="YES" id="741">
                                                         <modifierMask key="keyEquivalentModifierMask" command="YES"/>
                                                     </menuItem>
-                                                    <menuItem title="OsiriX CT - 129" id="739"/>
+                                                    <menuItem title="SekhVet CT - 129" id="739"/>
                                                     <menuItem title="Item3" id="740"/>
                                                 </items>
                                             </menu>
@@ -1454,7 +1454,7 @@
                         <nil key="toolTip"/>
                         <size key="minSize" width="49" height="25"/>
                         <size key="maxSize" width="53" height="25"/>
-                        <segmentedControl key="view" verticalHuggingPriority="750" id="1107">
+                        <segmentedControl key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1107">
                             <rect key="frame" x="7" y="14" width="49" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                             <segmentedCell key="cell" state="on" borderStyle="border" alignment="left" tag="1" style="texturedSquare" trackingMode="momentary" id="1108">
@@ -1464,6 +1464,9 @@
                                     <segment image="NSGoRightTemplate" width="23" tag="1"/>
                                 </segments>
                             </segmentedCell>
+                            <constraints>
+                                <constraint firstAttribute="width" constant="49" id="qrT-nav-W01"/>
+                            </constraints>
                             <connections>
                                 <action selector="changeAutoQRInstance:" target="-2" id="1119"/>
                             </connections>
@@ -1473,13 +1476,16 @@
                         <nil key="toolTip"/>
                         <size key="minSize" width="40" height="25"/>
                         <size key="maxSize" width="40" height="25"/>
-                        <button key="view" verticalHuggingPriority="750" id="1115">
+                        <button key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1115">
                             <rect key="frame" x="1" y="14" width="40" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                             <buttonCell key="cell" type="roundTextured" title="Lock" bezelStyle="texturedRounded" image="NSRemoveTemplate" imagePosition="only" alignment="center" borderStyle="border" inset="2" id="1116">
                                 <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                 <font key="font" metaFont="system"/>
                             </buttonCell>
+                            <constraints>
+                                <constraint firstAttribute="width" constant="40" id="qrT-del-W01"/>
+                            </constraints>
                         </button>
                         <connections>
                             <action selector="deleteAutoQRInstance:" target="-2" id="1120"/>
@@ -1490,13 +1496,16 @@
                         <nil key="toolTip"/>
                         <size key="minSize" width="40" height="25"/>
                         <size key="maxSize" width="40" height="25"/>
-                        <button key="view" verticalHuggingPriority="750" id="1123">
+                        <button key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1123">
                             <rect key="frame" x="1" y="14" width="40" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                             <buttonCell key="cell" type="roundTextured" title="Lock" bezelStyle="texturedRounded" image="NSAddTemplate" imagePosition="only" alignment="center" borderStyle="border" inset="2" id="1124">
                                 <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                 <font key="font" metaFont="system"/>
                             </buttonCell>
+                            <constraints>
+                                <constraint firstAttribute="width" constant="40" id="qrT-add-W01"/>
+                            </constraints>
                         </button>
                         <connections>
                             <action selector="createAutoQRInstance:" target="-2" id="1126"/>
@@ -1507,13 +1516,16 @@
                         <nil key="toolTip"/>
                         <size key="minSize" width="40" height="25"/>
                         <size key="maxSize" width="40" height="25"/>
-                        <button key="view" verticalHuggingPriority="750" id="1111">
+                        <button key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1111">
                             <rect key="frame" x="22" y="14" width="40" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                             <buttonCell key="cell" type="roundTextured" title="Lock" bezelStyle="texturedRounded" image="NSLockUnlockedTemplate" imagePosition="only" alignment="center" borderStyle="border" inset="2" id="1112">
                                 <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                 <font key="font" metaFont="system"/>
                             </buttonCell>
+                            <constraints>
+                                <constraint firstAttribute="width" constant="40" id="qrT-auth-W1"/>
+                            </constraints>
                             <connections>
                                 <action selector="authAction:" target="-2" id="1169"/>
                             </connections>
@@ -1526,7 +1538,7 @@
                         <nil key="toolTip"/>
                         <size key="minSize" width="100" height="25"/>
                         <size key="maxSize" width="212" height="25"/>
-                        <popUpButton key="view" verticalHuggingPriority="750" id="1159">
+                        <popUpButton key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1159">
                             <rect key="frame" x="0.0" y="14" width="212" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                             <popUpButtonCell key="cell" type="roundTextured" bezelStyle="texturedRounded" alignment="left" lineBreakMode="truncatingTail" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="1160">
@@ -1544,6 +1556,9 @@
                                     <binding destination="-2" name="contentValues" keyPath="self.instancesMenuList" id="1166"/>
                                 </connections>
                             </popUpButtonCell>
+                            <constraints>
+                                <constraint firstAttribute="width" constant="212" id="qrT-list-W1"/>
+                            </constraints>
                         </popUpButton>
                     </toolbarItem>
                 </allowedToolbarItems>

@@ -474,6 +474,19 @@ NSString* const SessionDicomCStorePortKey = @"DicomCStorePort"; // NSNumber (int
     requestedPath = [[urlComponenents objectAtIndex:0] stringByReplacingOccurrencesOfString:@"//.." withString:@""];
     requestedPath = [[urlComponenents objectAtIndex:0] stringByReplacingOccurrencesOfString:@"//../" withString:@""];
     
+    // SekhVet Paket CT: each line above starts again from the original string, so only the last one had any effect
+    // and "../" got through. A path with a ".." component (plain or percent-encoded) is now refused outright.
+    if( requestedPath)
+    {
+        NSString *decodedPath = [requestedPath stringByReplacingPercentEscapesUsingEncoding: NSUTF8StringEncoding];
+        
+        if( [[requestedPath pathComponents] containsObject: @".."] || [[decodedPath pathComponents] containsObject: @".."])
+        {
+            NSLog( @"***** web portal: request with a '..' path component refused");
+            requestedPath = @"/";
+        }
+    }
+    
     self.requestedPath = requestedPath;
     
 //	NSString* userAgent = [(id)CFHTTPMessageCopyHeaderFieldValue(request, (CFStringRef)@"User-Agent") autorelease];
@@ -728,13 +741,13 @@ NSString* const SessionDicomCStorePortKey = @"DicomCStorePort"; // NSNumber (int
 	{
 		NSTask *t = [[[NSTask alloc] init] autorelease];
 		
-		[[NSFileManager defaultManager] removeItemAtPath: @"/tmp/osirixUnzippedFolder" error: nil];
+		[[NSFileManager defaultManager] removeItemAtPath: @"/tmp/sekhvetUnzippedFolder" error: nil];
 		
 		@try
 		{
 			[t setLaunchPath: @"/usr/bin/unzip"];
 			[t setCurrentDirectoryPath: @"/tmp/"];
-			NSArray *args = [NSArray arrayWithObjects: @"-o", @"-d", @"osirixUnzippedFolder", POSTfilename, nil];
+			NSArray *args = [NSArray arrayWithObjects: @"-o", @"-d", @"sekhvetUnzippedFolder", POSTfilename, nil]; // SekhVet Paket CT: own name, not shared with a running Horos
 			[t setArguments: args];
 			[t launch];
 			while( [t isRunning])
@@ -750,7 +763,7 @@ NSString* const SessionDicomCStorePortKey = @"DicomCStorePort"; // NSNumber (int
 		if (POSTfilename)
 			[[NSFileManager defaultManager] removeItemAtPath: POSTfilename error: nil];
 		
-		NSString *rootDir = @"/tmp/osirixUnzippedFolder";
+		NSString *rootDir = @"/tmp/sekhvetUnzippedFolder";
 		BOOL isDirectory = NO;
 		
 		for ( NSString *file in [[NSFileManager defaultManager] subpathsOfDirectoryAtPath: rootDir error: nil])
@@ -882,7 +895,7 @@ NSString* const SessionDicomCStorePortKey = @"DicomCStorePort"; // NSNumber (int
 	
     [idatabase addFilesAtPaths: filesAccumulator postNotifications:YES dicomOnly:YES rereadExistingItems:YES generatedByOsiriX:YES importedFiles:YES returnArray:NO];
 	
-	[[NSFileManager defaultManager] removeItemAtPath: @"/tmp/osirixUnzippedFolder" error: nil];
+	[[NSFileManager defaultManager] removeItemAtPath: @"/tmp/sekhvetUnzippedFolder" error: nil];
 	
 	[multipartData release];	multipartData = nil;
 	[postBoundary release];		postBoundary = nil;

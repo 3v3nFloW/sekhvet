@@ -514,6 +514,7 @@ typedef char* VTKStereoVRView;
 - (float) rotation;
 - (float) numberOfFrames;
 - (void) Azimuth:(float) z;
+- (void) Roll:(float) a; // SekhVet Paket CY
 - (void) Vertical:(float) z;
 - (NSImage*) nsimageQuicktime;
 - (NSImage*) nsimage:(BOOL) q;

@@ -69,7 +69,7 @@
 	//other modules
 	[dcmObject setAttributeValues:[NSMutableArray array] forName:@"AccessionNumber"];
 	[dcmObject setAttributeValues:[NSMutableArray arrayWithObject:@"WSD"] forName:@"ConversionType"];
-	[dcmObject setAttributeValues:[NSMutableArray arrayWithObject:@"Horos"] forName:@"Manufacturer"];
+	[dcmObject setAttributeValues:[NSMutableArray arrayWithObject:@"SekhVet"] forName:@"Manufacturer"];
 	
 	
 	[dcmObject setAttributeValues:[NSMutableArray arrayWithObject:@"OT"] forName:@"Modality"];

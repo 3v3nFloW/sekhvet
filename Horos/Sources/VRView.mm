@@ -806,6 +806,8 @@ public:
             if( blendingVolumeMapper) blendingVolumeMapper->SetBlendModeToMinimumIntensity();
             break;
     }
+    
+    if( blendingVolumeMapper) blendingVolumeMapper->MeanIPMode = (modeID == 3); // Sekhmet (P2): Mean je Mapper
 }
 
 - (long) mode
@@ -823,6 +825,8 @@ public:
 - (void) setMode: (long) modeID
 {
     renderingMode = modeID;
+    
+    if( volumeMapper) volumeMapper->MeanIPMode = (modeID == 3); // Sekhmet (P2): Mean je Fenster
     
     switch( modeID)
     {
@@ -851,7 +855,7 @@ public:
             break;
             
             
-        case 3: // Mean - Effect of Mean is triggered externally by setvtkMeanIPMode
+        case 3: // Mean - Sekhmet (P2): per MeanIPMode am eigenen Mapper, nicht mehr prozessweit
             if( volumeMapper)
                 volumeMapper->SetBlendModeToMinimumIntensity();
             
@@ -935,6 +939,7 @@ public:
     {
         volumeMapper = vtkHorosFixedPointVolumeRayCastMapper::New();
         volumeMapper->SetInputConnection(reader->GetOutputPort());
+        volumeMapper->MeanIPMode = (renderingMode == 3); // Sekhmet (P2)
     }
     
     volumeMapper->Update();
@@ -1643,6 +1648,12 @@ public:
     aCamera->OrthogonalizeViewUp();
 }
 
+-(void) Roll:(float) a // SekhVet Paket CY: free rotate in the MPR rolls the camera directly
+{
+    aCamera->Roll( a);
+    aCamera->OrthogonalizeViewUp();
+}
+
 -(void) Vertical:(float) a
 {
     aCamera->Elevation( a);
@@ -2273,7 +2284,7 @@ public:
         
         NSLog( @"C++ Exception during drawRect... not enough memory?");
         
-        if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+        if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rNot enough memory available.",nil), NSLocalizedString(@"OK", nil), nil, nil) == NSAlertAlternateReturn)
             [[AppController sharedAppController] osirix64bit: self];
         
         [[self window] performClose: self];
@@ -6304,6 +6315,7 @@ public:
         if( blendingVolumeMapper) blendingVolumeMapper->Delete();
         blendingVolumeMapper = vtkHorosFixedPointVolumeRayCastMapper::New();
         blendingVolumeMapper->SetInputConnection(blendingReader->GetOutputPort());
+        blendingVolumeMapper->MeanIPMode = (renderingMode == 3); // Sekhmet (P2)
         blendingVolumeMapper->SetMinimumImageSampleDistance( LOD);
         blendingVolumeMapper->Update();
         blendingVolume->SetMapper( blendingVolumeMapper);
@@ -7399,7 +7411,7 @@ public:
                 
                 //Add the small OsiriX logo at the bottom right of the image
                 NSImage	 *logo = [NSImage imageNamed:@"SmallLogo.tif"];
-                NSBitmapImageRep *TIFFRep = [[NSBitmapImageRep alloc] initWithData: [logo TIFFRepresentation]];
+                NSBitmapImageRep *TIFFRep = nil; (void) logo; // SekhVet Paket CU: no logo stamped into 3D captures (was the Horos logo)
                 
                 if( TIFFRep)
                 {
@@ -8826,7 +8838,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
                 name = [name stringByAppendingFormat:@" - %@", description];
             
             if (!name.length)
-                name = @"Horos";
+                name = @"SekhVet";
             
             NSURL *url = [(NSURL *)urlRef URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"jpg"]];
             size_t i = 0;
@@ -9092,6 +9104,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
     {
         volumeMapper = vtkHorosFixedPointVolumeRayCastMapper::New();
         volumeMapper->SetInputConnection(reader->GetOutputPort());
+        volumeMapper->MeanIPMode = (renderingMode == 3); // Sekhmet (P2)
     }
     
     volumeMapper->Update();
@@ -9106,6 +9119,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
             volumeMapper->Delete();
         
         volumeMapper = (vtkHorosFixedPointVolumeRayCastMapper*) mapper;
+        volumeMapper->MeanIPMode = (renderingMode == 3); // Sekhmet (P2)
         volume->SetMapper( volumeMapper);
     }
 }

@@ -239,11 +239,11 @@
 
 	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 
-	[bitmapData writeToFile:[[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Horos.jpg"] atomically:YES];
+	[bitmapData writeToFile:[[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"SekhVet.jpg"] atomically:YES];
 				
 	email = [[Mailer alloc] init];
 	
-	[email sendMail:@"--" to:@"--" subject:@"" isMIME:YES name:@"--" sendNow:NO image: [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Horos.jpg"]];
+	[email sendMail:@"--" to:@"--" subject:@"" isMIME:YES name:@"--" sendNow:NO image: [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"SekhVet.jpg"]];
 	
 	[email release];
 }
@@ -566,7 +566,7 @@ static float oldsetww, oldsetwl;
 			}
 			else
 			{
-				NSRunAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Only CLUT created in OsiriX 1.3.1 or higher can be edited...", nil), nil, nil, nil);
+				NSRunAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"This CLUT uses an old format and cannot be edited.", nil), nil, nil, nil);
 			}
 		}
 	}

@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "options.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 
 #import "AppController.h"
 #import "VRController.h"
@@ -514,7 +515,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
             char	*testPtr = (char*) malloc( [firstObject pwidth] * [firstObject pheight] * [pix count] * sizeofshort);
             if( testPtr == nil)
             {
-                if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+                if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rNot enough memory available.",nil), NSLocalizedString(@"OK", nil), nil, nil) == NSAlertAlternateReturn)
                     [[AppController sharedAppController] osirix64bit: self];
                 
                 return nil;
@@ -641,7 +642,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
         err = [view setPixSource:pixList[0] :(float*) [volumeData[0] bytes]];
         if( err != 0)
         {
-            if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+            if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rNot enough memory available.",nil), NSLocalizedString(@"OK", nil), nil, nil) == NSAlertAlternateReturn)
                 [[AppController sharedAppController] osirix64bit: self];
             [self autorelease];
             return nil;
@@ -2259,7 +2260,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
     
     bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
     
-    NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Horos.jpg"];
+    NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"SekhVet.jpg"];
     [bitmapData writeToFile:path atomically:YES];
     
     ifoto = [[Photos alloc] init];
@@ -3528,7 +3529,8 @@ NSInteger sort3DSettingsDict(id preset1, id preset2, void *context)
         {
             if([[path pathExtension] isEqualToString:@""])
             {
-                NSMutableDictionary *clut = [NSUnarchiver unarchiveObjectWithFile:path];
+                NSMutableDictionary *clut = [SekhmetRestrictedUnarchiver unarchiveCLUTWithFile:path]; // Sekhmet (DE)
+                if( [clut isKindOfClass: [NSDictionary class]] == NO) clut = nil;
                 curves = [clut objectForKey:@"curves"];
                 pointColors = [clut objectForKey:@"colors"];
             }

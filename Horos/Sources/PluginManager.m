@@ -92,14 +92,13 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
 
 + (void) startProtectForCrashWithPath: (NSString*) path
 {
-    // Match with AppController, ILCrashReporter
-    [path writeToFile: @"/tmp/PluginCrashed" atomically: YES encoding: NSUTF8StringEncoding error: nil];
+    // SekhVet Paket CT: own marker name, so a crash of a Horos installed next to SekhVet is never mixed up with ours
+    [path writeToFile: @"/tmp/SekhVetPluginCrashed" atomically: YES encoding: NSUTF8StringEncoding error: nil];
 }
 
 + (void) endProtectForCrash
 {
-    // Match with AppController, ILCrashReporter
-    [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/PluginCrashed" error: nil];
+    [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/SekhVetPluginCrashed" error: nil]; // SekhVet Paket CT
 }
 
 + (int) compareVersion: (NSString *) v1 withVersion: (NSString *) v2
@@ -742,20 +741,16 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
 	@try
 	{
 		NSString	*appSupport = @"Library/Application Support/SekhVet/"; // Sekhmet: eigener Plugin-Ordner, nie den von Horos 4.0.1 anfassen (Horos loescht abstuerzende Plugins)
-        NSString	*appAppStoreSupport = @"Library/Application Support/Horos App/";
 		NSString	*appPath = [[NSBundle mainBundle] builtInPlugInsPath];
-        NSString	*userAppStorePath = [NSHomeDirectory() stringByAppendingPathComponent:appAppStoreSupport];
 		NSString	*userPath = [NSHomeDirectory() stringByAppendingPathComponent:appSupport];
 		NSString	*sysPath = [@"/" stringByAppendingPathComponent:appSupport];
 		
 		appSupport = [appSupport stringByAppendingPathComponent :@"Plugins/"];
-		appAppStoreSupport = [appAppStoreSupport stringByAppendingPathComponent :@"Plugins/"];
 		
 		userPath = [NSHomeDirectory() stringByAppendingPathComponent:appSupport];
-        userAppStorePath = [NSHomeDirectory() stringByAppendingPathComponent:appAppStoreSupport];
 		sysPath = [@"/" stringByAppendingPathComponent:appSupport];
 		
-		NSArray* paths = [NSArray arrayWithObjects: [NSNull null], appPath, userPath, userAppStorePath, sysPath, nil]; // [NSNull null] is a placeholder for launch parameters load commands
+		NSArray* paths = [NSArray arrayWithObjects: [NSNull null], appPath, userPath, sysPath, nil]; // SekhVet Paket CT: no longer loads from the Horos folder "Horos App/Plugins" (userAppStorePath) // [NSNull null] is a placeholder for launch parameters load commands
 		
         for( NSBundle *bundle in [pluginsBundleDictionnary allValues])
             [PluginManager unloadPluginBundle: bundle];
@@ -785,7 +780,8 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
 		NSLog( @"|||||||||||||||||| Plugins loading START ||||||||||||||||||");
         #ifndef OSIRIX_LIGHT
 		
-        NSString *pluginCrash = [[[NSFileManager defaultManager] userApplicationSupportFolderForApp] stringByAppendingPathComponent:@"Plugin_Loading"];
+        // SekhVet Paket CT: the marker used to be "~/Library/Application Support/Plugin_Loading", shared with Horos. It now lives in the SekhVet folder.
+        NSString *pluginCrash = [NSHomeDirectory() stringByAppendingPathComponent: @"Library/Application Support/SekhVet/Plugin_Loading"];
         if ([[NSFileManager defaultManager] fileExistsAtPath: pluginCrash] && ![[NSUserDefaults standardUserDefaults] boolForKey:@"DoNotDeleteCrashingPlugins"])
         {
             NSString *pluginCrashPath = [NSString stringWithContentsOfFile: pluginCrash encoding: NSUTF8StringEncoding error: nil];
@@ -795,7 +791,17 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
             if( result == NSAlertDefaultReturn) // Delete Plugin
             {
                 NSError *error = nil;
-                [[NSFileManager defaultManager] removeItemAtPath: pluginCrashPath error: &error];
+                
+                // SekhVet Paket CT: only ever delete a plugin that lies in one of SekhVet's own plugin folders
+                BOOL ownPlugin = NO;
+                for( NSString *dir in [PluginManager activeDirectories])
+                    if( dir.length && [pluginCrashPath hasPrefix: [dir stringByAppendingString: @"/"]])
+                        ownPlugin = YES;
+                
+                if( ownPlugin)
+                    [[NSFileManager defaultManager] removeItemAtPath: pluginCrashPath error: &error];
+                else
+                    NSLog( @"**** Crashing plugin is not in a SekhVet plugin folder - not deleted");
                 
                 if( error)
                     NSLog( @"**** Cannot Delete File : Crashing Plugin Delete Error: %@", error);
@@ -1532,16 +1538,9 @@ NSInteger sortPluginArray(id plugin1, id plugin2, void *context)
     NSMutableArray *pluginsToUpdate = [NSMutableArray array];
     
     
-    NSURL *url = [NSURL URLWithString:HOROS_PLUGIN_LIST_URL];
-    
-    NSMutableArray *onlinePlugins = [NSMutableArray arrayWithContentsOfURL:url];
-    
-    if (url == nil || onlinePlugins == nil || [onlinePlugins count] <= 0)
-    {
-        url = [NSURL URLWithString:HOROS_PLUGIN_LIST_ALT_URL];
-        
-        onlinePlugins = [NSMutableArray arrayWithContentsOfURL:url];
-    }
+    // SekhVet Paket CT: the plugin list was fetched over plain http from horosproject.org. SekhVet has no plugin server, so nothing is contacted.
+    NSURL *url = nil;
+    NSMutableArray *onlinePlugins = nil;
     
     if (url && onlinePlugins && [onlinePlugins count] > 0)
     {
@@ -1594,16 +1593,9 @@ NSInteger sortPluginArray(id plugin1, id plugin2, void *context)
     NSMutableArray *pluginsToUpdate = [NSMutableArray array];
     
     
-    NSURL *url = [NSURL URLWithString:OSIRIX_PLUGIN_LIST_URL];
-    
-    NSMutableArray *onlinePlugins = [NSMutableArray arrayWithContentsOfURL:url];
-    
-    if (url == nil || onlinePlugins == nil || [onlinePlugins count] <= 0)
-    {
-        url = [NSURL URLWithString:OSIRIX_PLUGIN_LIST_ALT_URL];
-        
-        onlinePlugins = [NSMutableArray arrayWithContentsOfURL:url];
-    }
+    // SekhVet Paket CT: see checkForHorosPluginsUpdates - nothing is contacted.
+    NSURL *url = nil;
+    NSMutableArray *onlinePlugins = nil;
     
     if (url && onlinePlugins && [onlinePlugins count] > 0)
     {

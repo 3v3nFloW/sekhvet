@@ -3,18 +3,24 @@
  ============================================================================*/
 
 #import "SekhmetDisplayPanel.h"
+#import "SekhmetUeberlagerung.h" // SekhVet Paket CJ
+#import "SekhmetMessNavigator.h" // SekhVet Paket DO
 #import "SekhmetTesthaken.h" // SekhVet: Testhaken nur mit Build-Flag SEKHVET_TESTHAKEN=1
 #import "AppController.h"
 #import "BrowserController.h" // SekhVet Paket N
 #import "MyOutlineView.h"
 #import "Notifications.h"
 #import "NSFont_OpenGL.h"
+#import "ROI.h"              // SekhVet Paket CD: Liniendicke
+#import "ViewerController.h" // SekhVet Paket CD
+#import "DCMView.h"          // SekhVet Paket CD
 #include <sys/sysctl.h> // SekhVet Paket AZ: Mac-Modell fuer die Feedback-Mail
 
 NSString* const SekhmetScreenAreasKey = @"SekhmetScreenAreas";
 NSString* const SekhmetScreenAreaRectsKey = @"SekhmetScreenAreaRects";
 NSString* const SekhmetAnnotationBackgroundKey = @"SekhmetAnnotationBackground";
 NSString* const SekhmetMPRSyncKey = @"SekhmetMPRSync";
+NSString* const SekhmetMPRSyncSettingDidChangeNotification = @"SekhmetMPRSyncSettingDidChangeNotification"; // SekhVet Paket CS
 NSString* const SekhmetTile3DWindowsKey = @"SekhmetTile3DWindows";
 NSString* const SekhmetAppearanceKey = @"SekhmetAppearance"; // SekhVet Paket N
 NSString* const SekhmetModalityColorsKey = @"SekhmetModalityColors";
@@ -30,6 +36,10 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
 
 @interface SekhmetDisplayPanel ()
 - (void) loadFromDefaults;
+- (void) buildUI;
+- (void) commitEditingForRebuild;
+- (void) screensChanged:(NSNotification*) n;
+- (void) syncSettingChanged:(NSNotification*) n;
 + (NSColor*) colorFromString:(NSString*) s fallback:(NSColor*) fb; // SekhVet Paket N
 + (NSString*) stringFromColor:(NSColor*) c withAlpha:(BOOL) withAlpha;
 - (void) sekhmetRedrawViewers;
@@ -67,20 +77,77 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     return (m == SekhmetAreaPixelRect) ? 6 : m;
 }
 
+// SekhVet Paket CS (review finding 16): the areas were keyed by the position of the screen in [NSScreen screens] only.
+// That order changes when a display is connected or the arrangement is edited, and the area then applied to the wrong
+// monitor. Each value is now stored under the display number ("id<NSScreenNumber>") AND, as before, under the index.
+// Reading prefers the display number; the index is the fallback for settings stored before this package and for a
+// display whose number changed.
++ (NSString*) stableKeyForScreen:(NSScreen*) screen
+{
+    NSNumber *n = [[screen deviceDescription] objectForKey: @"NSScreenNumber"];
+    return [n isKindOfClass: [NSNumber class]] ? [NSString stringWithFormat: @"id%u", [n unsignedIntValue]] : nil;
+}
+
++ (NSString*) indexKeyForScreen:(NSScreen*) screen
+{
+    NSUInteger idx = screen ? [[NSScreen screens] indexOfObject: screen] : NSNotFound;
+    return idx == NSNotFound ? nil : [NSString stringWithFormat: @"%d", (int) idx];
+}
+
+// Once per start: settings stored by index only (before this package) are copied to the display number of the screen
+// that has that index NOW, so that a later change of the screen order no longer moves them to another monitor.
++ (void) adoptIndexKeysOnce
+{
+    static BOOL done = NO;
+    if( done) return;
+    done = YES;
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    for( NSString *defaultsKey in [NSArray arrayWithObjects: SekhmetScreenAreasKey, SekhmetScreenAreaRectsKey, nil])
+    {
+        NSMutableDictionary *d = [NSMutableDictionary dictionaryWithDictionary: [ud dictionaryForKey: defaultsKey]];
+        BOOL changed = NO;
+        for( NSScreen *s in [NSScreen screens])
+        {
+            NSString *stable = [self stableKeyForScreen: s], *index = [self indexKeyForScreen: s];
+            if( stable && index && [d objectForKey: stable] == nil && [d objectForKey: index])
+            {
+                [d setObject: [d objectForKey: index] forKey: stable];
+                changed = YES;
+            }
+        }
+        if( changed) [ud setObject: d forKey: defaultsKey];
+    }
+}
+
++ (id) storedValueForScreen:(NSScreen*) screen defaultsKey:(NSString*) defaultsKey
+{
+    [self adoptIndexKeysOnce];
+    NSDictionary *d = [[NSUserDefaults standardUserDefaults] dictionaryForKey: defaultsKey];
+    NSString *stable = [self stableKeyForScreen: screen], *index = [self indexKeyForScreen: screen];
+    id v = stable ? [d objectForKey: stable] : nil;
+    if( v == nil && index) v = [d objectForKey: index];
+    return v;
+}
+
++ (void) storeValue:(id) value forScreen:(NSScreen*) screen defaultsKey:(NSString*) defaultsKey
+{
+    NSString *stable = [self stableKeyForScreen: screen], *index = [self indexKeyForScreen: screen];
+    if( value == nil || (stable == nil && index == nil)) return;
+    NSMutableDictionary *d = [NSMutableDictionary dictionaryWithDictionary: [[NSUserDefaults standardUserDefaults] dictionaryForKey: defaultsKey]];
+    if( stable) [d setObject: value forKey: stable];
+    if( index) [d setObject: value forKey: index];
+    [[NSUserDefaults standardUserDefaults] setObject: d forKey: defaultsKey];
+}
+
 + (NSInteger) modeForScreen:(NSScreen*) screen
 {
-    NSInteger idx = [[NSScreen screens] indexOfObject: screen];
-    if( idx == NSNotFound) return SekhmetAreaFull;
-    return [[[[NSUserDefaults standardUserDefaults] dictionaryForKey: SekhmetScreenAreasKey] objectForKey: [NSString stringWithFormat: @"%d", (int) idx]] integerValue];
+    return [[self storedValueForScreen: screen defaultsKey: SekhmetScreenAreasKey] integerValue];   // nil -> 0 = SekhmetAreaFull
 }
 
 + (void) setMode:(NSInteger) mode forScreen:(NSScreen*) screen
 {
-    NSInteger idx = [[NSScreen screens] indexOfObject: screen];
-    if( idx == NSNotFound) return;
-    NSMutableDictionary *areas = [NSMutableDictionary dictionaryWithDictionary: [[NSUserDefaults standardUserDefaults] dictionaryForKey: SekhmetScreenAreasKey]];
-    [areas setObject: [NSNumber numberWithInteger: mode] forKey: [NSString stringWithFormat: @"%d", (int) idx]];
-    [[NSUserDefaults standardUserDefaults] setObject: areas forKey: SekhmetScreenAreasKey];
+    if( [self indexKeyForScreen: screen] == nil) return;
+    [self storeValue: [NSNumber numberWithInteger: mode] forScreen: screen defaultsKey: SekhmetScreenAreasKey];
     if( sekhmetDisplayPanel) [sekhmetDisplayPanel loadFromDefaults];
 }
 
@@ -132,11 +199,9 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
 
 + (NSRect) areaForScreen:(NSScreen*) screen frame:(NSRect) f
 {
-    NSInteger idx = [[NSScreen screens] indexOfObject: screen];
-    if( idx == NSNotFound) return f;
+    if( [self indexKeyForScreen: screen] == nil) return f;
 
-    NSString *key = [NSString stringWithFormat: @"%d", (int) idx];
-    NSInteger mode = [[[[NSUserDefaults standardUserDefaults] dictionaryForKey: SekhmetScreenAreasKey] objectForKey: key] integerValue];
+    NSInteger mode = [self modeForScreen: screen];   // SekhVet Paket CS: by display number, index as fallback
 
     switch( mode)
     {
@@ -147,7 +212,8 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
         case SekhmetAreaCenterHalf:    f.origin.x += f.size.width / 4.; f.size.width = f.size.width / 2.; break;
         case SekhmetAreaPixelRect:
         {
-            NSString *r = [[[NSUserDefaults standardUserDefaults] dictionaryForKey: SekhmetScreenAreaRectsKey] objectForKey: key];
+            NSString *r = [self storedValueForScreen: screen defaultsKey: SekhmetScreenAreaRectsKey];
+            if( ![r isKindOfClass: [NSString class]]) r = nil;
             NSArray *c = [r componentsSeparatedByCharactersInSet: [NSCharacterSet characterSetWithCharactersInString: @" ,;"]];
             NSMutableArray *nums = [NSMutableArray array];
             for( NSString *s in c) if( s.length) [nums addObject: s];
@@ -170,10 +236,15 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     [super showWindow: sender];
 }
 
-- (id) init
++ (float) contentHeight   // one row per screen on top of the fixed part
 {
     NSUInteger n = [[NSScreen screens] count];
-    float h = 484 + 32 * n; // SekhVet Paket N: zwei Abschnitte mehr; Paket P: Zoom-Zeile; Paket AH: Magnetic-Zeile
+    return 484 + 66 + 30 + 30 + 22 + 32 * n; // SekhVet Paket N: zwei Abschnitte mehr; Paket P: Zoom-Zeile; Paket AH: Magnetic-Zeile; Paket CD: Messungen (+66); Paket CF: Lupengroesse (+30); Paket CJ: Overlay-Tasten (+30); Paket DO: Navigator (+22)
+}
+
+- (id) init
+{
+    float h = [SekhmetDisplayPanel contentHeight];
     NSWindow *w = [[[NSWindow alloc] initWithContentRect: NSMakeRect( 0, 0, 620, h)
                                                styleMask: NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                                                  backing: NSBackingStoreBuffered defer: NO] autorelease];
@@ -189,15 +260,50 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
         [self buildUI];
         [self loadFromDefaults];
         [w center];
+        // SekhVet Paket CS (review findings 16 and 18): follow a changed screen list and the MPR-Sync toolbar button
+        [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(screensChanged:) name: NSApplicationDidChangeScreenParametersNotification object: nil];
+        [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(syncSettingChanged:) name: SekhmetMPRSyncSettingDidChangeNotification object: nil];
+        [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(navigatorSettingChanged:) name: SekhmetMessNavigatorDidChangeNotification object: nil]; // SekhVet Paket DO
     }
     return self;
 }
 
 - (void) dealloc
 {
+    [[NSNotificationCenter defaultCenter] removeObserver: self];
     [areaPopups release];
     [rectFields release];
     [super dealloc];
+}
+
+// SekhVet Paket CS (review finding 16): the rows "Screen 1, 2, ..." were built once for the screens present when the
+// panel was first opened; a display connected later had no row. The panel has no nib, so the whole content is built
+// again for the current screens (the window keeps its place, only its height follows the number of rows).
+- (void) screensChanged:(NSNotification*) n
+{
+    NSWindow *w = [self window];
+    [self commitEditingForRebuild];
+    NSView *cv = [w contentView];
+    for( NSView *s in [NSArray arrayWithArray: [cv subviews]]) [s removeFromSuperview];
+    [areaPopups removeAllObjects];
+    [rectFields removeAllObjects];
+    [w setContentSize: NSMakeSize( 620, [SekhmetDisplayPanel contentHeight])];
+    [self buildUI];
+    [self loadFromDefaults];
+}
+
+- (void) commitEditingForRebuild
+{
+    NSWindow *w = [self window];
+    if( [w makeFirstResponder: nil] == NO) [w endEditingFor: nil];
+    [textColorWell deactivate];   // an active colour well must not be removed while the colour panel points at it
+    [boxColorWell deactivate];
+}
+
+// SekhVet Paket CS (review finding 18): MPR-Sync was switched with the toolbar button of an MPR window
+- (void) syncSettingChanged:(NSNotification*) n
+{
+    [syncButton setState: [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncKey] ? NSControlStateValueOn : NSControlStateValueOff];
 }
 
 - (NSTextField*) label:(NSString*) text frame:(NSRect) r bold:(BOOL) bold
@@ -243,7 +349,7 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     [cv addSubview: [self label: NSLocalizedString( @"Annotations (corner text and ROI measurements):", nil) frame: NSMakeRect( 20, y, 400, 20) bold: YES]];
     annotationPopup = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 400, y - 4, 205, 26) pullsDown: NO] autorelease];
     [annotationPopup addItemsWithTitles: [NSArray arrayWithObjects:
-                                          NSLocalizedString( @"Like SekhVet (1 px shadow)", nil),
+                                          NSLocalizedString( @"Classic (1 px shadow)", nil),   // SekhVet Paket CS (review finding 9): mode 0 is the original Horos look, not "Like SekhVet"
                                           NSLocalizedString( @"Outline", nil),
                                           NSLocalizedString( @"Semi-transparent box", nil),
                                           NSLocalizedString( @"Outline and box", nil), nil]];
@@ -261,11 +367,14 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     fontSizeField = [[[NSTextField alloc] initWithFrame: NSMakeRect( 395, y, 50, 22)] autorelease];
     [fontSizeField setFont: [NSFont systemFontOfSize: 12]]; [fontSizeField setTarget: self]; [fontSizeField setAction: @selector(fontChanged:)];
     [cv addSubview: fontSizeField];
-    [cv addSubview: [self label: NSLocalizedString( @"(SekhVet: Geneva 12)", nil) frame: NSMakeRect( 455, y + 2, 150, 20) bold: NO]];
+    // SekhVet Paket CS (review finding 9): the hints named "SekhVet" where the original Horos values were meant (blind
+    // Horos -> SekhVet replacement). "classic" = the original look (Geneva 12, text in the ROI color); the registered
+    // defaults are Helvetica Bold 14, white text and crosshair zones 18 / 12 (DefaultsOsiriX.m).
+    [cv addSubview: [self label: NSLocalizedString( @"(classic: Geneva 12)", nil) frame: NSMakeRect( 455, y + 2, 150, 20) bold: NO]];
     y -= 30;
     [cv addSubview: [self label: NSLocalizedString( @"Text color", nil) frame: NSMakeRect( 36, y + 2, 90, 20) bold: NO]];
     textColorPopup = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 125, y - 2, 135, 26) pullsDown: NO] autorelease];
-    [textColorPopup addItemsWithTitles: [NSArray arrayWithObjects: NSLocalizedString( @"ROI color (SekhVet)", nil), NSLocalizedString( @"White", nil), NSLocalizedString( @"Yellow", nil), NSLocalizedString( @"Custom", nil), nil]];
+    [textColorPopup addItemsWithTitles: [NSArray arrayWithObjects: NSLocalizedString( @"ROI color (classic)", nil), NSLocalizedString( @"White", nil), NSLocalizedString( @"Yellow", nil), NSLocalizedString( @"Custom", nil), nil]];
     [textColorPopup setTarget: self]; [textColorPopup setAction: @selector(textColorModeChanged:)];
     [cv addSubview: textColorPopup];
     textColorWell = [[[NSColorWell alloc] initWithFrame: NSMakeRect( 268, y, 44, 22)] autorelease];
@@ -276,6 +385,71 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     [boxColorWell setTarget: self]; [boxColorWell setAction: @selector(boxColorWellChanged:)];
     [cv addSubview: boxColorWell];
     [cv addSubview: [self label: NSLocalizedString( @"(opacity = alpha)", nil) frame: NSMakeRect( 458, y + 2, 150, 20) bold: NO]];
+
+    // SekhVet Paket CD: Liniendicke der Messungen (Horos kannte sie nur im ROI-Info-Fenster je ROI)
+    // und die Lupe beim Messen (Paket CC).
+    y -= 36;
+    [cv addSubview: [self label: NSLocalizedString( @"Measurements:", nil) frame: NSMakeRect( 20, y, 180, 20) bold: YES]];
+    measureLoupeButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 200, y + 1, 400, 18)] autorelease];
+    [measureLoupeButton setButtonType: NSButtonTypeSwitch];
+    [measureLoupeButton setTitle: NSLocalizedString( @"Magnified view in a corner while measuring", nil)];
+    [measureLoupeButton setFont: [NSFont systemFontOfSize: 12]];
+    [measureLoupeButton setTarget: self]; [measureLoupeButton setAction: @selector(measureLoupeChanged:)];
+    [cv addSubview: measureLoupeButton];
+    // SekhVet Paket DO: Messungen-Navigator (Vorschaubilder der Schichten mit Messung unter dem Bild)
+    y -= 22;
+    navigatorButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 200, y + 1, 400, 18)] autorelease];
+    [navigatorButton setButtonType: NSButtonTypeSwitch];
+    [navigatorButton setTitle: NSLocalizedString( @"Measurement navigator: thumbnails of the images with measurements", nil)];
+    [navigatorButton setFont: [NSFont systemFontOfSize: 12]];
+    [navigatorButton setToolTip: NSLocalizedString( @"A bar at the bottom of the 2D viewer shows every image of the series that has a measurement; a click goes there. Also switched by the toolbar button \"Measurements\".", nil)];
+    [navigatorButton setTarget: self]; [navigatorButton setAction: @selector(navigatorChanged:)];
+    [cv addSubview: navigatorButton];
+    // SekhVet Paket CF (28.09.): Groesse der Lupe als eigener Punkt, Vorgabe um die Haelfte groesser (36 -> 55 %).
+    // Gilt fuer beide Lupen (beim Messen und Shift), in 2D und MPR; die Pfeiltasten aendern denselben Wert.
+    y -= 30;
+    [cv addSubview: [self label: NSLocalizedString( @"Magnifier size (of the shorter side):", nil) frame: NSMakeRect( 36, y + 2, 240, 20) bold: NO]];
+    loupeSizePopup = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 276, y - 2, 90, 26) pullsDown: NO] autorelease];
+    for( int pz = 25; pz <= 75; pz += 10)
+    {
+        [loupeSizePopup addItemWithTitle: [NSString stringWithFormat: @"%d %%", pz]];
+        [[loupeSizePopup lastItem] setTag: pz];
+    }
+    [loupeSizePopup setTarget: self]; [loupeSizePopup setAction: @selector(loupeSizeChanged:)];
+    [cv addSubview: loupeSizePopup];
+    [cv addSubview: [self label: NSLocalizedString( @"(default: 55 %;  \u2191/\u2193 while it is shown)", nil) frame: NSMakeRect( 376, y + 2, 230, 20) bold: NO]];
+    y -= 30;
+    [cv addSubview: [self label: NSLocalizedString( @"Line width (px):  lines", nil) frame: NSMakeRect( 36, y + 2, 150, 20) bold: NO]];
+    lineThicknessPopup = [self thicknessPopup: NSMakeRect( 186, y - 2, 60, 26)];
+    [cv addSubview: lineThicknessPopup];
+    [cv addSubview: [self label: NSLocalizedString( @"areas", nil) frame: NSMakeRect( 254, y + 2, 45, 20) bold: NO]];
+    regionThicknessPopup = [self thicknessPopup: NSMakeRect( 298, y - 2, 60, 26)];
+    [cv addSubview: regionThicknessPopup];
+    [cv addSubview: [self label: NSLocalizedString( @"arrows", nil) frame: NSMakeRect( 366, y + 2, 50, 20) bold: NO]];
+    arrowThicknessPopup = [self thicknessPopup: NSMakeRect( 416, y - 2, 60, 26)];
+    [cv addSubview: arrowThicknessPopup];
+    NSButton *apply = [[[NSButton alloc] initWithFrame: NSMakeRect( 482, y - 4, 128, 30)] autorelease];
+    [apply setTitle: NSLocalizedString( @"Apply to open", nil)];
+    [apply setToolTip: NSLocalizedString( @"New measurements use these widths right away. This button also changes the measurements already drawn on the images in the open viewers.", nil)];
+    [apply setBezelStyle: NSBezelStyleRounded];
+    [apply setTarget: self]; [apply setAction: @selector(applyThicknessToOpenViewers:)];
+    [cv addSubview: apply];
+
+    // SekhVet Paket CJ: Tasten fuer "Overlay" (Serienstapel im Fenster). Vorgabe "<" und "y" (Paket CN, 30.09.2026: mit der Hochstelltaste fuer ">" verschwindet die Lupe);
+    // q/w/e sind in Horos Pfeil, Fenster und Oval und bleiben es.
+    y -= 36;
+    [cv addSubview: [self label: NSLocalizedString( @"Overlay:", nil) frame: NSMakeRect( 20, y, 180, 20) bold: YES]];
+    [cv addSubview: [self label: NSLocalizedString( @"next series key", nil) frame: NSMakeRect( 200, y + 1, 110, 20) bold: NO]];
+    overlayNextField = [[[NSTextField alloc] initWithFrame: NSMakeRect( 310, y, 34, 22)] autorelease];
+    [cv addSubview: [self label: NSLocalizedString( @"previous", nil) frame: NSMakeRect( 356, y + 1, 70, 20) bold: NO]];
+    overlayPrevField = [[[NSTextField alloc] initWithFrame: NSMakeRect( 426, y, 34, 22)] autorelease];
+    for( NSTextField *t in @[ overlayNextField, overlayPrevField])
+    {
+        [t setAlignment: NSTextAlignmentCenter]; [t setFont: [NSFont systemFontOfSize: 13]];
+        [t setTarget: self]; [t setAction: @selector(overlayKeysChanged:)];
+        [cv addSubview: t];
+    }
+    [cv addSubview: [self label: NSLocalizedString( @"(default: < and y)", nil) frame: NSMakeRect( 470, y + 1, 140, 20) bold: NO]];
 
     // SekhVet Paket N: Erscheinungsbild und Modalitaetsfarben
     y -= 36;
@@ -338,7 +512,7 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     lineZoneField = [[[NSTextField alloc] initWithFrame: NSMakeRect( 390, y, 50, 22)] autorelease];
     [lineZoneField setFont: [NSFont systemFontOfSize: 12]]; [lineZoneField setTarget: self]; [lineZoneField setAction: @selector(zonesChanged:)];
     [cv addSubview: lineZoneField];
-    [cv addSubview: [self label: NSLocalizedString( @"(SekhVet: 10 / 10)", nil) frame: NSMakeRect( 450, y + 2, 150, 20) bold: NO]];
+    [cv addSubview: [self label: NSLocalizedString( @"(default: 18 / 12)", nil) frame: NSMakeRect( 450, y + 2, 150, 20) bold: NO]];
 
     y -= 44;
     NSButton *b = [[[NSButton alloc] initWithFrame: NSMakeRect( 20, y, 220, 30)] autorelease];
@@ -351,16 +525,17 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
 - (void) loadFromDefaults
 {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    NSDictionary *areas = [d dictionaryForKey: SekhmetScreenAreasKey];
-    NSDictionary *rects = [d dictionaryForKey: SekhmetScreenAreaRectsKey];
-    for( NSUInteger i = 0; i < areaPopups.count; i++)
+    NSArray *screens = [NSScreen screens];
+    for( NSUInteger i = 0; i < areaPopups.count && i < screens.count; i++)   // SekhVet Paket CS: row i = screen i at the time the rows were built (rebuilt on every screen change)
     {
-        NSString *key = [NSString stringWithFormat: @"%d", (int) i];
-        [[areaPopups objectAtIndex: i] selectItemAtIndex: [SekhmetDisplayPanel indexForMode: [[areas objectForKey: key] integerValue]]];
-        NSString *r = [rects objectForKey: key];
-        [[rectFields objectAtIndex: i] setStringValue: r ? r : @""];
+        NSScreen *s = [screens objectAtIndex: i];
+        NSInteger idx = [SekhmetDisplayPanel indexForMode: [SekhmetDisplayPanel modeForScreen: s]];
+        if( idx < 0 || idx >= [[areaPopups objectAtIndex: i] numberOfItems]) idx = 0;   // SekhVet Paket CS: a stored value outside the list raised in selectItemAtIndex:
+        [[areaPopups objectAtIndex: i] selectItemAtIndex: idx];
+        NSString *r = [SekhmetDisplayPanel storedValueForScreen: s defaultsKey: SekhmetScreenAreaRectsKey];
+        [[rectFields objectAtIndex: i] setStringValue: [r isKindOfClass: [NSString class]] ? r : @""];
     }
-    [annotationPopup selectItemAtIndex: [d integerForKey: SekhmetAnnotationBackgroundKey]];
+    [annotationPopup selectItemAtIndex: MIN( 3, MAX( 0, [d integerForKey: SekhmetAnnotationBackgroundKey]))];   // SekhVet Paket CS: clamped like the other popups
     [syncButton setState: [d boolForKey: SekhmetMPRSyncKey] ? NSControlStateValueOn : NSControlStateValueOff];
     [tileButton setState: [d boolForKey: SekhmetTile3DWindowsKey] ? NSControlStateValueOn : NSControlStateValueOff];
     [zoomSyncButton setState: [d boolForKey: @"syncZoomLevelMPR"] ? NSControlStateValueOn : NSControlStateValueOff]; // SekhVet Paket P
@@ -380,6 +555,117 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     [boxColorWell setColor: [SekhmetDisplayPanel colorFromString: [d stringForKey: SekhmetAnnotationBoxColorKey] fallback: [NSColor colorWithCalibratedWhite: 0 alpha: 0.7]]];
     [appearancePopup selectItemAtIndex: MIN( 2, MAX( 0, [d integerForKey: SekhmetAppearanceKey]))];
     [modalityColorsButton setState: [d boolForKey: SekhmetModalityColorsKey] ? NSControlStateValueOn : NSControlStateValueOff];
+
+    // SekhVet Paket CD
+    [ROI saveDefaultSettings]; // was im ROI-Info-Fenster zuletzt eingestellt wurde, steht sonst erst beim Beenden in den Defaults
+    [self selectThickness: [d floatForKey: @"ROIThickness"] in: lineThicknessPopup];
+    [self selectThickness: [d floatForKey: @"ROIRegionThickness"] in: regionThicknessPopup];
+    [self selectThickness: [d floatForKey: @"ROIArrowThickness"] in: arrowThicknessPopup];
+    id lupe = [d objectForKey: @"SekhmetMessLupe"];
+    [measureLoupeButton setState: (lupe == nil || [lupe boolValue]) ? NSControlStateValueOn : NSControlStateValueOff];
+    [navigatorButton setState: [SekhmetMessNavigator eingeschaltet] ? NSControlStateValueOn : NSControlStateValueOff]; // SekhVet Paket DO
+
+    // SekhVet Paket CJ
+    [overlayNextField setStringValue: [d stringForKey: SekhmetOverlayKeyNextKey].length ? [d stringForKey: SekhmetOverlayKeyNextKey] : @"<"];
+    [overlayPrevField setStringValue: [d stringForKey: SekhmetOverlayKeyPrevKey].length ? [d stringForKey: SekhmetOverlayKeyPrevKey] : @"y"];
+
+    // SekhVet Paket CF: gespeicherte Groesse; ein mit den Pfeiltasten gesetzter Zwischenwert erscheint als eigener Eintrag
+    float g = [d floatForKey: @"SekhmetLupeGroesse"];
+    int pz = (g >= 0.15 && g <= 0.8 && fabsf( g - 0.36f) >= 0.0005f) ? (int) lroundf( g * 100) : 55; // 0,36 = alte Vorgabe (CF-2)
+    for( NSInteger i = [loupeSizePopup numberOfItems] - 1; i >= 0; i--)
+        if( [[loupeSizePopup itemAtIndex: i] tag] % 10 != 5) [loupeSizePopup removeItemAtIndex: i];
+    if( [loupeSizePopup indexOfItemWithTag: pz] < 0)
+    {
+        NSInteger at = 0;
+        while( at < [loupeSizePopup numberOfItems] && [[loupeSizePopup itemAtIndex: at] tag] < pz) at++;
+        [loupeSizePopup insertItemWithTitle: [NSString stringWithFormat: @"%d %%", pz] atIndex: at];
+        [[loupeSizePopup itemAtIndex: at] setTag: pz];
+    }
+    [loupeSizePopup selectItemWithTag: pz];
+}
+
+// SekhVet Paket CD: Liniendicke 1-10 px (Horos erlaubt im ROI-Info-Fenster bis 20; ein groesserer Wert erscheint als eigener Eintrag)
+- (NSPopUpButton*) thicknessPopup:(NSRect) r
+{
+    NSPopUpButton *p = [[[NSPopUpButton alloc] initWithFrame: r pullsDown: NO] autorelease];
+    for( int i = 1; i <= 10; i++) { [p addItemWithTitle: [NSString stringWithFormat: @"%d", i]]; [[p lastItem] setTag: i]; }
+    [p setTarget: self]; [p setAction: @selector(thicknessChanged:)];
+    return p;
+}
+
+- (void) selectThickness:(float) v in:(NSPopUpButton*) p
+{
+    NSInteger t = MIN( 20, MAX( 1, (NSInteger) roundf( v)));
+    if( [p indexOfItemWithTag: t] < 0) { [p addItemWithTitle: [NSString stringWithFormat: @"%d", (int) t]]; [[p lastItem] setTag: t]; }
+    [p selectItemWithTag: t];
+}
+
+- (IBAction) thicknessChanged:(id) sender
+{
+    // ROI haelt die Vorgaben in statischen Variablen und schreibt sie beim Beenden zurueck:
+    // erst deren Stand sichern, dann die neuen Werte setzen und neu laden -- sonst ueberschriebe
+    // das Beenden die Einstellung wieder.
+    [ROI saveDefaultSettings];
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    [d setFloat: [[lineThicknessPopup selectedItem] tag] forKey: @"ROIThickness"];
+    [d setFloat: [[regionThicknessPopup selectedItem] tag] forKey: @"ROIRegionThickness"];
+    [d setFloat: [[arrowThicknessPopup selectedItem] tag] forKey: @"ROIArrowThickness"];
+    [ROI loadDefaultSettings];
+}
+
+- (IBAction) applyThicknessToOpenViewers:(id) sender
+{
+    [self thicknessChanged: sender];
+    float linie = [[lineThicknessPopup selectedItem] tag], flaeche = [[regionThicknessPopup selectedItem] tag], pfeil = [[arrowThicknessPopup selectedItem] tag];
+    NSInteger n = 0;
+    for( ViewerController *v in [ViewerController getDisplayed2DViewers])
+    {
+        for( long m = 0; m <= [v maxMovieIndex]; m++)
+            for( NSArray *bild in [v roiList: m])
+                for( ROI *r in bild)
+                {
+                    ToolMode typ = [r type];
+                    if( typ == tText || typ == tLayerROI) continue;   // Text: Dicke = Schriftgroesse; tTAGT ist eine Linienmessung
+                    float t = typ == tPlain ? flaeche : (typ == tArrow ? pfeil : linie);
+                    if( [r thickness] != t) { [r setThickness: t globally: NO]; n++; }
+                }
+        for( DCMView *iv in [v imageViews]) [iv setNeedsDisplay: YES];
+    }
+    NSLog( @"SekhVet: line width applied to %ld measurements in open viewers", (long) n);
+}
+
+- (IBAction) loupeSizeChanged:(id) sender
+{
+    [[NSUserDefaults standardUserDefaults] setFloat: [[loupeSizePopup selectedItem] tag] / 100.0f forKey: @"SekhmetLupeGroesse"];
+}
+
+- (IBAction) overlayKeysChanged:(id) sender // SekhVet Paket CJ: je ein Zeichen, leer = Vorgabe
+{
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSString *a = [[overlayNextField stringValue] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+    NSString *b = [[overlayPrevField stringValue] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+    a = a.length ? [a substringToIndex: 1] : @"<";
+    b = b.length ? [b substringToIndex: 1] : @"y";
+    if( [a isEqualToString: b]) b = [a isEqualToString: @"y"] ? @"<" : @"y";
+    [d setObject: a forKey: SekhmetOverlayKeyNextKey];
+    [d setObject: b forKey: SekhmetOverlayKeyPrevKey];
+    [overlayNextField setStringValue: a];
+    [overlayPrevField setStringValue: b];
+}
+
+- (IBAction) measureLoupeChanged:(id) sender
+{
+    [[NSUserDefaults standardUserDefaults] setBool: [measureLoupeButton state] == NSControlStateValueOn forKey: @"SekhmetMessLupe"];
+}
+
+- (IBAction) navigatorChanged:(id) sender // SekhVet Paket DO: offene Viewer und Symbolleisten folgen sofort
+{
+    [SekhmetMessNavigator setEingeschaltet: [navigatorButton state] == NSControlStateValueOn];
+}
+
+- (void) navigatorSettingChanged:(NSNotification*) n // SekhVet Paket DO: umgeschaltet per Symbolleiste oder "x" in der Leiste
+{
+    [navigatorButton setState: [SekhmetMessNavigator eingeschaltet] ? NSControlStateValueOn : NSControlStateValueOff];
 }
 
 + (NSColor*) colorFromString:(NSString*) s fallback:(NSColor*) fb
@@ -510,18 +796,21 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     [self loadFromDefaults];
 }
 
+- (NSScreen*) screenForRow:(NSInteger) row   // SekhVet Paket CS: the rows are rebuilt on every screen change, so row = current index
+{
+    NSArray *screens = [NSScreen screens];
+    return (row >= 0 && row < (NSInteger) screens.count) ? [screens objectAtIndex: row] : nil;
+}
+
 - (IBAction) areaChanged:(id) sender
 {
-    NSMutableDictionary *areas = [NSMutableDictionary dictionaryWithDictionary: [[NSUserDefaults standardUserDefaults] dictionaryForKey: SekhmetScreenAreasKey]];
-    [areas setObject: [NSNumber numberWithInteger: [SekhmetDisplayPanel modeForIndex: [sender indexOfSelectedItem]]] forKey: [NSString stringWithFormat: @"%d", (int) [sender tag]]];
-    [[NSUserDefaults standardUserDefaults] setObject: areas forKey: SekhmetScreenAreasKey];
+    [SekhmetDisplayPanel storeValue: [NSNumber numberWithInteger: [SekhmetDisplayPanel modeForIndex: [sender indexOfSelectedItem]]]
+                          forScreen: [self screenForRow: [sender tag]] defaultsKey: SekhmetScreenAreasKey];
 }
 
 - (IBAction) rectChanged:(id) sender
 {
-    NSMutableDictionary *rects = [NSMutableDictionary dictionaryWithDictionary: [[NSUserDefaults standardUserDefaults] dictionaryForKey: SekhmetScreenAreaRectsKey]];
-    [rects setObject: [sender stringValue] forKey: [NSString stringWithFormat: @"%d", (int) [sender tag]]];
-    [[NSUserDefaults standardUserDefaults] setObject: rects forKey: SekhmetScreenAreaRectsKey];
+    [SekhmetDisplayPanel storeValue: [sender stringValue] forScreen: [self screenForRow: [sender tag]] defaultsKey: SekhmetScreenAreaRectsKey];
 }
 
 - (IBAction) annotationChanged:(id) sender
@@ -532,6 +821,7 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
 - (IBAction) syncChanged:(id) sender
 {
     [[NSUserDefaults standardUserDefaults] setBool: ([syncButton state] == NSControlStateValueOn) forKey: SekhmetMPRSyncKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName: SekhmetMPRSyncSettingDidChangeNotification object: self];   // SekhVet Paket CS: the toolbar buttons of the open MPR windows follow
 }
 
 - (IBAction) zoomSyncChanged:(id) sender // SekhVet Paket P

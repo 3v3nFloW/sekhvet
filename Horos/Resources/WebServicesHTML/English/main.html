@@ -69,7 +69,7 @@
                 %[IF:Info.isMacOS%
                 %[IF:Info.proposeWADORetrieve%
                 <td class="narrow middle">
-                    <a href="osirix://?methodName=DownloadURL&Display=YES&URL='%Info.WADOBaseURL%?requestType=WADO&studyUID=%U:Study.studyInstanceUID%&token=%Info.newToken%'"><img src="images/osirix.png"/></a>
+                    <a href="sekhvet://?methodName=DownloadURL&Display=YES&URL='%Info.WADOBaseURL%?requestType=WADO&studyUID=%U:Study.studyInstanceUID%&token=%Info.newToken%'">Open in SekhVet</a>
                 </td>
                 %]IF:Info.proposeWADORetrieve%
                 %]IF:Info.isMacOS%

@@ -469,7 +469,13 @@ static volatile int sendControllerObjects = 0;
         }
     }
     
-    [arrayOfPatientNames addObject: [[a lastObject] valueForKeyPath: @"series.study.name"]];
+    // Sekhmet (DC): ein Patient, dessen Bilder oben alle weggefiltert wurden, hat kein Paket. Vorher warf addObject: nil
+    // (auch bei Studie ohne Namen) eine Exception, und alle folgenden Patienten der Sendung gingen verloren (nach ThalesMMS/horos e948e313)
+    if( a.count == 0)
+        return;
+    
+    NSString *patientName = [[a lastObject] valueForKeyPath: @"series.study.name"];
+    [arrayOfPatientNames addObject: patientName ? patientName : @""];
     [arraysOfFiles addObject: [a valueForKey: @"completePathResolved"]];
 }
 
@@ -512,19 +518,20 @@ static volatile int sendControllerObjects = 0;
             {
                 NSString *patientUID = [image valueForKeyPath:@"series.study.patientUID"];
                 
-                if( [previousPatientUID compare: patientUID options: NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch] == NSOrderedSame)
-                    [samePatientArray addObject: image];
-                
-                else
+                // Sekhmet (DC): ein Paket je Patient. previousPatientUID begann mit nil, und -compare: an nil liefert
+                // NSOrderedSame -> alle Patienten in einem Paket unter dem Namen des letzten (nach ThalesMMS/horos e948e313)
+                if( samePatientArray.count && [(previousPatientUID ? previousPatientUID : @"") compare: (patientUID ? patientUID : @"") options: NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch] != NSOrderedSame)
                 {
                     [self addArray: samePatientArray toArraysOfFiles: arraysOfFiles andArrayOfPatientNames: arrayOfPatientNames];
                     
                     // Reset
                     samePatientArray = [NSMutableArray array];
-                    [samePatientArray addObject: image];
-                    
-                    previousPatientUID = [[patientUID copy] autorelease];
                 }
+                
+                if( samePatientArray.count == 0)
+                    previousPatientUID = [[patientUID copy] autorelease];
+                
+                [samePatientArray addObject: image];
             }
             
             [self addArray: samePatientArray toArraysOfFiles: arraysOfFiles andArrayOfPatientNames: arrayOfPatientNames];
@@ -629,7 +636,42 @@ static volatile int sendControllerObjects = 0;
     [queue waitUntilAllOperationsAreFinished];
 }
 
+// Sekhmet (DC): zählt nur laufende Sendungen, hinter einer Sperre. Vorher zählte sich eine Sendung schon vor dem Warten
+// mit, ohne Sperre: sobald MaximumSendGlobalControllerConcurrentThreads Sendungen warteten, wartete jede ewig auf die
+// anderen (nach ThalesMMS/horos e948e313)
 static int globalDCMTKSCUCounter = 0;
+static NSObject *globalDCMTKSCULock = nil;
+
+static void SekhmetAcquireSendSlot( void)
+{
+    static dispatch_once_t once;
+    dispatch_once( &once, ^{ globalDCMTKSCULock = [[NSObject alloc] init]; });
+    
+    while( YES)
+    {
+        NSInteger maximum = [[NSUserDefaults standardUserDefaults] integerForKey: @"MaximumSendGlobalControllerConcurrentThreads"];
+        
+        @synchronized( globalDCMTKSCULock)
+        {
+            // Wie bisher: eine Sendung startet, wenn keine läuft oder wenn sie weniger als das Maximum ergibt
+            if( globalDCMTKSCUCounter == 0 || globalDCMTKSCUCounter + 1 < maximum)
+            {
+                globalDCMTKSCUCounter++;
+                return;
+            }
+        }
+        
+        [NSThread sleepForTimeInterval: 0.1];
+    }
+}
+
+static void SekhmetReleaseSendSlot( void)
+{
+    @synchronized( globalDCMTKSCULock)
+    {
+        globalDCMTKSCUCounter--;
+    }
+}
 
 - (void) sendDICOMFilesOffis:(NSDictionary *) dict 
 {
@@ -638,10 +680,7 @@ static int globalDCMTKSCUCounter = 0;
     NSArray *arraysOfFiles = [dict objectForKey: @"arraysOfFiles"];
     NSArray *arrayOfPatientNames = [dict objectForKey: @"arrayOfPatientNames"];
     
-    globalDCMTKSCUCounter++;
-    
-    while( globalDCMTKSCUCounter > 1 && globalDCMTKSCUCounter >= [[NSUserDefaults standardUserDefaults] integerForKey: @"MaximumSendGlobalControllerConcurrentThreads"])
-        [NSThread sleepForTimeInterval: 0.1];
+    SekhmetAcquireSendSlot();
     
 	@try
 	{
@@ -655,7 +694,7 @@ static int globalDCMTKSCUCounter = 0;
 		NSLog( @"***** sendDICOMFilesOffis exception: %@", e);
 	}
     
-    globalDCMTKSCUCounter--;
+    SekhmetReleaseSendSlot();
     
 	//need to unlock to allow release of self after send complete
 	[_lock performSelectorOnMainThread:@selector(unlock) withObject:nil waitUntilDone: NO];

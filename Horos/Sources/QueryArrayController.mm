@@ -164,7 +164,7 @@
         {
             if( [NSThread isMainThread] && showError)
             {
-                NSAlert *alert = [NSAlert alertWithMessageText: NSLocalizedString( @"Query Error", nil) defaultButton:@"OK" alternateButton:nil otherButton:nil informativeTextWithFormat:@"%@", NSLocalizedString( @"OsiriX cannot generate a DICOM query on itself.", nil)];
+                NSAlert *alert = [NSAlert alertWithMessageText: NSLocalizedString( @"Query Error", nil) defaultButton:@"OK" alternateButton:nil otherButton:nil informativeTextWithFormat:@"%@", NSLocalizedString( @"SekhVet cannot generate a DICOM query on itself.", nil)];
                 [alert runModal];
             }
         }
@@ -282,7 +282,10 @@
 	} @catch( NSException *localException) {
 		NSAlert *alert = [NSAlert alertWithMessageText:@"Query Error" defaultButton:@"OK" alternateButton:nil otherButton:nil informativeTextWithFormat:@"%@", @"Unable to perform Q/R. There was a missing parameter. Make sure you have AE Titles, IP addresses and ports for the queried computer"];
 	
-		[alert runModal];
+		// Sekhmet (DC): ein Abruf fragt aus seinem eigenen Thread; NSAlert im Hintergrund wirft, und der Abruf endete
+		// wortlos (nach ThalesMMS/horos 5572fd1c)
+		if( [NSThread isMainThread])
+			[alert runModal];
 		NSLog(@"Missing parameter for Query/retrieve: %@", [localException name]);
 		params = nil;
 	}

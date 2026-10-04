@@ -38,6 +38,7 @@
 #include "options.h"
 
 #import "NSImage+N2.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 #import "DefaultsOsiriX.h"
 #import "NSAppleScript+HandlerCalls.h"
 #import "AYDicomPrintWindowController.h"
@@ -56,8 +57,11 @@
 #import "SekhmetNorberg.h" // SekhVet Paket V
 #import "SekhmetOrientation.h" // Sekhmet
 #import "SekhmetViewerKategorie.h" // SekhVet Stufe 6c: die sekhmet*-Methoden dieser Klasse
+#import "SekhmetUeberlagerung.h" // SekhVet Paket CJ: Ueberlagern
+#import "SekhmetMessNavigator.h" // SekhVet Paket DO: Messungen-Navigator
 #import "SekhmetMPRKategorie.h"    // SekhVet Stufe 6c
 #import "SekhmetDisplayPanel.h" // SekhVet
+#import "SekhmetSequenz.h" // SekhVet Paket CA: Sequenz-Plaketten
 #import "SekhmetWindowing.h" // SekhVet Paket AE
 #import "ViewerController.h"
 #import "BrowserController.h"
@@ -233,6 +237,10 @@ NSInteger sortROIByName(id roi1, id roi2, void *context)
 
 - (id) initWithController:(ViewerController*) c dict: (NSDictionary*) d;
 
+@end
+
+@interface BrowserController (SekhmetReportPilot)
++ (BOOL) sekhmetReportPilotAktiv;
 @end
 
 @implementation ViewerControllerOperation
@@ -2308,8 +2316,7 @@ static volatile int numberOfThreadsForRelisce = 0;
     if( executed == NO)
         {
             // TODO check/create localizedStrings for first two strings
-            if( NSRunCriticalAlertPanel(@"Error", @"Cannot execute this reslicing.\r\rPlease report this issue in Horos Project Issue Tracker.", NSLocalizedString(@"OK", nil), nil, nil) == NSAlertAlternateReturn)
-                [[AppController sharedAppController] osirix64bit: self];
+            NSRunCriticalAlertPanel( NSLocalizedString( @"Error", nil), NSLocalizedString( @"Cannot execute this reslicing.\r\rPlease report this issue on the SekhVet issue tracker (Help menu).", nil), NSLocalizedString(@"OK", nil), nil, nil); // SekhVet Paket CU
         }
 }
 
@@ -2459,8 +2466,7 @@ static volatile int numberOfThreadsForRelisce = 0;
         
         if( succeed == NO)
         {
-            if( NSRunCriticalAlertPanel(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Cannot execute this reslicing.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
-                [[AppController sharedAppController] osirix64bit: self];
+            NSRunCriticalAlertPanel( NSLocalizedString( @"Not enough memory", nil), NSLocalizedString( @"Cannot execute this reslicing: not enough memory.", nil), NSLocalizedString(@"OK", nil), nil, nil); // SekhVet Paket CU
         }
         else
         {
@@ -2859,6 +2865,8 @@ static volatile int numberOfThreadsForRelisce = 0;
     }
     else [[self window] setTitle: @"Viewer"];
     
+    [SekhmetUeberlagerung aktualisiereToolbar: self]; // SekhVet Paket CJ: Chips folgen der angezeigten Serie (auch nach Serienwechsel durch Horos)
+    [SekhmetMessNavigator aktualisiere: self]; // SekhVet Paket DO: Messungen-Navigator anlegen / auffrischen
     [imageView checkCursor];	// <- To avoid a stupid bug between setTitle and NSTrackingArea.....
 }
 
@@ -3155,6 +3163,7 @@ static volatile int numberOfThreadsForRelisce = 0;
 - (void)windowWillClose:(NSNotification *)notification
 {
     [ViewerController clearFrontMost2DViewerCache];
+    [SekhmetMessNavigator abmelden: self]; // SekhVet Paket DO: Leiste abbauen, bevor der Viewer geht
     
 #ifndef OSIRIX_LIGHT
     [[OSIEnvironment sharedEnvironment] removeViewerController:self];
@@ -4428,7 +4437,7 @@ static volatile int numberOfThreadsForRelisce = 0;
     [cell setLineBreakMode: NSLineBreakByWordWrapping];
     [cell setFont:[NSFont boldSystemFontOfSize: [[BrowserController currentBrowser] fontSize: @"dbSmallMatrixFont"]]];
     
-    [cell setImagePosition: NSImageBelow];
+    [cell setImagePosition: NSImageAbove]; // SekhVet Paket CA: Name unter der Miniatur
     [cell setTransparent:NO];
     [cell setEnabled:YES];
     
@@ -5092,6 +5101,7 @@ static volatile int numberOfThreadsForRelisce = 0;
                 [cell setBordered:YES];
                 
                 [cell setTitle:@""];
+                [previewMatrix setToolTip: nil forCell: cell]; // SekhVet Paket CA
                 
                 [cell setImage: nil];
                 
@@ -5331,15 +5341,19 @@ static volatile int numberOfThreadsForRelisce = 0;
                         [cell setRepresentedObject: [O2ViewerThumbnailsMatrixRepresentedObject object:curSeries]];
                         [cell setFont:[NSFont systemFontOfSize: [[BrowserController currentBrowser] fontSize: @"dbSmallMatrixFont"]]];
                         [cell setAction: @selector(matrixPreviewPressed:)];
-                        [cell setLineBreakMode: NSLineBreakByCharWrapping];
+                        [cell setLineBreakMode: NSLineBreakByWordWrapping];
                         
                         NSString *name = [curSeries valueForKey:@"name"];
+                        NSString *vollerName = name ? name : @""; // SekhVet Paket CA: fuer Plakette und Tooltip
                         
                         if( [name length] > 18)
-                        {
                             [cell setFont:[NSFont boldSystemFontOfSize: [[BrowserController currentBrowser] fontSize: @"viewerSmallCellFont"]]];
-                            name = [name stringByTruncatingToLength: 34];
-                        }
+                        
+                        // SekhVet Paket CA: Name unter der Miniatur, volle Breite, hoechstens drei Zeilen
+                        // (vorher auf 34 Zeichen gekuerzt), der ganze Name im Tooltip.
+                        name = [SekhmetSequenz name: name dreiZeilenBreite: [ThumbnailCell thumbnailCellWidth] - 8 font: cell.font];
+                        [cell setImagePosition: NSImageAbove];
+                        [previewMatrix setToolTip: vollerName.length ? vollerName : nil forCell: cell];
                         
                         NSString *singleType = NSLocalizedString( @"Image", nil);
                         NSString *pluralType = NSLocalizedString( @"Images", nil);
@@ -5446,6 +5460,10 @@ static volatile int numberOfThreadsForRelisce = 0;
                                     [cell setAlternateImage:[img imageByScalingProportionallyUsingNSImage: 1.3]];
                                     break;
                             }
+                            
+                            // SekhVet Paket CA: Sequenz-Plakette (T1/T2/..., KM, SUB) unten auf der Miniatur
+                            [cell setImage: [SekhmetSequenz bild: cell.image mitPlakettenFuer: vollerName modalitaet: [curSeries valueForKey: @"modality"]]]; // SekhVet Paket CS: T1/T2 badge only for MR
+                            [cell setAlternateImage: cell.image];
                         }
                         
                         index++;
@@ -5735,6 +5753,7 @@ static ViewerController *draggedController = nil;
         if( [[items lastObject] isKindOfClass: [DicomSeries class]])
         {
             [self.window makeKeyAndOrderFront: self];
+            if( [SekhmetUeberlagerung handwegFuerSerie: [items lastObject] viewer: self]) return YES; // SekhVet Paket CJ/CK: Knopf "Overlay" an -> ueberlagern, sonst zeigt Horos die Serie
             [self loadSelectedSeries: [items lastObject] rightClick: NO];
         }
     }
@@ -6210,37 +6229,25 @@ static ViewerController *draggedController = nil;
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(sekhmetSpineTool:)];
     }
-    else if ([itemIdent isEqualToString: SekhmetNorbergToolbarItemIdentifier]) { // SekhVet Paket V: Norberg-Winkel
-        [toolbarItem setLabel: NSLocalizedString( @"Norberg Angle", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString( @"Norberg Angle (SekhVet)", nil)];
-        [toolbarItem setToolTip: NSLocalizedString( @"Hip dysplasia: place both femoral head circles and acetabular rim points, then drag them. Click again to reset the measurement.", nil)];
-        [toolbarItem setImage: [SekhmetNorberg toolbarIcon]];
-        [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(sekhmetNorbergTool:)];
+    else if ([itemIdent isEqualToString: SekhmetNorbergToolbarItemIdentifier]) { // SekhVet Paket V: Norberg-Winkel; Paket CS: Umschaltknopf
+        [SekhmetNorberg configureToolbarItem: toolbarItem distractionIndex: NO viewer: self];
     }
-    else if ([itemIdent isEqualToString: SekhmetNorbergDeleteToolbarItemIdentifier]) { // SekhVet Paket W
-        [toolbarItem setLabel: NSLocalizedString( @"Delete Norberg", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString( @"Delete Norberg Measurement (SekhVet)", nil)];
-        [toolbarItem setToolTip: NSLocalizedString( @"Removes the Norberg measurement (circles, rim points, grips) from this image", nil)];
-        [toolbarItem setImage: [SekhmetNorberg toolbarDeleteIcon]];
-        [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(sekhmetNorbergDeleteTool:)];
+    else if ([itemIdent isEqualToString: SekhmetDIToolbarItemIdentifier]) { // SekhVet Paket BD: Distraktionsindex; Paket CS: Umschaltknopf
+        [SekhmetNorberg configureToolbarItem: toolbarItem distractionIndex: YES viewer: self];
     }
-    else if ([itemIdent isEqualToString: SekhmetDIToolbarItemIdentifier]) { // SekhVet Paket BD: Distraktionsindex
-        [toolbarItem setLabel: NSLocalizedString( @"Distraction Index", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString( @"Distraction Index (SekhVet)", nil)];
-        [toolbarItem setToolTip: NSLocalizedString( @"PennHIP distraction view: places a yellow acetabular cup circle on each femoral head circle; DI = distance of the two centres / head radius. Drag a circle at its centre, its grip or use the scroll wheel over it to resize. Click again to reset the cups.", nil)];
-        [toolbarItem setImage: [SekhmetNorberg toolbarDIIcon]];
-        [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(sekhmetDITool:)];
+    else if ([itemIdent isEqualToString: @"SekhmetNorbergDelete"] || [itemIdent isEqualToString: @"SekhmetDIDelete"]) { // SekhVet Paket CS: entfallen, in gesicherten Leisten still weglassen
+        toolbarItem = nil;
     }
-    else if ([itemIdent isEqualToString: SekhmetDIDeleteToolbarItemIdentifier]) { // SekhVet Paket BD
-        [toolbarItem setLabel: NSLocalizedString( @"Delete DI", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString( @"Delete Distraction Index (SekhVet)", nil)];
-        [toolbarItem setToolTip: NSLocalizedString( @"Removes the distraction index (cup circles; the head circles too unless a Norberg measurement uses them) from this image", nil)];
-        [toolbarItem setImage: [SekhmetNorberg toolbarDIDeleteIcon]];
+    else if ([itemIdent isEqualToString: SekhmetReportPilotViewerToolbarItemIdentifier]) { // privat: offene Studie an ReportPilot
+        [toolbarItem setLabel: @"ReportPilot"];
+        [toolbarItem setPaletteLabel: @"ReportPilot"];
+        [toolbarItem setToolTip: NSLocalizedString(@"Write the report for this study in ReportPilot", nil)];
+        NSImage *bild = nil;
+        if( [NSImage respondsToSelector: @selector(imageWithSystemSymbolName:accessibilityDescription:)])
+            bild = [NSImage performSelector: @selector(imageWithSystemSymbolName:accessibilityDescription:) withObject: @"doc.text" withObject: @"ReportPilot"];
+        [toolbarItem setImage: bild ?: [NSImage imageNamed: XMLToolbarItemIdentifier]];
         [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(sekhmetDIDeleteTool:)];
+        [toolbarItem setAction: @selector(sekhmetReportPilotViewer:)];
     }
     else if ([itemIdent isEqualToString: SekhmetScreenAreaToolbarItemIdentifier]) { // SekhVet: Bildschirmflaeche je Bildschirm
         NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 0, 0, 150, 22) pullsDown: NO] autorelease];
@@ -6279,6 +6286,15 @@ static ViewerController *draggedController = nil;
         [toolbarItem setImage: [SekhmetDisplayPanel crosshairIcon]]; // SekhVet Paket AH: Fadenkreuz statt Horos-Punkt
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(sekhmetShow3DPointTool:)];
+    }
+    else if ([itemIdent isEqualToString: SekhmetMessNavigatorToolbarItemIdentifier]) { // SekhVet Paket DO: Messungen-Navigator ein/aus
+        [SekhmetMessNavigator konfiguriereToolbarItem: toolbarItem viewer: self];
+    }
+    else if ([itemIdent isEqualToString: SekhmetMessLoeschenToolbarItemIdentifier]) { // SekhVet Paket DO: alle Messungen loeschen
+        [SekhmetMessNavigator konfiguriereLoeschenToolbarItem: toolbarItem viewer: self];
+    }
+    else if ([itemIdent isEqualToString: SekhmetOverlayToolbarItemIdentifier]) { // SekhVet Paket CJ: Serien ueberlagern
+        [SekhmetUeberlagerung konfiguriereToolbarItem: toolbarItem viewer: self];
     }
     else if ([itemIdent isEqualToString: SekhmetMPRSwapToolbarItemIdentifier]) { // SekhVet Paket BW-2: Double MPR tauschen
         [toolbarItem setLabel: NSLocalizedString( @"Swap", nil)];
@@ -6512,7 +6528,7 @@ static ViewerController *draggedController = nil;
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: FusionView];
         [toolbarItem setMinSize:NSMakeSize(NSWidth([FusionView frame]), NSHeight([FusionView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([FusionView frame]) + 200, NSHeight([FusionView frame]))];
+        [toolbarItem setMaxSize:NSMakeSize(NSWidth([FusionView frame]), NSHeight([FusionView frame]))]; // SekhVet Paket DB: fixed width - Horos let it grow by 200 pt, slider and popup stretched across the toolbar
     }
     else if([itemIdent isEqualToString: StatusToolbarItemIdentifier])
     {
@@ -6792,12 +6808,13 @@ static ViewerController *draggedController = nil;
             SyncSeriesToolbarItemIdentifier,
             Show3DPointToolbarItemIdentifier,
             SekhmetMPRSwapToolbarItemIdentifier,
+            SekhmetOverlayToolbarItemIdentifier, // SekhVet Paket CJ
             SekhmetVetPresetToolbarItemIdentifier,
             SekhmetSpineToolbarItemIdentifier,
 							 SekhmetNorbergToolbarItemIdentifier,
-							 SekhmetNorbergDeleteToolbarItemIdentifier,
 							 SekhmetDIToolbarItemIdentifier,
-							 SekhmetDIDeleteToolbarItemIdentifier,
+                             SekhmetMessNavigatorToolbarItemIdentifier, // SekhVet Paket DO
+                             SekhmetMessLoeschenToolbarItemIdentifier,  // SekhVet Paket DO
             SekhmetScreenAreaToolbarItemIdentifier,
             PropagateSettingsToolbarItemIdentifier,
             PlayToolbarItemIdentifier,
@@ -6830,12 +6847,13 @@ static ViewerController *draggedController = nil;
                              SyncSeriesToolbarItemIdentifier,
                              Show3DPointToolbarItemIdentifier,
                              SekhmetMPRSwapToolbarItemIdentifier,
+                             SekhmetOverlayToolbarItemIdentifier, // SekhVet Paket CJ
                              SekhmetVetPresetToolbarItemIdentifier,
                              SekhmetSpineToolbarItemIdentifier,
 							 SekhmetNorbergToolbarItemIdentifier,
-							 SekhmetNorbergDeleteToolbarItemIdentifier,
 							 SekhmetDIToolbarItemIdentifier,
-							 SekhmetDIDeleteToolbarItemIdentifier,
+                             SekhmetMessNavigatorToolbarItemIdentifier, // SekhVet Paket DO
+                             SekhmetMessLoeschenToolbarItemIdentifier,  // SekhVet Paket DO
                              SekhmetScreenAreaToolbarItemIdentifier,
                              PropagateSettingsToolbarItemIdentifier,
                              ResetToolbarItemIdentifier,
@@ -6874,6 +6892,7 @@ static ViewerController *draggedController = nil;
                              GrowingRegionItemIdentifier,
                              SetPixelValueItemIdentifier,
                              nil];
+    if( [BrowserController sekhmetReportPilotAktiv]) [array addObject: SekhmetReportPilotViewerToolbarItemIdentifier]; // privat
     
     if([AppController canDisplay12Bit]) [array addObject: LUT12BitToolbarItemIdentifier];
     
@@ -7184,7 +7203,7 @@ static ViewerController *draggedController = nil;
             {
                 //shutterRect inside frame?
                 if (shutterRect.origin.x < 0) { shutterRect.size.width += shutterRect.origin.x; shutterRect.origin.x = 0;}
-                if (shutterRect.origin.y < 0) { shutterRect.size.height += shutterRect.origin.y; shutterRect.origin.x = 0;}
+                if (shutterRect.origin.y < 0) { shutterRect.size.height += shutterRect.origin.y; shutterRect.origin.y = 0;} // Sekhmet: war origin.x (Tippfehler aus Horos, nach ThalesMMS/horos bc7a500)
                 if (shutterRect.origin.x + shutterRect.size.width > p.pwidth) shutterRect.size.width = p.pwidth - shutterRect.origin.x;
                 if (shutterRect.origin.y + shutterRect.size.height > p.pheight) shutterRect.size.height = p.pheight - shutterRect.origin.y;
                 
@@ -9531,7 +9550,7 @@ static int avoidReentryRefreshDatabase = 0;
     
     if( filter == nil)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
+        NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"SekhVet cannot launch the selected plugin.", nil), nil, nil, nil);
         return;
     }
     
@@ -9553,7 +9572,7 @@ static int avoidReentryRefreshDatabase = 0;
         result = [filter prepareFilter: self];
         if( result)
         {
-            NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
+            NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"SekhVet cannot launch the selected plugin.", nil), nil, nil, nil);
             [PluginManager endProtectForCrash];
             
             return;
@@ -9562,7 +9581,7 @@ static int avoidReentryRefreshDatabase = 0;
     @catch (NSException * e)
     {
         N2LogExceptionWithStackTrace(e);
-        NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
+        NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"SekhVet cannot launch the selected plugin.", nil), nil, nil, nil);
         [PluginManager endProtectForCrash];
         
         return;
@@ -9573,7 +9592,7 @@ static int avoidReentryRefreshDatabase = 0;
         result = [filter filterImage: name];
         if( result)
         {
-            NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"OsiriX cannot apply the selected plugin.", nil), nil, nil, nil);
+            NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"SekhVet cannot apply the selected plugin.", nil), nil, nil, nil);
             [PluginManager endProtectForCrash];
             
             return;
@@ -9582,7 +9601,7 @@ static int avoidReentryRefreshDatabase = 0;
     @catch (NSException * e)
     {
         N2LogExceptionWithStackTrace(e);
-        NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
+        NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"SekhVet cannot launch the selected plugin.", nil), nil, nil, nil);
     }
     
     [PluginManager endProtectForCrash];
@@ -9612,8 +9631,7 @@ static int avoidReentryRefreshDatabase = 0;
     [self endWaitWindow: waitWindow];
     if(!isResampled)
     {
-        if( NSRunAlertPanel(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Cannot complete the resampling\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
-            [[AppController sharedAppController] osirix64bit: self];
+        NSRunAlertPanel( NSLocalizedString( @"Not enough memory", nil), NSLocalizedString( @"Cannot complete the resampling: not enough memory.", nil), NSLocalizedString(@"OK", nil), nil, nil); // SekhVet Paket CU
     }
 }
 
@@ -11544,18 +11562,22 @@ static float oldsetww, oldsetwl;
         
         if( [self isDataVolumicIn4D: YES])
         {
+            // Sekhmet (DC): der Kernel, den die Z-Threads lesen, lebt bis nach dem Warten unten (vorher Stack-Array im
+            // if-Block). Der Zaehler wird nur gesetzt, wenn Threads starten: eine Farbserie zog vorher 1 von
+            // mpprocessors ab und wartete dann ewig auf 0 - Haenger auf jedem Mac mit mehr als einem Kern
+            // (nach ThalesMMS/horos 32cc286b)
+            float fkernel[25];
+            
             // Apply the convolution in the Z direction
             for ( int x = 0; x < maxMovieIndex; x++)
             {
-                [convThread lockWhenCondition: 0];
-                [convThread unlockWithCondition: mpprocessors];
-                
                 DCMPix *pix = [pixList[ x] objectAtIndex: 0];
                 float m = *[pix fImage];
                 
                 if( [pix isRGB] == NO)
                 {
-                    float fkernel[25];
+                    [convThread lockWhenCondition: 0];
+                    [convThread unlockWithCondition: mpprocessors];
                     
                     if( [pix normalization] != 0)
                         for( int i = 0; i < 25; i++) fkernel[ i] = (float) [pix kernel][ i] / (float) [pix normalization];
@@ -11579,11 +11601,6 @@ static float oldsetww, oldsetwl;
                         
                         [NSThread detachNewThreadSelector: @selector(applyConvolutionZThread:) toTarget: self withObject: d];
                     }
-                }
-                else
-                {
-                    [convThread lock];
-                    [convThread unlockWithCondition: [convThread condition]-1];
                 }
                 
                 [convThread lockWhenCondition: 0];
@@ -11746,13 +11763,21 @@ static float oldsetww, oldsetwl;
             NSRunAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"This convolution filter cannot be loaded.", nil), nil, nil, nil);
         else
         {
-            nomalization = [[aConv objectForKey:@"Normalization"] longValue];
+            // Sekhmet (DC): der Filtereditor speichert Normalisierung und Koeffizienten als float; longValue machte aus
+            // 0.5 eine 0. Groesse auf 5 begrenzt (matrix[25]) (nach ThalesMMS/horos 32cc286b)
+            nomalization = [[aConv objectForKey:@"Normalization"] floatValue];
             size = [[aConv objectForKey:@"Size"] longValue];
             array = [aConv objectForKey:@"Matrix"];
             
-            for( i = 0; i < size*size; i++)
+            if( size > 5) size = 5;
+            if( size < 0) size = 0;
+            
+            for( i = 0; i < 25; i++)
+                matrix[i] = 0;
+            
+            for( i = 0; i < size*size && i < (long) [array count]; i++)
             {
-                matrix[i] = [[array objectAtIndex: i] longValue];
+                matrix[i] = [[array objectAtIndex: i] floatValue];
             }
             
             [self setConv:matrix :size: nomalization];
@@ -11783,10 +11808,11 @@ static float oldsetww, oldsetwl;
         NSDictionary   *aConv;
         NSArray			*array;
         long			size, x, y;
-        long			inc, nomalization;
+        long			inc;
+        float			nomalization; // Sekhmet (DC): float wie gespeichert (vorher long)
         
         aConv = [[[NSUserDefaults standardUserDefaults] dictionaryForKey: @"Convolution"] objectForKey:[sender title]];
-        nomalization = [[aConv objectForKey:@"Normalization"] longValue];
+        nomalization = [[aConv objectForKey:@"Normalization"] floatValue];
         size = [[aConv objectForKey:@"Size"] longValue];
         array = [aConv objectForKey:@"Matrix"];
         
@@ -12171,7 +12197,7 @@ static float oldsetww, oldsetwl;
             }
             else
             {
-                NSRunAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Only CLUT created in OsiriX 1.3.1 or higher can be edited...", nil), nil, nil, nil);
+                NSRunAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"This CLUT was created by a very old version and cannot be edited.", nil), nil, nil, nil);
             }
         }
     }
@@ -12880,6 +12906,12 @@ static float oldsetww, oldsetwl;
         {	// Image subtraction
             NSUInteger modifierFlags = [[[NSApplication sharedApplication] currentEvent] modifierFlags];
             
+            // SekhVet Paket CX: jede Schicht mit der Maskenschicht am selben Ort (Ctrl: Bild fuer Bild). Horos' Schleife
+            // unten blaetterte die Maske nur ueber die Sync-Nachricht mit -- liegt nach dem Ziehen die Maske vorne oder ist
+            // Sync aus, wurde von jeder Schicht dieselbe Maskenschicht abgezogen.
+            if( [SekhmetUeberlagerung verrechne: self mit: bc art: 2 absolut: ((modifierFlags & NSAlternateKeyMask) != 0) nachIndex: ((modifierFlags & NSControlKeyMask) != 0)])
+                break;
+            
             if ((modifierFlags & NSControlKeyMask) != 0)
             {
                 NSUInteger count = MIN([[self pixList] count], [[bc pixList] count]);
@@ -12911,6 +12943,7 @@ static float oldsetww, oldsetwl;
             break;
             
         case 3:		// Image multiplication
+            if( [SekhmetUeberlagerung verrechne: self mit: bc art: 3 absolut: NO nachIndex: NO]) break; // SekhVet Paket CX: wie die Subtraktion nach Ort
             for( i = 0; i < [pixList[ curMovieIndex] count]; i++)
             {
                 [imageView setIndex:i];
@@ -13184,9 +13217,9 @@ static float oldsetww, oldsetwl;
                         @try
                         {
                             if (data)
-                                array = [NSUnarchiver unarchiveObjectWithData: data];
+                                array = [SekhmetRestrictedUnarchiver unarchiveROIsWithData: data]; // Sekhmet (DE)
                             else
-                                array = [NSUnarchiver unarchiveObjectWithFile: str];
+                                array = [SekhmetRestrictedUnarchiver unarchiveROIsWithFile: str]; // Sekhmet (DE)
                         }
                         @catch (NSException * e)
                         {
@@ -13328,7 +13361,7 @@ static float oldsetww, oldsetwl;
                             
                             if( [roisArray count])
                             {
-                                if( [ViewerController areROIsArraysIdentical: [NSUnarchiver unarchiveObjectWithData: [copyRoiList[ mIndex] objectAtIndex: i]] with: roisArray] == NO || forceArchive == YES)
+                                if( [ViewerController areROIsArraysIdentical: [SekhmetRestrictedUnarchiver unarchiveROIsWithData: [copyRoiList[ mIndex] objectAtIndex: i]] with: roisArray] == NO || forceArchive == YES)
                                 {
                                     [SRAnnotation archiveROIsAsDICOM: roisArray toPath: str forImage: image];
                                     [allDICOMSR addObject: str];
@@ -13338,7 +13371,7 @@ static float oldsetww, oldsetwl;
                             {
                                 if( [[NSFileManager defaultManager] fileExistsAtPath: str])
                                 {
-                                    if( [ViewerController areROIsArraysIdentical: [NSUnarchiver unarchiveObjectWithData: [copyRoiList[ mIndex] objectAtIndex: i]] with: roisArray] == NO || forceArchive == YES)
+                                    if( [ViewerController areROIsArraysIdentical: [SekhmetRestrictedUnarchiver unarchiveROIsWithData: [copyRoiList[ mIndex] objectAtIndex: i]] with: roisArray] == NO || forceArchive == YES)
                                     {
                                         [SRAnnotation archiveROIsAsDICOM: roisArray toPath: str forImage: image];
                                         [allDICOMSR addObject: str];
@@ -13419,7 +13452,9 @@ static float oldsetww, oldsetwl;
                         found = YES;
                     }
                 }
-                if( found == NO)
+                // Sekhmet (DC): eine ROI ohne Namen hat nichts vorzuschlagen; addObject: nil warf, und die Namensliste
+                // blieb alt (nach ThalesMMS/horos 32cc286b)
+                if( found == NO && [[[roiList[y] objectAtIndex: x] objectAtIndex: z] name] != nil)
                 {
                     if( first) [ROINamesArray addObject: @"-"];
                     first = NO;
@@ -14074,7 +14109,7 @@ static float oldsetww, oldsetwl;
     // Unselect all ROIs
     [self roiSelectDeselectAll: nil];
     
-    NSArray *roisMovies = [NSUnarchiver unarchiveObjectWithFile: filename];
+    NSArray *roisMovies = [SekhmetRestrictedUnarchiver unarchiveROIsWithFile: filename]; // Sekhmet (DE)
     
     for( int y = 0; y < maxMovieIndex; y++)
     {
@@ -15148,8 +15183,11 @@ static float oldsetww, oldsetwl;
     if( i < 0) i = 0;
     if( i>= maxMovieIndex) i = maxMovieIndex-1;
     
+    // Sekhmet (DC): erst halten, dann freigeben - war a schon die aktuelle Liste, gab release sie vorher frei
+    // (nach ThalesMMS/horos 32cc286b)
+    [a retain];
     [roiList[ i] release];
-    roiList[ i] = [a retain];;
+    roiList[ i] = a;
 }
 
 - (IBAction) roiPropagate:(id) sender
@@ -15183,27 +15221,23 @@ static float oldsetww, oldsetwl;
                 
                 if( [[roiPropaMode selectedCell] tag] == 1)
                 {
-                    int pos, to;
+                    // Sekhmet (DC): "up to image number" ist die Nummer aus "Im: N/count", ab 1 gezaehlt und bei gespiegelten
+                    // Daten vom anderen Ende. Vorher als Index ab 0 gelesen und [min, max) genommen: Bild N wurde nach dem
+                    // aktuellen Bild erreicht, davor nicht; gespiegelt eins zu weit bzw. zwei zu kurz. Ausserdem wurde
+                    // vor dem Begrenzen der negativen Werte gegen count (unsigned) verglichen -> ein Ziel vor dem ersten
+                    // Bild wurde zu count, nichts kopiert. Jetzt beide Enden eingeschlossen, signed begrenzt
+                    // (nach ThalesMMS/horos 32cc286b)
+                    long count = [pixList[curMovieIndex] count];
+                    long last = count - 1;
+                    long pos = [imageView curImage];
+                    long imageNumber = [roiPropaDest intValue];
+                    long destination = [imageView flippedData] ? count - imageNumber : imageNumber - 1;
                     
-                    pos = [imageView curImage];
+                    long from = MAX( 0, MIN( pos, last));
+                    long to = MAX( 0, MIN( destination, last));
                     
-                    if( [imageView flippedData]) to = (long)[pixList[curMovieIndex] count] -1 - [roiPropaDest floatValue];
-                    else to = [roiPropaDest floatValue];
-                    
-                    startImage = pos;
-                    upToImage = to;
-                    
-                    if( startImage > upToImage)
-                    {
-                        startImage = to;
-                        upToImage = pos;
-                    }
-                    
-                    if( upToImage > [pixList[curMovieIndex] count]) upToImage = [pixList[curMovieIndex] count];
-                    if( startImage > [pixList[curMovieIndex] count]) startImage = [pixList[curMovieIndex] count];
-                    
-                    if( upToImage < 0) upToImage = 0;
-                    if( startImage < 0) startImage = 0;
+                    startImage = MIN( from, to);
+                    upToImage = MAX( from, to) + 1;
                 }
                 else
                 {
@@ -15454,6 +15488,12 @@ static float oldsetww, oldsetwl;
         
         return newMeasure;
     }
+    
+    // Sekhmet (DC): mit Kopien arbeiten - die Umwandlungen unten (Messlinie/Oval -> Polygon) veraenderten sonst die
+    // ROIs des Aufrufers, z. B. wurde ein Oval der Serie beim Erzeugen fehlender ROIs zum Polygon
+    // (nach ThalesMMS/horos 32cc286b)
+    a = [[a copy] autorelease];
+    b = [[b copy] autorelease];
     
     if( a.type == tMesure)
     {
@@ -15787,9 +15827,11 @@ static float oldsetww, oldsetwl;
 {
     if([roi groupID]==0.0) // not grouped
     {
+        // Sekhmet (DC): erst herausnehmen, dann hinten anfuegen - removeObject: nach dem Einfuegen entfernte beide
+        // Vorkommen, die ROI war weg (nach ThalesMMS/horos 32cc286b)
         [roi retain];
-        [[roiList[curMovieIndex] objectAtIndex:[imageView curImage]] insertObject:roi atIndex:[[roiList[curMovieIndex] objectAtIndex:[imageView curImage]] count]];
         [[roiList[curMovieIndex] objectAtIndex:[imageView curImage]] removeObject:roi];
+        [[roiList[curMovieIndex] objectAtIndex:[imageView curImage]] addObject:roi];
         [roi release];
     }
     else // bring the whole group to front, without changing order inside the group
@@ -15806,7 +15848,9 @@ static float oldsetww, oldsetwl;
                 i--;
             }
         }
-        for(i=(long)[group count]-1; i>=0; i--)
+        // Sekhmet (DC): in ihrer Reihenfolge anfuegen; rueckwaerts (wie beim Nach-vorne-Holen) drehte die Gruppe um
+        // (nach ThalesMMS/horos 32cc286b)
+        for(i=0; i<[group count]; i++)
         {
             [ROIs insertObject:[group objectAtIndex:i] atIndex:[ROIs count]];
         }
@@ -18196,6 +18240,7 @@ static float oldsetww, oldsetwl;
             if( to == from) to = from+1;
             
             interval = [printInterval intValue];
+            if( interval < 1) interval = 1; // Sekhmet (DG): 0 bewegte die Schleife nie weiter (nach ThalesMMS/horos 32cc286b)
             break;
     }
     
@@ -18404,6 +18449,7 @@ static float oldsetww, oldsetwl;
                 if( to == from) to = from+1;
                 
                 interval = [printInterval intValue];
+                if( interval < 1) interval = 1; // Sekhmet (DG)
                 break;
         }
         
@@ -19212,7 +19258,7 @@ static float oldsetww, oldsetwl;
     NSMutableArray *producedFiles = [NSMutableArray array];
     
     if (exportDCM == nil) exportDCM = [[DICOMExport alloc] init];
-    [exportDCM setSeriesNumber:5300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute]];	//Try to create a unique series number... Do you have a better idea??
+    [exportDCM beginSeriesWithNumber:5300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute]]; // Sekhmet (DD): immer neue Serie	//Try to create a unique series number... Do you have a better idea??
     [exportDCM setSeriesDescription: seriesName];
     
     NSLog( @"export start");
@@ -19313,7 +19359,7 @@ static float oldsetww, oldsetwl;
             curImage = [imageView curImage];
             
             if (exportDCM == nil) exportDCM = [[DICOMExport alloc] init];
-            [exportDCM setSeriesNumber:5300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute]];	//Try to create a unique series number... Do you have a better idea??
+            [exportDCM beginSeriesWithNumber:5300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute]]; // Sekhmet (DD): immer neue Serie	//Try to create a unique series number... Do you have a better idea??
             [exportDCM setSeriesDescription: [dcmSeriesName stringValue]];
             
             NSLog( @"export start");
@@ -19743,7 +19789,7 @@ static float oldsetww, oldsetwl;
     if ([tagString length] > 0) pdf2dcmContent = [pdf2dcmContent stringByAppendingFormat: @"\r# Patient ID\r00100020:%@",tagString];
     
     //0010,0021	(3) Patient Module Attributes
-    tagString = @"OsiriX";
+    tagString = @"SekhVet"; // SekhVet Paket CU
     pdf2dcmContent = [pdf2dcmContent stringByAppendingFormat: @"\r# Issuer of Patient ID\r00100021:%@",tagString];
     
     //0010,0030	(2) Patient Module Attributes
@@ -20047,7 +20093,7 @@ static float oldsetww, oldsetwl;
                         NSManagedObject	*curImage = [fileList[ 0] objectAtIndex:0];
                         
                         NSDictionary *exifDict = [NSDictionary dictionaryWithObjectsAndKeys:
-                                                  @"Exported from OsiriX", kCGImagePropertyExifUserComment,
+                                                  @"Exported from SekhVet", kCGImagePropertyExifUserComment,
                                                   [[curImage valueForKeyPath: @"series.study.date"] descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
                                                   nil];
                         
@@ -20077,7 +20123,7 @@ static float oldsetww, oldsetwl;
                             NSManagedObject	*curImage = [fileList[0] objectAtIndex:0];
                             
                             NSDictionary *exifDict = [NSDictionary dictionaryWithObjectsAndKeys:
-                                                      @"Exported from OsiriX", kCGImagePropertyExifUserComment,
+                                                      @"Exported from SekhVet", kCGImagePropertyExifUserComment,
                                                       [[curImage valueForKeyPath: @"series.study.date"] descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
                                                       nil];
                             
@@ -20228,7 +20274,7 @@ static float oldsetww, oldsetwl;
         //					NSManagedObject	*curImage = [fileList[0] objectAtIndex:0];
         //								
         //					NSDictionary *exifDict = [NSDictionary dictionaryWithObjectsAndKeys:
-        //													@"Exported from OsiriX", kCGImagePropertyExifUserComment,
+        //													@"Exported from SekhVet", kCGImagePropertyExifUserComment,
         //													[[curImage valueForKeyPath: @"series.study.date"] descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
         //													nil];
         //
@@ -20248,7 +20294,7 @@ static float oldsetww, oldsetwl;
         //						NSManagedObject	*curImage = [fileList[0] objectAtIndex:0];
         //						
         //						NSDictionary *exifDict = [NSDictionary dictionaryWithObjectsAndKeys:
-        //															@"Exported from OsiriX", kCGImagePropertyExifUserComment,
+        //															@"Exported from SekhVet", kCGImagePropertyExifUserComment,
         //															[[curImage valueForKeyPath: @"series.study.date"] descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
         //															nil];
         //
@@ -20263,7 +20309,7 @@ static float oldsetww, oldsetwl;
         //						NSManagedObject	*curImage = [fileList[0] objectAtIndex:0];
         //						
         //						NSDictionary *exifDict = [NSDictionary dictionaryWithObjectsAndKeys:
-        //															@"Exported from OsiriX", kCGImagePropertyExifUserComment,
+        //															@"Exported from SekhVet", kCGImagePropertyExifUserComment,
         //															[[curImage valueForKeyPath: @"series.study.date"] descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
         //															nil];
         //
@@ -21032,7 +21078,7 @@ static float oldsetww, oldsetwl;
         {
             switch( [[ReconstructionRoi itemAtIndex: i] tag])
             {
-                case 1:	[[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"MPR"]];				break;
+                case 1:	[[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"CPR"]];				break;
                 case 2:	[[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"MPR3D"]];				break;
                 case 3: [[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"MIP"]];				break;
                 case 4: [[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"VolumeRendering"]];	break;
@@ -21310,6 +21356,17 @@ static float oldsetww, oldsetwl;
     // ueber seine Serie statt in Fensterreihenfolge. Ein einzelnes MPR wird von der Kachelung wieder auf die ganze Flaeche gesetzt.
     NSRect f = NSIntersectionRect( [[self window] frame], area);
     if( f.size.width < 300 || f.size.height < 300 || [[self window] screen] != s) f = area;
+    // SekhVet Paket DI: ist es das einzige 3D-Fenster auf diesem Bildschirm, bekommt es die ganze Flaeche wie in Horos (deckt die 2D-Symbolleiste ab).
+    // Nur MPR wurde bisher von tile3DWindows wieder vergroessert; VR, CPR, Endoskopie blieben auf der Groesse des 2D-Fensters unter dessen Symbolleiste.
+    BOOL other3D = NO;
+    for( NSWindow *w in [NSApp windows])
+    {
+        if( w == [viewer window] || [w isVisible] == NO || [w isMiniaturized] || [w screen] != s) continue;
+        // Das versteckte VR-Hilfsfenster von CPR/MPR (Stil noNib) und schwebende 3D-Panels sind kein eigenes 3D-Fenster
+        if( [[w windowController] isKindOfClass: [VRController class]] && [[(VRController*)[w windowController] style] isEqualToString: @"standard"] == NO) continue;
+        if( [[w windowController] isKindOfClass: [Window3DController class]] && [(Window3DController*)[w windowController] windowWillClose] == NO) { other3D = YES; break; }
+    }
+    if( other3D == NO) f = area;
     [[viewer window] setFrame: f display:NO];
 }
 

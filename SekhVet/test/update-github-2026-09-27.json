@@ -1,0 +1,38 @@
+[
+ {
+  "tag_name": "v1.0-beta.117",
+  "name": "SekhVet 1.0 beta (build 117)",
+  "draft": false,
+  "prerelease": true,
+  "html_url": "https://github.com/3v3nFloW/sekhvet/releases/tag/v1.0-beta.117",
+  "body": "**SekhVet 1.0 beta, build 117.** Apple Silicon only, macOS 12 or later. Tested on macOS 26 (daily use); builds up to 107 were also tested on macOS 27.\n\nSekhVet is not a certified medical device. It is",
+  "assets": [
+   {
+    "name": "SekhVet-1.0-beta-build117-macOS.dmg",
+    "browser_download_url": "https://github.com/3v3nFloW/sekhvet/releases/download/v1.0-beta.117/SekhVet-1.0-beta-build117-macOS.dmg"
+   },
+   {
+    "name": "SekhVet-1.0-beta-build117-macOS.zip",
+    "browser_download_url": "https://github.com/3v3nFloW/sekhvet/releases/download/v1.0-beta.117/SekhVet-1.0-beta-build117-macOS.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "v1.0-beta.110",
+  "name": "SekhVet 1.0 beta (build 110)",
+  "draft": false,
+  "prerelease": true,
+  "html_url": "https://github.com/3v3nFloW/sekhvet/releases/tag/v1.0-beta.110",
+  "body": "**SekhVet 1.0 beta, build 110.** Apple Silicon only, macOS 12 or later. Tested on macOS 26 (daily use); builds up to 107 were also tested on macOS 27.\n\nSekhVet is not a certified medical device. It is",
+  "assets": [
+   {
+    "name": "SekhVet-1.0-beta-build110-macOS.dmg",
+    "browser_download_url": "https://github.com/3v3nFloW/sekhvet/releases/download/v1.0-beta.110/SekhVet-1.0-beta-build110-macOS.dmg"
+   },
+   {
+    "name": "SekhVet-1.0-beta-build110-macOS.zip",
+    "browser_download_url": "https://github.com/3v3nFloW/sekhvet/releases/download/v1.0-beta.110/SekhVet-1.0-beta-build110-macOS.zip"
+   }
+  ]
+ }
+]

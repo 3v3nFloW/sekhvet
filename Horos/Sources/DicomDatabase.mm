@@ -474,7 +474,7 @@ static DicomDatabase* activeLocalDatabase = nil;
             
             if (isNewFile && [NSThread isMainThread] && ![p hasPrefix:@"/tmp/"] && !isNewDb) {
                 [NSThread.currentThread enterOperation];
-                NSThread.currentThread.name = NSLocalizedString(@"Rebuilding default OsiriX database...", nil);
+                NSThread.currentThread.name = NSLocalizedString(@"Rebuilding default SekhVet database...", nil);
                 ThreadModalForWindowController* tmfwc = [[ThreadModalForWindowController alloc] initWithThread:[NSThread currentThread] window:nil];
                 [self rebuild:YES];
                 [tmfwc invalidate];
@@ -1656,7 +1656,7 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
         
         [DicomFile setFilesAreFromCDMedia: NO];
         
-        //	[[NSFileManager defaultManager] removeItemAtPath: @"/tmp/dicomsr_osirix" error:NULL]; // nooooooo because other threads may be using it
+        //	[[NSFileManager defaultManager] removeItemAtPath: @"/tmp/dicomsr_sekhvet" error:NULL]; // nooooooo because other threads may be using it
         
         if (addFailed)
         {
@@ -1747,6 +1747,12 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 
 static BOOL protectionAgainstReentry = NO;
 
+// Sekhmet (P5, nach ystarrev/horos ca954ce5): Schluessel SOPInstanceUID + Frame fuer die Bildsuche per Dictionary.
+static NSString *SekhmetImportImageLookupKey(NSString *sopUID, int frameID)
+{
+    return [NSString stringWithFormat:@"%@\n%d", sopUID, frameID];
+}
+
 -(NSArray*)addFilesDescribedInDictionaries:(NSArray*)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX returnArray: (BOOL) returnArray
 {
     return [self addFilesDescribedInDictionaries: dicomFilesArray postNotifications: postNotifications rereadExistingItems: rereadExistingItems generatedByOsiriX: generatedByOsiriX importedFiles: NO returnArray: returnArray];
@@ -1786,7 +1792,19 @@ static BOOL protectionAgainstReentry = NO;
     
     @try
     {
-        NSMutableArray* studiesArray = [[self objectsForEntity:self.studyEntity] mutableCopy];
+        // Sekhmet (P5, nach ystarrev/horos ca954ce5): nur die Studien holen, deren StudyInstanceUID in diesem
+        // Paket vorkommt, statt bei jedem Import-Paket alle Studien der Datenbank. Gesucht wird unten nur ueber
+        // studiesArrayStudyInstanceUID, also genuegen diese (auch fuer "gleiche UID, anderer Patient").
+        NSMutableSet *sekhmetIncomingStudyUIDs = [NSMutableSet set];
+        for (NSDictionary *d in dicomFilesArray)
+        {
+            NSString *uid = [d objectForKey:@"studyID"];
+            if (uid.length)
+                [sekhmetIncomingStudyUIDs addObject:uid];
+        }
+        NSArray *sekhmetExistingStudies = sekhmetIncomingStudyUIDs.count ? [self objectsForEntity:self.studyEntity predicate:[NSPredicate predicateWithFormat:@"studyInstanceUID IN %@", [sekhmetIncomingStudyUIDs allObjects]]] : [NSArray array];
+        NSMutableArray* studiesArray = [sekhmetExistingStudies mutableCopy];
+        NSMutableDictionary *sekhmetSeriesImagesBySOPFrame = [NSMutableDictionary dictionary]; // Serie -> (SOP+Frame -> Bild)
         NSMutableArray* modifiedStudiesArray = [NSMutableArray array];
         
         NSDate *defaultDate = [NSCalendarDate dateWithYear:1901 month:1 day:1 hour:0 minute:0 second:0 timeZone:nil];
@@ -1959,7 +1977,7 @@ static BOOL protectionAgainstReentry = NO;
                                         
                                         if( study == nil)
                                         {
-                                            NSLog( @"-*-*-*-*-* same studyUID (%@), but not same patientUID (%@ versus %@)", [curDict objectForKey: @"studyID"], [curDict objectForKey: @"patientUID"], [[studiesArray objectAtIndex: index] valueForKey: @"patientUID"]);
+                                            NSLog( @"-*-*-*-*-* same studyUID (%@), but not same patientUID", [curDict objectForKey: @"studyID"]); // SekhVet Paket CT: patientUID is name-ID-birthdate, not for the system log
                                             
                                             if( self.hasPotentiallySlowDataAccess) //It's a CD... be less restrictive !
                                                 study = tstudy;
@@ -2116,7 +2134,24 @@ static BOOL protectionAgainstReentry = NO;
                             if (dataDirPath && [newFile hasPrefix:dataDirPath])
                                 local = YES;
                             
-                            NSArray	*imagesArray = [[seriesTable valueForKey:@"images"] allObjects];
+                            // Sekhmet (P5): Bilder der Serie einmal je Import-Paket als Dictionary statt fuer jede Datei
+                            // die ganze Serie linear zu durchsuchen (quadratisch bei grossen Serien).
+                            NSValue *sekhmetSeriesKey = [NSValue valueWithNonretainedObject:seriesTable];
+                            NSMutableDictionary *imagesBySOPFrame = [sekhmetSeriesImagesBySOPFrame objectForKey:sekhmetSeriesKey];
+                            if (imagesBySOPFrame == nil)
+                            {
+                                imagesBySOPFrame = [NSMutableDictionary dictionary];
+                                @autoreleasepool
+                                {
+                                    for (DicomImage *ii in [[seriesTable valueForKey:@"images"] allObjects])
+                                    {
+                                        NSString *iiSOP = ii.sopInstanceUID;
+                                        if (iiSOP.length)
+                                            [imagesBySOPFrame setObject:ii forKey:SekhmetImportImageLookupKey(iiSOP, [ii.frameID intValue])];
+                                    }
+                                }
+                                [sekhmetSeriesImagesBySOPFrame setObject:imagesBySOPFrame forKey:sekhmetSeriesKey];
+                            }
                             int numberOfFrames = [[curDict objectForKey: @"numberOfFrames"] intValue];
                             if (numberOfFrames == 0)
                                 numberOfFrames = 1;
@@ -2126,18 +2161,10 @@ static BOOL protectionAgainstReentry = NO;
                                 image = nil;
                                 
                                 NSString *SOPUID = [curDict objectForKey: [@"SOPUID" stringByAppendingString: SeriesNum]];
+                                NSString *sekhmetImageKey = SOPUID.length ? SekhmetImportImageLookupKey(SOPUID, f) : nil;
                                 
-                                @autoreleasepool
-                                {
-                                    for( DicomImage *ii in imagesArray)
-                                    {
-                                        if( [ii.sopInstanceUID isEqualToString: SOPUID] && [ii.frameID intValue] == f)
-                                        {
-                                            image = ii;
-                                            break;
-                                        }
-                                    }
-                                }
+                                if( sekhmetImageKey)
+                                    image = [imagesBySOPFrame objectForKey: sekhmetImageKey];
                                 
                                 if( image)
                                 {
@@ -2270,6 +2297,8 @@ static BOOL protectionAgainstReentry = NO;
                                     
                                     // Relations
                                     [image setValue:seriesTable forKey:@"series"];
+                                    if( sekhmetImageKey)
+                                        [imagesBySOPFrame setObject: image forKey: sekhmetImageKey]; // Sekhmet (P5)
                                     
                                     if (DICOMSR == NO)
                                     {
@@ -2403,7 +2432,7 @@ static BOOL protectionAgainstReentry = NO;
                                                         reportURL = [@"REPORTS/" stringByAppendingPathComponent: [reportPath lastPathComponent]];
                                                     }
                                                     
-                                                    NSLog( @"--- DICOM SR -> Report : %@", [curDict valueForKey: @"patientName"]);
+                                                    NSLog( @"--- DICOM SR -> Report"); // Sekhmet (P6): keine Patientendaten im System-Log
                                                 }
                                                 
                                                 [study willChangeValueForKey: @"reportURL"];
@@ -3518,6 +3547,13 @@ static BOOL protectionAgainstReentry = NO;
         
         if (![NSFileManager.defaultManager fileExistsAtPath:[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:oldModelFilename]])
         {
+            // SekhVet Paket CT: the index is never deleted here. It is moved to a time-stamped backup beside it
+            // (with its SQLite side files) before the rebuild, and the dialog says so.
+            NSDateFormatter *stampFormatter = [[[NSDateFormatter alloc] init] autorelease];
+            stampFormatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+            stampFormatter.dateFormat = @"yyyyMMdd-HHmmss";
+            NSString *backupPath = [NSString stringWithFormat:@"%@.unknown-model-%@", self.sqlFilePath, [stampFormatter stringFromDate:[NSDate date]]];
+            
             int r = NSAlertDefaultReturn;
             
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"])
@@ -3525,7 +3561,7 @@ static BOOL protectionAgainstReentry = NO;
                 r = NSAlertDefaultReturn;
             }
             else
-                r = NSRunAlertPanel(NSLocalizedString(@"Horos Database", nil), NSLocalizedString(@"SekhVet cannot understand the model of current saved database... The database index will be deleted and reconstructed (no images are lost).", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Quit", nil), nil);
+                r = NSRunAlertPanel(NSLocalizedString(@"SekhVet Database", nil), NSLocalizedString(@"SekhVet does not know the model version (%@) of the saved database index.\r\rThe index file will be moved to a backup beside it:\r%@\r\rand a new index will be built from the image files. No images are lost; albums, comments and other information stored only in the index stay in the backup file.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Quit", nil), nil, databaseModelVersion, [backupPath lastPathComponent]);
             
             if (r == NSAlertAlternateReturn)
             {
@@ -3533,7 +3569,25 @@ static BOOL protectionAgainstReentry = NO;
                 [NSApp terminate:self];
             }
             
-            [[NSFileManager defaultManager] removeItemAtPath:self.sqlFilePath error:nil];
+            if ([NSFileManager.defaultManager fileExistsAtPath:self.sqlFilePath])
+            {
+                NSError *moveError = nil;
+                if (![NSFileManager.defaultManager moveItemAtPath:self.sqlFilePath toPath:backupPath error:&moveError])
+                {
+                    // no backup, so no rebuild: the index stays where it is and the normal open reports the problem
+                    NSLog(@"***** upgradeSqlFileFromModelVersion: could not move the index aside, it is left untouched: %@", moveError);
+                    return NO;
+                }
+                
+                for (NSString *suffix in @[@"-journal", @"-shm", @"-wal"])
+                {
+                    NSString *sidecarPath = [self.sqlFilePath stringByAppendingString:suffix];
+                    if ([NSFileManager.defaultManager fileExistsAtPath:sidecarPath])
+                        [NSFileManager.defaultManager moveItemAtPath:sidecarPath toPath:[backupPath stringByAppendingString:suffix] error:NULL];
+                }
+                
+                NSLog(@"upgradeSqlFileFromModelVersion: unknown model version, index moved to %@", backupPath);
+            }
             
             [self rebuild:YES];
             
@@ -3831,7 +3885,12 @@ static BOOL protectionAgainstReentry = NO;
                 //	[[splash progress] setMaxValue:[studies count]];
                 
                 studies = [NSMutableArray arrayWithArray: [studies sortedArrayUsingDescriptors: [NSArray arrayWithObject: [[[NSSortDescriptor alloc] initWithKey:@"patientUID" ascending:YES] autorelease]]]];
-                if ([studies count] > 100)
+                // Sekhmet (DG): alle kopiert -> fertig. Bei genau 100 Studien (allgemein: counter == Anzahl beim
+                // Nachladen) wurden sonst dieselben Studien wieder und wieder kopiert, ohne Ende
+                // (nach ThalesMMS/horos 32cc286b)
+                if (counter >= (int) [studies count])
+                    studies = [NSMutableArray array];
+                else if ([studies count] > 100)
                 {
                     int max = [studies count] - chunk*100;
                     if (max>100) max = 100;

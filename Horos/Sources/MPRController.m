@@ -40,6 +40,7 @@
 #import "SekhmetSpine.h" // Sekhmet
 #import "SekhmetDisplayPanel.h" // Sekhmet
 #import "SekhmetOrientation.h" // SekhVet
+#import "SekhmetUeberlagerung.h" // SekhVet Paket DA: Overlay-Knopf im MPR
 #import "SekhmetMPRKategorie.h" // SekhVet Stufe 6c: die sekhmet*-Methoden dieser Klasse
 #import "Point3D.h"
 #import "Camera.h"
@@ -58,7 +59,6 @@
 #import "DicomDatabase.h"
 #import "PluginManager.h"
 
-extern void setvtkMeanIPMode( int m);
 extern short intersect3D_2Planes( float *Pn1, float *Pv1, float *Pn2, float *Pv2, float *u, float *iP);
 static float deg2rad = M_PI/180.0; 
 
@@ -245,6 +245,7 @@ static float deg2rad = M_PI/180.0;
 		
 		startingOpacityMenu = [[viewer2D curOpacityMenu] retain];
 		curOpacityMenu = [startingOpacityMenu retain];
+		[[NSNotificationCenter defaultCenter] removeObserver:self name:OsirixUpdateOpacityMenuNotification object:nil]; // Sekhmet (DG): bei jedem Moduswechsel neu angemeldet -> mehrfach aufgerufen (nach ThalesMMS/horos 32cc286b)
 		[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(UpdateOpacityMenu:) name:OsirixUpdateOpacityMenuNotification object:nil];
 		[[NSNotificationCenter defaultCenter] postNotificationName: OsirixUpdateOpacityMenuNotification object: curOpacityMenu userInfo: nil];
 		
@@ -384,8 +385,9 @@ static float deg2rad = M_PI/180.0;
         if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetTile3DWindowsKey])
             [[AppController sharedAppController] performSelector: @selector(tile3DWindows:) withObject: nil afterDelay: 0.6];
         [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetPresetDidChange:) name: SekhmetVetPresetDidChangeNotification object: nil];
+        [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetSyncSettingDidChange:) name: SekhmetMPRSyncSettingDidChangeNotification object: nil]; // SekhVet Paket CS: MPR-Sync switched in another window or in the Display panel
         // SekhVet Paket AG: Thick-Slab-Modus beim Oeffnen (1 MIP = Horos, 2 minIP, 3 Mean); Mean als Vorgabe fuers Befunden,
-        // MIP nur fuer Gefaesse. Ueber den Setter, damit vtkMeanIPMode und das Popup (Binding) mitgehen.
+        // MIP nur fuer Gefaesse. Ueber den Setter, damit der Mean-Modus des Mappers (VRView setMode:) und das Popup (Binding) mitgehen.
         int slabMode = (int) [[NSUserDefaults standardUserDefaults] integerForKey: @"SekhmetMPRThickSlabMode"];
         if( slabMode >= 1 && slabMode <= 3 && slabMode != clippingRangeMode)
         {
@@ -396,6 +398,7 @@ static float deg2rad = M_PI/180.0;
     }
     // Hanging Protocol auf die drei Ebenen, sobald das Fenster steht (showWindow ist auch "Reset")
     sekhmetHPApplied = NO; // SekhVet Paket O: bis zum HP keine Sync-Nachrichten senden (sonst uebernimmt das offene Fenster die ungedrehte Kamera)
+    self.sekhmetHPPending = NO; // SekhVet Paket CS: a reset starts from scratch
     [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sekhmetApplyHangingProtocol) object: nil];
     [self performSelector: @selector(sekhmetApplyHangingProtocol) withObject: nil afterDelay: 0.5 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
 	mprView1.dontUseAutoLOD = YES;
@@ -655,8 +658,9 @@ static float deg2rad = M_PI/180.0;
 - (void) dealloc
 {
     [NSObject cancelPreviousPerformRequestsWithTarget: self]; // Sekhmet
-    [[NSNotificationCenter defaultCenter] removeObserver: self name: SekhmetMPRDidChangeNotification object: nil];
-    [[NSNotificationCenter defaultCenter] removeObserver: self name: SekhmetVetPresetDidChangeNotification object: nil];
+    // SekhVet Paket CS (dead code): the two removeObserver:name: calls that stood here were redundant - windowWillClose:
+    // removes every observer of this object, and since macOS 10.11 the notification center drops a deallocated
+    // selector-based observer by itself.
     [sekhmetConvName release]; sekhmetConvName = nil;
     [sekhmetLastSyncFingerprint release]; sekhmetLastSyncFingerprint = nil; // SekhVet Paket R
     [shadingsPresetsController removeObserver:self forKeyPath:@"selectedObjects" context:MPRController.class];
@@ -1932,16 +1936,14 @@ static float deg2rad = M_PI/180.0;
 
 	if( clippingRangeMode == 1 || clippingRangeMode == 3 || clippingRangeMode == 2)	// MIP - Mean - minIP
 	{
-		if( clippingRangeMode == 3) //mean
-			setvtkMeanIPMode( 1);
-		else
-			setvtkMeanIPMode( 0);
+		// Sekhmet (P2): Mean steht jetzt je Mapper (VRView setMode:), kein prozessweiter setvtkMeanIPMode mehr
 		
 		[mprView1.vrView prepareFullDepthCapture];
 		
 		// switch linear opacity table
 		[curOpacityMenu release];
 		curOpacityMenu = [startingOpacityMenu retain];
+		[[NSNotificationCenter defaultCenter] removeObserver:self name:OsirixUpdateOpacityMenuNotification object:nil]; // Sekhmet (DG): bei jedem Moduswechsel neu angemeldet -> mehrfach aufgerufen (nach ThalesMMS/horos 32cc286b)
 		[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(UpdateOpacityMenu:) name:OsirixUpdateOpacityMenuNotification object:nil];
 	}
 	else
@@ -1960,6 +1962,7 @@ static float deg2rad = M_PI/180.0;
 		// switch log inverse table
 		[curOpacityMenu release];
 		curOpacityMenu = [NSLocalizedString(@"Logarithmic Inverse Table", nil) retain];
+		[[NSNotificationCenter defaultCenter] removeObserver:self name:OsirixUpdateOpacityMenuNotification object:nil]; // Sekhmet (DG): bei jedem Moduswechsel neu angemeldet -> mehrfach aufgerufen (nach ThalesMMS/horos 32cc286b)
 		[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(UpdateOpacityMenu:) name:OsirixUpdateOpacityMenuNotification object:nil];
 		
 		[self setTool: toolsMatrix];
@@ -2777,7 +2780,7 @@ static float deg2rad = M_PI/180.0;
 	
     bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 	
-    NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingString:@"Horos.jpg"];
+    NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"SekhVet.jpg"];
 	[bitmapData writeToFile:path atomically:YES];
 	
     ifoto = [[Photos alloc] init];
@@ -2942,16 +2945,23 @@ static float deg2rad = M_PI/180.0;
     [[self window] setToolbar: toolbar];
     // SekhVet Paket P: Zoom-Gleichlauf-Knopf auch in eine gespeicherte Toolbar-Konfiguration einfuegen (hinter MPR-Sync)
     {
-        BOOL haveZoom = NO; NSInteger syncIdx = -1, idx = 0;
-        for( NSToolbarItem *it in [toolbar items])
-        {
-            if( [[it itemIdentifier] isEqualToString: @"SekhmetZoomSync"]) haveZoom = YES;
-            if( [[it itemIdentifier] isEqualToString: @"SekhmetMPRSync"]) syncIdx = idx;
-            idx++;
-        }
-        if( haveZoom == NO) [toolbar insertItemWithItemIdentifier: @"SekhmetZoomSync" atIndex: (syncIdx >= 0) ? syncIdx + 1 : [[toolbar items] count]];
-        // SekhVet Paket BW-2: "Swap MPR" einmalig hinter Zoom-Sync; nimmt der Benutzer ihn heraus, bleibt er weg
         NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+        NSInteger idx = 0;
+        // SekhVet Paket CS (review finding 17): once only, like "Swap MPR" below - the item was re-inserted at every
+        // opening of an MPR window, so it could not be removed from the toolbar.
+        if( [ud boolForKey: @"SekhmetZoomSyncToolbarInsertedMPR"] == NO)
+        {
+            BOOL haveZoom = NO; NSInteger syncIdx = -1;
+            for( NSToolbarItem *it in [toolbar items])
+            {
+                if( [[it itemIdentifier] isEqualToString: @"SekhmetZoomSync"]) haveZoom = YES;
+                if( [[it itemIdentifier] isEqualToString: @"SekhmetMPRSync"]) syncIdx = idx;
+                idx++;
+            }
+            if( haveZoom == NO) [toolbar insertItemWithItemIdentifier: @"SekhmetZoomSync" atIndex: (syncIdx >= 0) ? syncIdx + 1 : [[toolbar items] count]];
+            [ud setBool: YES forKey: @"SekhmetZoomSyncToolbarInsertedMPR"];
+        }
+        // SekhVet Paket BW-2: "Swap MPR" einmalig hinter Zoom-Sync; nimmt der Benutzer ihn heraus, bleibt er weg
         if( [ud boolForKey: @"SekhmetMPRSwapToolbarInsertedMPR"] == NO)
         {
             BOOL haveSwap = NO; NSInteger zoomIdx = -1; idx = 0;
@@ -2963,6 +2973,19 @@ static float deg2rad = M_PI/180.0;
             }
             if( haveSwap == NO) [toolbar insertItemWithItemIdentifier: @"SekhmetMPRSwap" atIndex: (zoomIdx >= 0) ? zoomIdx + 1 : [[toolbar items] count]];
             [ud setBool: YES forKey: @"SekhmetMPRSwapToolbarInsertedMPR"];
+        }
+        // SekhVet Paket DA: "Overlay" einmalig hinter Swap; nimmt der Benutzer ihn heraus, bleibt er weg
+        if( [ud boolForKey: @"SekhmetMPROverlayToolbarInsertedMPR"] == NO)
+        {
+            BOOL haveOverlay = NO; NSInteger swapIdx = -1; idx = 0;
+            for( NSToolbarItem *it in [toolbar items])
+            {
+                if( [[it itemIdentifier] isEqualToString: @"SekhmetMPROverlay"]) haveOverlay = YES;
+                if( [[it itemIdentifier] isEqualToString: @"SekhmetMPRSwap"]) swapIdx = idx;
+                idx++;
+            }
+            if( haveOverlay == NO) [toolbar insertItemWithItemIdentifier: @"SekhmetMPROverlay" atIndex: (swapIdx >= 0) ? swapIdx + 1 : [[toolbar items] count]];
+            [ud setBool: YES forKey: @"SekhmetMPROverlayToolbarInsertedMPR"];
         }
     }
 	[[self window] setShowsToolbarButton: NO];
@@ -3052,19 +3075,9 @@ static float deg2rad = M_PI/180.0;
     }
     else if ([itemIdent isEqualToString: @"SekhmetVetPreset"]) // SekhVet: Hanging Protocol je Studie, auch im MPR
     {
-        NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 0, 0, 150, 22) pullsDown: NO] autorelease];
-        [pb setMenu: [SekhmetOrientation presetMenuIncludingOff: YES]]; // SekhVet Paket BP: tag = Protokoll-id
-        [[pb cell] setControlSize: NSControlSizeSmall];
-        [pb setFont: [NSFont systemFontOfSize: 11]];
-        [pb selectItemWithTag: [SekhmetOrientation presetForStudyUID: [[self viewer] studyInstanceUID] description: [SekhmetOrientation descriptionForViewer: [self viewer]]]];
-        [pb setTarget: self];
-        [pb setAction: @selector(sekhmetPresetChanged:)];
-        [toolbarItem setLabel: NSLocalizedString( @"Hanging Protocol", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString( @"Hanging Protocol (SekhVet)", nil)];
-        [toolbarItem setToolTip: NSLocalizedString( @"Hanging protocol preset for this study: rotates the three MPR planes", nil)];
-        [toolbarItem setView: pb];
-        [toolbarItem setMinSize: NSMakeSize( 150, 22)];
-        [toolbarItem setMaxSize: NSMakeSize( 150, 22)];
+        // SekhVet Paket CS (dead code): the popup was built here by a copy of +configurePresetToolbarItem:viewer:target:
+        // (same menu, size, labels, tooltip and action sekhmetPresetChanged:); Curved and Orthogonal MPR already use it.
+        [SekhmetOrientation configurePresetToolbarItem: toolbarItem viewer: [self viewer] target: self];
     }
     else if ([itemIdent isEqualToString: @"SekhmetZoomSync"]) // SekhVet Paket P: Zoom-Gleichlauf (drei Ansichten + zwischen MPR-Fenstern)
     {
@@ -3072,14 +3085,17 @@ static float deg2rad = M_PI/180.0;
         [b setButtonType: NSButtonTypeSwitch];
         [b setTitle: NSLocalizedString( @"Zoom", nil)];
         [b setFont: [NSFont systemFontOfSize: 11]];
-        [b bind: @"value" toObject: [NSUserDefaultsController sharedUserDefaultsController] withKeyPath: @"values.syncZoomLevelMPR" options: nil];
-        [b setTarget: self]; [b setAction: @selector(sekhmetToggleZoomSync:)];
+        [b bind: @"value" toObject: [NSUserDefaultsController sharedUserDefaultsController] withKeyPath: @"values.syncZoomLevelMPR" options: nil]; // SekhVet Paket CS: the binding writes the default; the extra action sekhmetToggleZoomSync: did the same again and is gone
         [toolbarItem setLabel: NSLocalizedString( @"Zoom-Sync", nil)];
         [toolbarItem setPaletteLabel: NSLocalizedString( @"Zoom sync (SekhVet)", nil)];
         [toolbarItem setToolTip: NSLocalizedString( @"The three views of this window zoom together (between MPR windows the zoom always follows per view)", nil)];
         [toolbarItem setView: b];
         [toolbarItem setMinSize: NSMakeSize( 70, 24)];
         [toolbarItem setMaxSize: NSMakeSize( 70, 24)];
+    }
+    else if ([itemIdent isEqualToString: @"SekhmetMPROverlay"]) // SekhVet Paket DA: Overlay aus dem MPR (Chips, ▾, ✕ wie im 2D-Viewer)
+    {
+        [SekhmetUeberlagerung konfiguriereToolbarItem: toolbarItem viewer: viewer2D];
     }
     else if ([itemIdent isEqualToString: @"SekhmetMPRSwap"]) // SekhVet Paket BW-2: Double MPR tauschen
     {
@@ -3259,7 +3275,7 @@ static float deg2rad = M_PI/180.0;
 
 - (NSArray *) toolbarDefaultItemIdentifiers: (NSToolbar *) toolbar
 {
-		return [NSArray arrayWithObjects: @"tbTools", @"tbWLWW", @"tbThickSlab", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetMPRSwap", @"SekhmetSpine", NSToolbarFlexibleSpaceItemIdentifier, @"ViewsPosition", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", nil];
+		return [NSArray arrayWithObjects: @"tbTools", @"tbWLWW", @"tbThickSlab", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetMPRSwap", @"SekhmetMPROverlay", @"SekhmetSpine", NSToolbarFlexibleSpaceItemIdentifier, @"ViewsPosition", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisShowHide", @"MousePositionShowHide", nil]; // SekhVet Paket CS: Horos' "syncZoomLevel" left the DEFAULT set - "SekhmetZoomSync" switches the same default; it stays available in Customize Toolbar
 }
 
 - (NSArray *) toolbarAllowedItemIdentifiers: (NSToolbar *) toolbar
@@ -3268,7 +3284,7 @@ static float deg2rad = M_PI/180.0;
 											NSToolbarFlexibleSpaceItemIdentifier,
 											NSToolbarSpaceItemIdentifier,
 											NSToolbarSeparatorItemIdentifier,
-											@"tbTools", @"tbWLWW", @"tbLOD", @"tbThickSlab", @"tbBlending", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetMPRSwap", @"SekhmetSpine", @"tbMovie", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisColors", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"ViewsPosition", nil];
+											@"tbTools", @"tbWLWW", @"tbLOD", @"tbThickSlab", @"tbBlending", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetMPRSwap", @"SekhmetMPROverlay", @"SekhmetSpine", @"tbMovie", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisColors", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"ViewsPosition", nil];
     for (id key in [PluginManager plugins])
     {
         if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])

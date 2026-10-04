@@ -47,6 +47,10 @@ public:
     static vtkHorosFixedPointVolumeRayCastMapper *New();
     void Render( vtkRenderer *, vtkVolume * );
     
+    // Sekhmet (P2, nach ThalesMMS/horos bc7a500): Mean-IP je Mapper statt prozessweit.
+    // Vorher schaltete MIP in einem MPR-Fenster Mean im anderen ab (das zeigte dann minIP).
+    int MeanIPMode;
+    
 protected:
     
     vtkHorosFixedPointVolumeRayCastMapper();

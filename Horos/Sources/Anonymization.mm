@@ -334,12 +334,26 @@ static NSString *templateDicomFile = nil;
 		
 		if ([val isKindOfClass:[NSDate class]])
 		{
+			// Sekhmet (DD): DICOM-Datum als fertige Zeichenkette, gregorianisch, ASCII-Ziffern, lokale Zone. DT ergab
+			// vorher ueber -description "2026-10-03 12:00:00 +0200" statt eines gueltigen DT-Werts
+			// (nach ThalesMMS/horos e948e313)
+			NSString *format = nil;
 			if ([tag.vr isEqualToString:@"DA"]) //Date String
-				val = [DCMCalendarDate dicomDateWithDate:val];
+				format = @"yyyyMMdd";
 			else if ([tag.vr isEqualToString:@"TM"]) //Time String
-				val = [DCMCalendarDate dicomTimeWithDate:val];
+				format = @"HHmmss";
 			else if ([tag.vr isEqualToString:@"DT"]) //Date Time
-				val = [DCMCalendarDate dicomDateTimeWithDicomDate:[DCMCalendarDate dicomDateWithDate:val] dicomTime:[DCMCalendarDate dicomTimeWithDate:val]];
+				format = @"yyyyMMddHHmmssxx";
+			
+			if (format)
+			{
+				NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+				formatter.calendar = [[[NSCalendar alloc] initWithCalendarIdentifier: NSCalendarIdentifierGregorian] autorelease];
+				formatter.locale = [NSLocale localeWithLocaleIdentifier: @"en_US_POSIX"];
+				formatter.timeZone = [NSTimeZone localTimeZone];
+				formatter.dateFormat = format;
+				val = [formatter stringFromDate: val];
+			}
 		}
 		else if ([val isKindOfClass:[NSNumber class]])
 		{
@@ -441,7 +455,9 @@ static NSString *templateDicomFile = nil;
     
     for (NSString* f in producedFiles)
     {
-        const char* filename = [f cStringUsingEncoding:[NSString defaultCStringEncoding]];
+        // Sekhmet (DD): Dateisystem-Darstellung statt defaultCStringEncoding (MacRoman) - mit Umlaut im Zielpfad
+        // konnte gdcm die Datei nicht lesen, die Anonymisierung scheiterte (nach ThalesMMS/horos e948e313)
+        const char* filename = [f fileSystemRepresentation];
         
         gdcm::Reader reader;
         
@@ -472,7 +488,7 @@ static NSString *templateDicomFile = nil;
             else
             {
                 NSStringEncoding encoding =
-                [NSString encodingForDICOMCharacterSet:[[DicomFile getEncodingArrayForFile:[producedFiles lastObject]] objectAtIndex: 0]];
+                [NSString encodingForDICOMCharacterSet:[[DicomFile getEncodingArrayForFile: f] objectAtIndex: 0]]; // Sekhmet (DD): Zeichensatz dieser Datei, nicht der letzten
                 
                 std::vector< std::pair<gdcm::Tag, std::string> > replace_tags;
                 for (NSArray* replacingItem in tags)
@@ -481,7 +497,13 @@ static NSString *templateDicomFile = nil;
                     
                     DCMAttributeTag* tag = [replacingItem objectAtIndex:0];
                     if ([replacingItem count] > 1)
-                        newValue = std::string( [[[replacingItem objectAtIndex:1] description] cStringUsingEncoding:encoding] );
+                    {
+                        // Sekhmet (DD): nicht darstellbarer Wert -> cStringUsingEncoding: liefert NULL, std::string(NULL) stuerzte ab
+                        NSString *description = [[replacingItem objectAtIndex:1] description];
+                        const char *c = [description cStringUsingEncoding:encoding];
+                        if (c == NULL) c = [description UTF8String];
+                        newValue = std::string( c ? c : "");
+                    }
                     
                     replace_tags.push_back( std::make_pair(gdcm::Tag(tag.group,tag.element),newValue) );                    
                 }
@@ -514,11 +536,11 @@ static NSString *templateDicomFile = nil;
                 /////////////////////////////
                 /////////////////////////////
                 
-                NSString* _outfilename = [NSString stringWithCString:filename encoding:[NSString defaultCStringEncoding]];
+                NSString* _outfilename = f; // Sekhmet (DD)
                 NSString* anon_folder = [_outfilename stringByDeletingLastPathComponent];
                 NSString* anon_filename = [_outfilename lastPathComponent];
                 _outfilename = [NSString stringWithFormat:@"%@/anon_%@",anon_folder,anon_filename];
-                const char* outfilename = [_outfilename cStringUsingEncoding:[NSString defaultCStringEncoding]];
+                const char* outfilename = [_outfilename fileSystemRepresentation]; // Sekhmet (DD)
                 
                 gdcm::Writer writer;
                 writer.SetFileName( outfilename );
@@ -564,7 +586,7 @@ static NSString *templateDicomFile = nil;
         for (int i = 0; i < [producedAnonFiles count]; i++)
         {
             NSError* error = nil;
-            unlink([[producedFiles objectAtIndex:i] cStringUsingEncoding:[NSString defaultCStringEncoding]]);
+            unlink([[producedFiles objectAtIndex:i] fileSystemRepresentation]); // Sekhmet (DD)
             if (![[NSFileManager defaultManager] moveItemAtPath:[producedAnonFiles objectAtIndex:i] toPath:[producedFiles objectAtIndex:i] error:&error])
             {
                 anonymationSuccess = false;

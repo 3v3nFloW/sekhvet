@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "AppController.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 #import "SRAnnotation.h"
 #import "DCMView.h"
 #import "DCMPix.h"
@@ -534,7 +535,7 @@
 	if( !_dataEncapsulated)
 		_dataEncapsulated = [[NSArchiver archivedDataWithRootObject: [NSArray array]] retain];
 		
-	NSArray *preExistingROIs = [NSUnarchiver unarchiveObjectWithData: _dataEncapsulated];
+	NSArray *preExistingROIs = [SekhmetRestrictedUnarchiver unarchiveROIsWithData: _dataEncapsulated]; // Sekhmet (DE)
 	
 //	for( ROI *aROI in someROIs)
 //	{
@@ -559,7 +560,7 @@
 
 - (NSArray *) ROIs
 {
-	return [NSUnarchiver unarchiveObjectWithData: _dataEncapsulated];
+	return [SekhmetRestrictedUnarchiver unarchiveROIsWithData: _dataEncapsulated]; // Sekhmet (DE)
 }
 
 #pragma mark -
@@ -675,7 +676,7 @@
 	if ([study valueForKey:@"accessionNumber"])
 		document->setAccessionNumber( [[study valueForKey:@"accessionNumber"] UTF8String]);
 	
-	document->setManufacturer( [@"Horos" UTF8String]);
+	document->setManufacturer( [@"SekhVet" UTF8String]);
 	
 	if( _DICOMSeriesNumber)
 		document->setSeriesNumber( [_DICOMSeriesNumber UTF8String]);

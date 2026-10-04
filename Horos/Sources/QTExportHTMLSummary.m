@@ -60,7 +60,7 @@
 	
 	[self readTemplates];
 	
-	footerString = NSLocalizedString(@"Made with <a href=\"http://www.horosproject.org\" target=\"_blank\">SekhVet</a>",nil);
+	footerString = NSLocalizedString(@"Made with <a href=\"https://github.com/3v3nFloW/sekhvet\" target=\"_blank\">SekhVet</a>",nil);
 	[footerString retain];
 	
 	dateFormat = [[NSDateFormatter alloc] init];

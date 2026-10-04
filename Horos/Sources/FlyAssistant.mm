@@ -85,6 +85,28 @@
 #define DIRECTIONBITSMASK   0x1f
 #define DIRECTIONTOSELF 13 //0-26 represent the 26 neighbor's direction. 13 is the one in the middle
 
+// Sekhmet (DF): Fehler im Endoskopie-/CPR-Assistenten nach ThalesMMS/horos e948e313 + 32cc286b uebernommen (Lesen ueber
+// das Pufferende bei der Schwellwert-Mittelung, keine Distanztransformation bei < 32 Schichten - Kleintiere -, Ursprung und
+// Drehung der Blickrichtungssuche). Diese Datei wird mit -fno-fast-math gebaut (Projekt: GCC_FAST_MATH = YES), sonst faltet
+// clang isfinite() in .mm zu einer Konstanten.
+// Adds to sum the input's voxels in the 3 x 3 x 3 neighborhood of (x, y, z), in input coordinates, and counts them in
+// count; the neighbors outside the volume are left out.
+static void addInputNeighborhood(const float *input, int width, int height, int depth, int x, int y, int z,
+                                 float &sum, int &count)
+{
+    for (int i = -1; i < 2; ++i) {
+        for (int j = -1; j < 2; ++j) {
+            for (int k = -1; k < 2; ++k) {
+                long vx = (long)x + i, vy = (long)y + j, vz = (long)z + k;
+                if (vx < 0 || vx >= width || vy < 0 || vy >= height || vz < 0 || vz >= depth)
+                    continue;
+                sum += input[(vz * height + vy) * width + vx];
+                count++;
+            }
+        }
+    }
+}
+
 @implementation FlyAssistant
 
 @synthesize centerlineResampleStepLength;
@@ -271,11 +293,15 @@
      */
 	__block int changedpoints=1;
 	dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+	// Round up, so that the slices after the last full block of SLICES1BLOCK
+	// (all of them, in a volume of fewer) are transformed too; each block
+	// clamps its range to the volume.
+	size_t blocks = (distmapDepth + SLICES1BLOCK - 1) / SLICES1BLOCK;
 	
 	while (changedpoints>0) {
 		its++;
 		changedpoints=0;
-		dispatch_apply(distmapDepth/SLICES1BLOCK, queue, ^(size_t j) {
+		dispatch_apply(blocks, queue, ^(size_t j) {
             float deltamt[4]={0,1,1.414213,1.73205};
 			int starti,endi;
 			starti=j*SLICES1BLOCK;
@@ -321,7 +347,7 @@
 		if (changedpoints==0) {
 			break;
 		}
-		dispatch_apply(distmapDepth/SLICES1BLOCK, queue, ^(size_t j) {
+		dispatch_apply(blocks, queue, ^(size_t j) {
             float deltamt[4]={0,1,1.414213,1.73205};
 			int starti,endi;
 			starti=j*SLICES1BLOCK;
@@ -588,26 +614,18 @@
 
 	if(	!distmap )
 		return ERROR_NOENOUGHMEM;
+	// The thresholds below sample the input around pt, in the input coordinates it comes in.
+	int inputX = pt.x, inputY = pt.y, inputZ = pt.z;
 	//convert to resampled coordinate
 	[self converPoint2ResampleCoordinate:pt];
 	[self converPoint2ResampleCoordinate:dir];
 	if (!isDistanceTransformFinished) {
         //		return ERROR_DISTTRANSNOTFINISH;
         float pixVal = 0;
-        long maxData = inputWidth*inputHeight*inputDepth;
-        long pos = (int)pt.z*inputWidth*inputHeight+(int)pt.y*inputWidth+(int)pt.x;
-        
-        for (int i = -1; i < 2; ++i) {
-            for (int j = -1; j < 2; ++j) {
-                for (int k = -1; k < 2; ++k) {
-                    pos += (k * inputWidth * inputHeight + j * inputWidth + i);
-                    
-                    if( pos >= 0 && pos < maxData)
-                        pixVal += input[pos];
-                }
-            }
-        }
-        pixVal /= 27;
+        int count = 0;
+        addInputNeighborhood(input, inputWidth, inputHeight, inputDepth, inputX, inputY, inputZ, pixVal, count);
+        if (count)
+            pixVal /= count;
         [self computeIntervalThresholdsFrom:pixVal];
         [self distanceTransformWithThreshold:nil];        
 	}
@@ -692,6 +710,9 @@
 
 	newpos = [self caculateNextCenterPointFrom:pt Towards:dir WithStepLength:steplen];
 	if (!newpos) {
+		// Give pt and dir back in the input coordinates, as the other returns do.
+		[self converPoint2InputCoordinate:pt];
+		[self converPoint2InputCoordinate:dir];
 		return ERROR_CANNOTFINDPATH;
 	}
 	pt.x = pt.x + (newpos.x-pt.x)*0.5;
@@ -841,6 +862,11 @@ typedef GreaterPathNodeOnF NodeCompare;
 
 - (int) createCenterline:(NSMutableArray*)centerline FromPointA:(Point3D*)pta ToPointB:(Point3D*)ptb withSmoothing:(BOOL)smoothFlag;
 {
+    // The points stay the caller's: the endoscopy keeps its A from one search to the next, so the clamping and the
+    // conversion to resample coordinates below work on copies.
+    pta = [[[Point3D alloc] initWithPoint3D:pta] autorelease];
+    ptb = [[[Point3D alloc] initWithPoint3D:ptb] autorelease];
+
 	float* costmap=(float*)malloc(distmapVolumeSize*sizeof(float));
 	if(!costmap)
 	{
@@ -889,20 +915,12 @@ typedef GreaterPathNodeOnF NodeCompare;
                 << "x= " << ptb.x << " y= " << ptb.y <<  " z= " << ptb.z << std::endl;
 
     // get the boundaries for threshold
-    int posA = (int)pta.z*inputWidth*inputHeight+(int)pta.y*inputWidth+(int)pta.x,
-        posB = (int)ptb.z*inputWidth*inputHeight+(int)ptb.y*inputWidth+(int)ptb.x;
+    // from the mean of the voxels around A and B that lie in the volume
     float pixVal = 0;
-    for (int i = -1; i < 2; ++i) {
-        for (int j = -1; j < 2; ++j) {
-            for (int k = -1; k < 2; ++k) {
-                posA += (k * inputWidth * inputHeight + j * inputWidth + i);
-                posB += (k * inputWidth * inputHeight + j * inputWidth + i);
-                pixVal += input[posA]; 
-                pixVal += input[posB];
-            }
-        }
-    }
-    pixVal /= 54;
+    int count = 0;
+    addInputNeighborhood(input, inputWidth, inputHeight, inputDepth, pta.x, pta.y, pta.z, pixVal, count);
+    addInputNeighborhood(input, inputWidth, inputHeight, inputDepth, ptb.x, ptb.y, ptb.z, pixVal, count);
+    pixVal /= count;
     [self computeIntervalThresholdsFrom:pixVal];
     NSLog(@"Opt. thresholds from %f : Min = %f / Max = %f", pixVal, thresholdA, thresholdB);
     [self distanceTransformWithThreshold:nil];
@@ -1224,60 +1242,47 @@ typedef GreaterPathNodeOnF NodeCompare;
 
 - (OSIVoxel*) computeMaximizingViewDirectionFrom:(OSIVoxel*) center LookingAt:(OSIVoxel*) direction
 {
-    OSIVoxel * bestView = [[[OSIVoxel alloc] init] autorelease];
-    // calcul de la direction maximisant la vue. Mise de côté pour le moment, en attendant que les quaternions fonctionnent correctement
+    // center and direction are centerline points, in input voxels. The scan runs in the resampled volume, whose
+    // voxels are cubes, so its angles are angles in the patient; the view found is turned back into input voxels,
+    // as a point as far from center as direction is. With nowhere to look, the view is direction itself.
+    OSIVoxel * bestView = [[[OSIVoxel alloc] initWithX:direction.x y:direction.y z:direction.z value:nil] autorelease];
     int window = 45;
+    int step = 3;
     
     unsigned int maxView = 0;
-    short i = 1;
     
     Point3D * origin = [[[Point3D alloc] initWithValues:center.x :center.y :center.z] autorelease];
     [self converPoint2ResampleCoordinate:origin];
-    Quaternion currentDir(direction.x-center.x, direction.y-center.y, direction.z-center.z, 0);
-    N3Vector cdir, vxAxis, vyAxis;
-    cdir.x = direction.x-center.x;
-    cdir.y = direction.y-center.y;
-    cdir.z = direction.z-center.z;
+    // the conversion is a scale on each axis, so it converts a vector as it does a point
+    Point3D * ahead = [[[Point3D alloc] initWithValues:direction.x-center.x :direction.y-center.y :direction.z-center.z] autorelease];
+    [self converPoint2ResampleCoordinate:ahead];
+    const N3Vector aheadVector = N3VectorMake(ahead.x, ahead.y, ahead.z);
+    const CGFloat aheadLength = N3VectorLength(aheadVector);
+    if (!(aheadLength > 0) || !isfinite(aheadLength))
+        return bestView;
+    const N3Vector forward = N3VectorScalarMultiply(aheadVector, 1.0/aheadLength);
     
-    // compute xAxis and yAxis so (xAxis, yAxis) is a base for the plan normal to currentDir
-    // http://fr.wikipedia.org/wiki/Plan_%28math%C3%A9matiques%29#Approche_analytique_en_dimension_3
-    if (currentDir.getX() != 0) {
-        vxAxis.x = -currentDir.getY()/currentDir.getX();
-        vxAxis.y = 1;
-        vxAxis.z = 0;
-        
-        vyAxis.x = -currentDir.getZ()/currentDir.getX();
-        vyAxis.y = 0;
-        vyAxis.z = 1;
-    } else if (currentDir.getY() != 0) {
-        vxAxis.x = 1;
-        vxAxis.y = -currentDir.getX()/currentDir.getY();
-        vxAxis.z = 0;
-        
-        vyAxis.x = 0;
-        vyAxis.y = -currentDir.getZ()/currentDir.getY();
-        vyAxis.z = 1;
-    } else {
-        vxAxis.x = 1;
-        vxAxis.y = 0;
-        vxAxis.z = -currentDir.getX()/currentDir.getZ();
-        
-        vyAxis.x = 0;
-        vyAxis.y = 1;
-        vyAxis.z = -currentDir.getY()/currentDir.getZ();
-    }
+    // (vxAxis, vyAxis) is an orthonormal base of the plane normal to forward, so the grid below is square:
+    // vxAxis is horizontal (normal to z) unless forward is along z, and vyAxis completes the right-handed frame.
+    N3Vector vxAxis = N3VectorMake(-forward.y, forward.x, 0);
+    if (N3VectorLength(vxAxis) < 1e-6)
+        vxAxis = N3VectorMake(1, 0, 0);
+    vxAxis = N3VectorNormalize(vxAxis);
+    const N3Vector vyAxis = N3VectorNormalize(N3VectorCrossProduct(forward, vxAxis));
     
-    Quaternion xAxisRot( vxAxis, -window );
-    Quaternion yAxisRot( vyAxis, -window );
+    Quaternion xAxisRot, yAxisRot;
+    N3Vector cdir;
+    
+    Point3D * newDirection = [[[Point3D alloc] init] autorelease];
 
-    // Put the currentDir to the first angle for "raytracing"
-    cdir = yAxisRot * xAxisRot * cdir;
-    
-    Point3D * newDirection = [[[Point3D alloc] initWithValues:cdir.x :cdir.y :cdir.z] autorelease];
-
-    // get the unit vector that maximizes the view
-    for (int x = -window; x <= window; x+=3) {
-        for (int y = -window; y <= window; y+=3) {
+    // get the unit vector that maximizes the view, over a grid of rays step degrees apart, -window to window about
+    // both axes. Each ray turns the forward direction itself: turns about two fixed axes do not add up, so a ray
+    // turned from the previous one drifts off the grid.
+    for (int x = -window; x <= window; x+=step) {
+        xAxisRot.fromAxis(vxAxis, x);
+        for (int y = -window; y <= window; y+=step) {
+            yAxisRot.fromAxis(vyAxis, y);
+            cdir = yAxisRot * xAxisRot * forward;
             [newDirection setX:cdir.x];
             [newDirection setY:cdir.y];
             [newDirection setZ:cdir.z];
@@ -1285,18 +1290,13 @@ typedef GreaterPathNodeOnF NodeCompare;
                                                 accordingTo:newDirection];
             if (viewDistance > maxView) {
                 maxView = viewDistance;
-                [newDirection add:origin];  
-                bestView.x = newDirection.x;
-                bestView.y = newDirection.y;
-                bestView.z = newDirection.z;
+                Point3D * view = [[[Point3D alloc] initWithValues:cdir.x*aheadLength :cdir.y*aheadLength :cdir.z*aheadLength] autorelease];
+                [self converPoint2InputCoordinate:view];
+                bestView.x = center.x + view.x;
+                bestView.y = center.y + view.y;
+                bestView.z = center.z + view.z;
             }
-            yAxisRot.fromAxis(vyAxis, i);
-            cdir = yAxisRot * cdir;
         }
-        i *= -1;
-        yAxisRot.fromAxis(vyAxis, i);
-        xAxisRot.fromAxis(vxAxis, 1);
-        cdir = yAxisRot * xAxisRot * cdir;
     }
     
     return bestView;
@@ -1335,13 +1335,18 @@ typedef GreaterPathNodeOnF NodeCompare;
 
 - (unsigned int) traceLineFrom:(Point3D *) center accordingTo:(Point3D *) direction
 {
-    std::vector<unsigned int> line;
+    // center and direction in resample coordinates. Walks from center, which is left where it is, in steps of one
+    // resampled voxel along direction, and answers the number of steps taken up to the first out of the lumen.
+    N3Vector unitStep = N3VectorNormalize(N3VectorMake(direction.x, direction.y, direction.z));
+    if (N3VectorIsZero(unitStep) || !isfinite(unitStep.x) || !isfinite(unitStep.y) || !isfinite(unitStep.z))
+        return 0;
+    Point3D * stepVector = [[[Point3D alloc] initWithValues:unitStep.x :unitStep.y :unitStep.z] autorelease];
     unsigned int viewDistance = 0;
     
-    Point3D * current = center;
+    Point3D * current = [[[Point3D alloc] initWithValues:center.x :center.y :center.z] autorelease];
     
     do {
-        [current add:direction];
+        [current add:stepVector];
         ++viewDistance;
     } while ( [self point:current InVolumeX:distmapWidth Y:distmapHeight Z:distmapDepth]
              && distmap[(int)current.x + distmapWidth*(int)current.y + distmapImageSize*(int)current.z] != 0);

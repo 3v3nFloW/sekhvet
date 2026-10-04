@@ -2503,7 +2503,7 @@ void info_callback(const char *msg, void *a) {
                                     break;
                                     
                                 default:
-                                    NSLog(@"Error, Error, Horos will soon crash...");
+                                    NSLog(@"Error, Error, SekhVet will soon crash...");
                                     break;
                             }
                         }
@@ -2562,7 +2562,7 @@ void info_callback(const char *msg, void *a) {
                                     break;
                                     
                                 default:
-                                    NSLog(@"Error, Error, Horos will soon crash...");
+                                    NSLog(@"Error, Error, SekhVet will soon crash...");
                                     break;
                             }
                         }
@@ -2621,7 +2621,7 @@ void info_callback(const char *msg, void *a) {
                                     break;
                                     
                                 default:
-                                    NSLog(@"Error, Error, Horos will soon crash...");
+                                    NSLog(@"Error, Error, SekhVet will soon crash...");
                                     break;
                             }
                         }

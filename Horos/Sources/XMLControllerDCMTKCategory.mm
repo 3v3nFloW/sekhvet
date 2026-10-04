@@ -61,34 +61,54 @@
 #include <GDCM/gdcmDefs.h>
 #include <GDCM/gdcmAnonymizer.h>
 #include <GDCM/gdcmWriter.h>
+#include <sys/stat.h>   // SekhVet Paket CS: stat / chmod for the atomic rewrite in modifyDicom:dicomFiles:
+#include <unistd.h>     // SekhVet Paket CS: unlink
+#include <stdio.h>      // SekhVet Paket CS: rename
 
 extern NSRecursiveLock *PapyrusLock;
 
 @implementation XMLController (XMLControllerDCMTKCategory)
 
 
+// SekhVet Paket CS: three safety fixes for every caller of this method.
+// (1) A value that cannot be encoded in the character set of the file no longer crashes
+//     (std::string( NULL)); the file is left untouched and the method returns NO.
+// (2) The character set is determined per file instead of taking the last file for all.
+// (3) The result is written next to the original and swapped in with rename(): a failed
+//     write (disk full) leaves the original file intact instead of corrupting it.
 + (BOOL) modifyDicom:(NSArray*) tagAndValues dicomFiles:(NSArray*) dicomFiles
 {
     BOOL modifySuccess = YES;
     
     for (NSString* f in dicomFiles)
     {
-        const char* filename = [f cStringUsingEncoding:[NSString defaultCStringEncoding]];
-        
-        gdcm::Reader reader;
-        
-        reader.SetFileName(filename);
-        
-        if( !reader.Read() )
+        @autoreleasepool
         {
-            std::cerr << "Can't read file for anonymization." << std::endl;
+            // UTF-8 like DicomFile getEncodingArrayForFile:; NULL (not convertible) must never reach std::string
+            const char* filename = [f isKindOfClass: [NSString class]] ? [f UTF8String] : NULL;
             
-            modifySuccess = NO;
+            if( filename == NULL || filename[ 0] == 0)
+            {
+                std::cerr << "Invalid file name for modification." << std::endl;
+                
+                modifySuccess = NO;
+                
+                continue;
+            }
             
-            continue;
-        }
-        else
-        {
+            gdcm::Reader reader;
+            
+            reader.SetFileName(filename);
+            
+            if( !reader.Read() )
+            {
+                std::cerr << "Can't read file for anonymization." << std::endl;
+                
+                modifySuccess = NO;
+                
+                continue;
+            }
+            
             gdcm::File &file = reader.GetFile();
             
             gdcm::MediaStorage ms;
@@ -101,94 +121,102 @@ extern NSRecursiveLock *PapyrusLock;
                 
                 continue;
             }
-            else
+            
+            NSStringEncoding encoding = [NSString defaultCStringEncoding];
+            
+            NSArray *encodingArray = [DicomFile getEncodingArrayForFile: f];
+            if ([encodingArray count] > 0)
+                encoding = [NSString encodingForDICOMCharacterSet: [encodingArray objectAtIndex: 0]];
+            
+            BOOL encodable = YES;
+            std::vector< std::pair<gdcm::Tag, std::string> > replace_tags;
+            for (NSArray* replacingItem in tagAndValues)
             {
-                NSStringEncoding encoding = [NSString defaultCStringEncoding];
+                std::string newValue = "";
                 
-                if ([dicomFiles lastObject] != nil)
+                DCMAttributeTag* tag = ([replacingItem count] > 0 ? [replacingItem objectAtIndex:0] : nil);
+                
+                if (tag)
                 {
-                    if ([[DicomFile getEncodingArrayForFile:[dicomFiles lastObject]] count] > 0)
+                    if ([replacingItem count] >= 2)
                     {
-                        encoding = [NSString encodingForDICOMCharacterSet:[[DicomFile getEncodingArrayForFile:[dicomFiles lastObject]] objectAtIndex: 0]];
-                    }
-                }
-                
-                std::vector< std::pair<gdcm::Tag, std::string> > replace_tags;
-                for (NSArray* replacingItem in tagAndValues)
-                {
-                    std::string newValue = "";
-                    
-                    DCMAttributeTag* tag = ([replacingItem count] > 0 ? [replacingItem objectAtIndex:0] : nil);
-                    
-                    if (tag)
-                    {
-                        if ([replacingItem count] >= 2)
-                            newValue = std::string( [[replacingItem objectAtIndex:1] cStringUsingEncoding:encoding] );
-                    
-                        replace_tags.push_back( std::make_pair(gdcm::Tag(tag.group,tag.element),newValue) );
-                    }
-                }
-                
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                
-                gdcm::Anonymizer anon;
-                anon.SetFile( file );
-                
-                bool success = true;
-                
-                std::vector< std::pair<gdcm::Tag, std::string> >::const_iterator it2 = replace_tags.begin();
-                for(; it2 != replace_tags.end(); ++it2)
-                {
-                    success = success && anon.Replace( it2->first, it2->second.c_str() );
-                }
-                
-                if (!success)
-                {
-                    modifySuccess = NO;
-                }
-                
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                
-                const char* outfilename = filename;
-                
-                gdcm::Writer writer;
-                writer.SetFileName( outfilename );
-                writer.SetFile( file );
-                
-                if( !writer.Write() )
-                {
-                    std::cerr << "Could not Write : " << outfilename << std::endl;
-                    if( strcmp(filename,outfilename) != 0 )
-                    {
-                        gdcm::System::RemoveFile( outfilename );
-                    }
-                    else
-                    {
-                        std::cerr << "gdcmanon just corrupted: " << filename << " (data lost)." << std::endl;
+                        id value = [replacingItem objectAtIndex:1];
+                        const char *cValue = [value isKindOfClass: [NSString class]] ? [value cStringUsingEncoding:encoding] : NULL;
                         
+                        if( cValue == NULL)
+                        {
+                            encodable = NO;
+                            break;
+                        }
+                        
+                        newValue = std::string( cValue);
                     }
                     
-                    modifySuccess = NO;
-                    
-                    continue;
+                    replace_tags.push_back( std::make_pair(gdcm::Tag(tag.group,tag.element),newValue) );
                 }
+            }
+            
+            if( encodable == NO)
+            {
+                std::cerr << "A new value cannot be encoded in the character set of the file; file left unchanged." << std::endl;
+                
+                modifySuccess = NO;
+                
+                continue;
+            }
+            
+            gdcm::Anonymizer anon;
+            anon.SetFile( file );
+            
+            bool success = true;
+            
+            std::vector< std::pair<gdcm::Tag, std::string> >::const_iterator it2 = replace_tags.begin();
+            for(; it2 != replace_tags.end(); ++it2)
+            {
+                success = success && anon.Replace( it2->first, it2->second.c_str() );
+            }
+            
+            if (!success)
+            {
+                modifySuccess = NO;
+            }
+            
+            // Write to a sibling file first; the reader holds the complete data set in memory.
+            std::string outfilename = std::string( filename) + ".sekhvet-tmp";
+            
+            struct stat originalStat;
+            bool haveStat = (stat( filename, &originalStat) == 0);
+            
+            gdcm::Writer writer;
+            writer.SetFileName( outfilename.c_str() );
+            writer.SetFile( file );
+            
+            if( !writer.Write() )
+            {
+                std::cerr << "Could not write the modified file; original left unchanged." << std::endl;
+                
+                unlink( outfilename.c_str());
+                
+                modifySuccess = NO;
+                
+                continue;
+            }
+            
+            if( haveStat)
+                chmod( outfilename.c_str(), originalStat.st_mode & 07777);
+            
+            if( rename( outfilename.c_str(), filename) != 0)
+            {
+                std::cerr << "Could not replace the original file; original left unchanged." << std::endl;
+                
+                unlink( outfilename.c_str());
+                
+                modifySuccess = NO;
+                
+                continue;
             }
         }
     }
-    
-    //////////////////////
-    //////////////////////
-    //////////////////////
-    //////////////////////
-    //////////////////////
     
     return modifySuccess;
 }

@@ -67,7 +67,7 @@ body:
     id: log
     attributes:
       label: System log (optional)
-      description: "For MPR problems: `log show --predicate 'process == \"Horos\"' --last 30m | grep SekhVet`"
+      description: "For MPR problems: `log show --predicate 'process == \"SekhVet\"' --last 30m | grep SekhVet`. Log lines can contain patient, animal or owner names and IDs: remove them before pasting."
       render: text
   - type: checkboxes
     id: privacy

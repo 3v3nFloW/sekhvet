@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "RemoteDicomDatabase.h"
+#import "SekhmetRestrictedUnarchiver.h" // SekhVet Paket DE: Archive nur mit erlaubten Klassen auspacken
 #import "N2Debug.h"
 #import "NSFileManager+N2.h"
 #import "N2ManagedDatabase.h"
@@ -111,7 +112,7 @@
 }
 
 -(NSString*)name {
-	return [NSString stringWithFormat:NSLocalizedString(@"%@ database at %@", nil), _name? _name : @"OsiriX", (self.host.name? self.host.name : self.address)];
+	return [NSString stringWithFormat:NSLocalizedString(@"%@ database at %@", nil), _name? _name : @"SekhVet", (self.host.name? self.host.name : self.address)];
 }
 
 -(id)initWithLocation:(NSString*)location port:(NSUInteger)port {
@@ -435,7 +436,8 @@
 	NSMutableData* request = [NSMutableData dataWithBytes:"GETDI" length:6];
 	NSData* response = [N2Connection sendSynchronousRequest:request toAddress:address port:port];
 	if (!response.length) [NSException raise:NSObjectInaccessibleException format:@"%@", NSLocalizedString(@"Failed to connect to the remote host. Is database sharing activated on the distant computer?", nil)];
-	return [NSUnarchiver unarchiveObjectWithData:response];
+	id info = [SekhmetRestrictedUnarchiver unarchiveObjectWithData:response allowedClassNames: [SekhmetRestrictedUnarchiver propertyListClassNames]]; // Sekhmet (DE): Antwort eines fremden Rechners
+	return [info isKindOfClass: [NSDictionary class]] ? info : nil;
 }
 
 -(NSDictionary*)fetchDicomDestinationInfo {

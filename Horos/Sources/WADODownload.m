@@ -322,7 +322,7 @@
                 {
                     [[NSRunLoop currentRunLoop] runUntilDate: [NSDate dateWithTimeIntervalSinceNow: 0.1]];
                     
-                    if( _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"] || [NSDate timeIntervalSinceReferenceDate] - retrieveStartingDate > timeout)
+                    if( _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu_sekhvet"] || [NSDate timeIntervalSinceReferenceDate] - retrieveStartingDate > timeout)
                     {
                         aborted = YES;
                         break;
@@ -332,8 +332,11 @@
                 
                 @try
                 {
-                    if( [[url scheme] isEqualToString: @"https"])
-                        [NSURLRequest setAllowsAnyHTTPSCertificate:YES forHost:[url host]];
+                    // Sekhmet (DC): kein prozessweites "jedes Zertifikat annehmen" mehr fuer den WADO-Host; HTTPS wird normal
+                    // geprueft. Ein PACS mit selbstsigniertem Zertifikat braucht ein vom Mac vertrautes Zertifikat
+                    // (Schluesselbund) (nach ThalesMMS/horos e948e313)
+                    // if( [[url scheme] isEqualToString: @"https"])
+                    //     [NSURLRequest setAllowsAnyHTTPSCertificate:YES forHost:[url host]];
                 }
                 @catch (NSException *e)
                 {
@@ -352,7 +355,7 @@
                 if( downloadConnection == nil)
                     WADOThreads--;
                 
-                if( _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"] || [NSDate timeIntervalSinceReferenceDate] - retrieveStartingDate > timeout)
+                if( _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu_sekhvet"] || [NSDate timeIntervalSinceReferenceDate] - retrieveStartingDate > timeout)
                 {
                     aborted = YES;
                     break;
@@ -365,7 +368,7 @@
                 {
                     [[NSRunLoop currentRunLoop] runUntilDate: [NSDate dateWithTimeIntervalSinceNow: 0.1]];
                     
-                    if( _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"]  || [NSDate timeIntervalSinceReferenceDate] - retrieveStartingDate > timeout)
+                    if( _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu_sekhvet"]  || [NSDate timeIntervalSinceReferenceDate] - retrieveStartingDate > timeout)
                     {
                         aborted = YES;
                         break;

@@ -3,22 +3,27 @@
  Port of the ScrutPilot/HD-Messtool measurement to Horos ROIs (Paket U):
  two oval ROIs mark the femoral heads ("HD head R/L"), two 2D-point ROIs
  mark the craniolateral acetabular rims ("Norberg R/L"). All four are
- ordinary Horos ROIs: drag to move, drag the yellow grip point on the rim
- ("HD radius R/L", Paket W) to resize (kept circular), delete one and the whole group goes, stored with the
- series like any ROI. The angle between the line joining both centres and
- the line centre -> rim is written into the rim point's name (visible in
- its text box) and drawn as arm + arc + value over the image
- (OsirixDrawObjectsNotification). Screen left = right hip (VD convention).
- Normal >= 105 degrees.
+ ordinary Horos ROIs: drag to move, drag the yellow grip point outside the rim
+ ("HD radius R/L", Paket W) to resize (kept circular), stored with the
+ series like any ROI. Deleting one femoral head circle by hand removes the
+ rest of the measurement (Paket CS). The angle between the line joining both
+ centres and the line centre -> rim is written into the rim point's name
+ (stored in the database; its Horos text box is off) and drawn as arm + arc +
+ value over the image (OsirixDrawObjectsNotification). Screen left = right
+ hip when the measurement is placed (VD convention); "Hip Measurement: Exchange Sides R ↔ L"
+ (Vet Tools) exchanges the sides for an image that is shown mirrored. Normal >= 105 degrees.
  Paket BD/BE: Distraction Index (PennHIP formula, distraction view). Two
  more oval ROIs "HD cup R/L" (yellow) mark the acetabular cups, each with a
  grip on its inner side ("HD cup radius R/L"); they share the femoral head
  circles (and their grips / scroll-wheel resize) with the Norberg
  measurement. DI = distance(head centre, cup centre) / head radius, written
  into the cup's name ("HD cup R: 0.65") and drawn as a red centre line +
- value below the head (optionally with the risk level: < 0.30 low,
- 0.30-0.70 moderate, > 0.70 high). Both measurements can live on the same
- image or alone.
+ value below the head (optionally with the risk level of the displayed
+ value: < 0.30 low, 0.30-0.70 moderate, > 0.70 high). Both measurements can
+ live on the same image or alone.
+ Paket CS: one toggle button per measurement in the viewer toolbar (pressed =
+ the measurement is on this image; un-press removes it, Cmd-Z restores it);
+ "Place / Reset" and "Delete" stay in the Vet Tools menu.
  Teil des SekhVet-Forks von Horos, LGPL-3.0.
  ============================================================================*/
 
@@ -37,7 +42,6 @@
 - (void) placeInViewer:(ViewerController*) vc;        // toolbar button of that viewer; an existing measurement is replaced (= reset)
 - (void) deleteInViewer:(ViewerController*) vc;       // removes the Norberg measurement from that viewer (circles stay if a distraction index uses them)
 - (void) deleteInFrontViewer:(id) sender;
-+ (NSImage*) toolbarDeleteIcon;
 
 /** Paket BD/BE: Distraction Index — both acetabular cup circles; the femoral head circles are
  *  created if missing, otherwise the existing ones (e.g. from a Norberg measurement) are used. */
@@ -50,9 +54,25 @@
 + (NSString*) riskTextForDI:(double) di;              // "low" (< 0.30), "moderate" (0.30-0.70), "high" (> 0.70)
 - (void) deleteDIInFrontViewer:(id) sender;
 + (NSImage*) toolbarDIIcon;
-+ (NSImage*) toolbarDIDeleteIcon;
 
-/** Scroll wheel over a femoral head circle resizes it (Paket Y). YES = consumed, DCMView must not scroll images. */
+/** Paket CS: toggle button of the viewer toolbar (a one-segment NSSegmentedControl as item view; selected = measurement
+ *  present on the current image). The state follows the image on every draw. */
++ (void) configureToolbarItem:(NSToolbarItem*) item distractionIndex:(BOOL) di viewer:(ViewerController*) vc;
++ (void) toggleDistractionIndex:(BOOL) di inViewer:(ViewerController*) vc;
++ (void) toolbarSegmentClicked:(NSSegmentedControl*) seg;
++ (void) toolbarMenuClicked:(NSMenuItem*) mi;
++ (void) syncToolbarOfViewer:(ViewerController*) vc;
++ (void) syncToolbarForView:(DCMView*) v norberg:(BOOL) norberg di:(BOOL) di;
++ (BOOL) hasNorbergInView:(DCMView*) v;
++ (BOOL) hasDIInView:(DCMView*) v;
++ (ViewerController*) viewerForToolbarWindow:(NSWindow*) w;
+- (void) removeOrphansIn:(DCMView*) v;
+
+/** Paket CS: exchanges R and L of the hip measurement on the current image (names, colours); geometry and values stay. */
+- (void) swapSidesInViewer:(ViewerController*) vc;
+- (void) swapSidesInFrontViewer:(id) sender;
+
+/** Scroll wheel over a femoral head or cup circle resizes it (Paket Y). YES = consumed, DCMView must not scroll images. */
 + (BOOL) handleScrollWheel:(NSEvent*) event inView:(DCMView*) v;
 
 /** Toolbar icon (template image): two femoral head circles, centre line, angle arc. */

@@ -110,6 +110,11 @@ extern NSString * const __deprecated HorosPluginPboardUTI; // use HorosPasteboar
 extern int CLUTBARS, ANNOTATIONS, SOFTWAREINTERPOLATION_MAX, DISPLAYCROSSREFERENCELINES;
 
 enum { annotNone = 0, annotGraphics, annotBase, annotFull };
+// SekhVet Paket CW: extra annotation level "graphics + orientation letters" (Tab key, View > Annotations). Stored as
+// annotGraphics plus this flag, so that the numeric levels (saved in the preferences, compared with > and >= all over
+// Horos, used as menu tags) keep their meaning.
+#define SEKHMET_ANNOT_LETTERS_KEY @"SekhmetAnnotGraphicsWithOrientation"
+#define SEKHMET_ANNOT_LETTERS_TAG 100
 enum { barHide = 0, barOrigin, barFused, barBoth };
 enum { syncroOFF = 0, syncroABS = 1, syncroREL = 2, syncroLOC = 3, syncroRatio = 4};
 
@@ -386,6 +391,7 @@ typedef enum {DCMViewTextAlignLeft, DCMViewTextAlignCenter, DCMViewTextAlignRigh
 @property BOOL volumicSeries;
 @property (nonatomic) NSTimeInterval timeIntervalForDrag;
 @property(readonly) BOOL isKeyView, mouseDragging;
++ (float) sekhmetRotateDeltaFrom:(NSPoint) prev to:(NSPoint) cur viewSize:(NSSize) size; // SekhVet Paket CY
 @property int annotationType;
 
 + (void) setDontListenToSyncMessage: (BOOL) v;

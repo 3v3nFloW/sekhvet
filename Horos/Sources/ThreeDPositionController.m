@@ -123,7 +123,7 @@ static ThreeDPositionController *nav = nil;
 
 - (IBAction) reset:(id) sender
 {
-	[viewerController executeRevert];
+	if( [viewerController isPostprocessed] == NO) [viewerController executeRevert]; // SekhVet Paket CS: never reload generated (overlaid / resliced) data from the source file
 	
 	[self movePositionPosition: nil];
 }

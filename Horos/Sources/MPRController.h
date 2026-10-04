@@ -146,6 +146,9 @@
 // loeschte deshalb der Doppelklick im einen Fenster das Fadenkreuz im anderen.
 @property (nonatomic) BOOL sekhmetFrameZoomed;
 @property (nonatomic) int sekhmetSplitH, sekhmetSplitV;   // Teilerstand vor dem Zoom
+// SekhVet Paket CS (review finding 4): the hanging protocol was applied while a view was zoomed by double-click;
+// the collapsed views are completed after un-zoom (SekhmetMPRKategorie sekhmetApplyPendingHangingProtocol).
+@property (nonatomic) BOOL sekhmetHPPending;
 
 
 + (double) angleBetweenVector:(float*) a andPlane:(float*) orientation;

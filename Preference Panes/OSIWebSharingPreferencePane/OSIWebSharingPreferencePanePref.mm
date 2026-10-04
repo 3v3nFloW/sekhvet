@@ -241,9 +241,9 @@
 {
 	if( [sender tag] == 0)
     {
-        [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/OsiriXTables.pdf" error:nil];
-        [[NSFileManager defaultManager] copyItemAtPath: [[NSBundle mainBundle] pathForResource:@"OsiriXTables" ofType:@"pdf"] toPath: @"/tmp/OsiriXTables.pdf" error: nil];
-		[[NSWorkspace sharedWorkspace] openFile: @"/tmp/OsiriXTables.pdf"];
+        [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/SekhVetTables.pdf" error:nil];
+        [[NSFileManager defaultManager] copyItemAtPath: [[NSBundle mainBundle] pathForResource:@"OsiriXTables" ofType:@"pdf"] toPath: @"/tmp/SekhVetTables.pdf" error: nil];
+		[[NSWorkspace sharedWorkspace] openFile: @"/tmp/SekhVetTables.pdf"];
 	}
     
 	if( [sender tag] == 1)
@@ -279,7 +279,7 @@
 	#ifdef MACAPPSTORE
     [[NSFileManager defaultManager] copyItemAtPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"WebServicesHTML"] toPath: [@"~/Library/Application Support/Horos App/WebServicesHTML" stringByExpandingTildeInPath] byReplacingExisting:NO error:NULL];
     #else
-    [[NSFileManager defaultManager] copyItemAtPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"WebServicesHTML"] toPath: [@"~/Library/Application Support/Horos/WebServicesHTML" stringByExpandingTildeInPath] byReplacingExisting:NO error:NULL];
+    [[NSFileManager defaultManager] copyItemAtPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"WebServicesHTML"] toPath: [@"~/Library/Application Support/SekhVet/WebServicesHTML" stringByExpandingTildeInPath] byReplacingExisting:NO error:NULL];
     #endif
 }
 

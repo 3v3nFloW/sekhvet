@@ -1,14 +1,14 @@
 #!/bin/zsh
 # SekhVet Paket AT — Doppelklick-Zoom bei zwei MPR-Fenstern, headless.
-# Aufruf: /tmp/sekh_test79.sh [PatientID] [Ansicht 1..3]
+# Aufruf: double-mpr-zoom-test.sh <PatientID> [Ansicht 1..3]   (Paket CS: der Kopf nannte noch den alten Ort /tmp/sekh_test79.sh)
 PID_PAT=${1:?PatientID angeben}
 WHICH=${2:-1}
-APP=~/Projects/horos-vet/build/Build/Products/Release/Horos.app/Contents/MacOS/Horos
+APP=~/Projects/horos-vet/build/Build/Products/Release/Horos.app/Contents/MacOS/SekhVet
 LOG=/tmp/sekhvet-test79.log
 
 curl -s -m 5 -X POST http://127.0.0.1:8085/ -d '<?xml version="1.0"?><methodCall><methodName>KillOsiriX</methodName><params></params></methodCall>' >/dev/null 2>&1
 sleep 3
-pgrep -f "horos-vet/build.*MacOS/Horos" >/dev/null && { pkill -f "horos-vet/build.*MacOS/Horos"; sleep 3; }
+pgrep -f "horos-vet/build.*MacOS/SekhVet" >/dev/null && { pkill -f "horos-vet/build.*MacOS/SekhVet"; sleep 3; }
 
 defaults write vet.kappa1.sekhvet.horos CloseAllWindowsBeforeXMLRPCOpen -bool NO
 

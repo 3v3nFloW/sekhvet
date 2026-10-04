@@ -303,14 +303,9 @@
             glPixelStorei (GL_UNPACK_CLIENT_STORAGE_APPLE, 1);
             glTexParameteri (GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_STORAGE_HINT_APPLE, GL_STORAGE_CACHED_APPLE);
             
-            if (bitmap.bitsPerSample == 16 && bitmap.bitsPerPixel == 64)
-            {
-                glTexImage2D (GL_TEXTURE_RECTANGLE_EXT, 0, format, bitmap.pixelsWide, bitmap.pixelsHigh, 0, format, GL_SHORT, [bitmap bitmapData]);
-            }
-            else
-            {
-                glTexImage2D (GL_TEXTURE_RECTANGLE_EXT, 0, format, bitmap.pixelsWide, bitmap.pixelsHigh, 0, format, GL_UNSIGNED_BYTE, [bitmap bitmapData]);
-            }
+            // SekhVet Paket CS (dead code): the 16-bit GL_SHORT branch is gone - since Paket BU the bitmap above is always
+            // built as 8-bit RGBA, so it could never be taken.
+            glTexImage2D (GL_TEXTURE_RECTANGLE_EXT, 0, format, bitmap.pixelsWide, bitmap.pixelsHigh, 0, format, GL_UNSIGNED_BYTE, [bitmap bitmapData]);
             
             [ctxArray addObject: currentContext];
             [textArray addObject: [NSNumber numberWithInt: texName]];

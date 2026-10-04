@@ -175,7 +175,8 @@
 			// 'exte': extended float
 			// 'ldbl': 128 bits
 		case 'ObjC': {
-			return [NSKeyedUnarchiver unarchiveObjectWithData:descriptor.data];
+			// Sekhmet (DE): ein AppleEvent kann jedes Programm schicken - nur Foundation-Werte, sicher entpackt (nach ThalesMMS/horos e948e313)
+			return [NSKeyedUnarchiver unarchivedObjectOfClasses: [NSSet setWithObjects: [NSArray class], [NSDictionary class], [NSString class], [NSNumber class], [NSData class], [NSDate class], [NSNull class], nil] fromData: descriptor.data error: NULL];
 		} break;
 	}
 	

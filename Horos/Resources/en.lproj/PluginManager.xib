@@ -80,7 +80,7 @@
                                                                 </connections>
                                                             </tableColumn>
                                                             <tableColumn identifier="" editable="NO" width="120" minWidth="120" maxWidth="120" id="OCE-FJ-HJu">
-                                                                <tableHeaderCell key="headerCell" lineBreakMode="truncatingTail" borderStyle="border" alignment="center" title="Horos Validated">
+                                                                <tableHeaderCell key="headerCell" lineBreakMode="truncatingTail" borderStyle="border" alignment="center" title="Horos compatible">
                                                                     <font key="font" metaFont="smallSystem"/>
                                                                     <color key="textColor" name="headerTextColor" catalog="System" colorSpace="catalog"/>
                                                                     <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="calibratedWhite"/>
@@ -224,7 +224,7 @@
                                     </subviews>
                                 </view>
                             </tabViewItem>
-                            <tabViewItem label="Horos Plugins" identifier="" id="udo-0p-IM3">
+                            <tabViewItem label="Plugins from the Horos project" identifier="" id="udo-0p-IM3">
                                 <view key="view" id="1OU-0x-4Ox">
                                     <rect key="frame" x="10" y="33" width="877" height="658"/>
                                     <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -286,7 +286,7 @@
                                     </subviews>
                                 </view>
                             </tabViewItem>
-                            <tabViewItem label="OsiriX Plugins" identifier="2" id="12">
+                            <tabViewItem label="OsiriX plugins (Horos project list)" identifier="2" id="12">
                                 <view key="view" id="13">
                                     <rect key="frame" x="10" y="33" width="877" height="658"/>
                                     <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -360,7 +360,7 @@
                                                     <textField horizontalHuggingPriority="251" verticalHuggingPriority="750" id="dME-H3-8e3">
                                                         <rect key="frame" x="62" y="11" width="223" height="21"/>
                                                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="left" title="Plugin validated in Horos" id="uPe-vg-q54">
+                                                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="left" title="Validated by Horos project" id="uPe-vg-q54">
                                                             <font key="font" metaFont="system" size="17"/>
                                                             <color key="textColor" red="0.0" green="0.0" blue="1" alpha="1" colorSpace="calibratedRGB"/>
                                                             <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -386,7 +386,7 @@
                                                     <textField horizontalHuggingPriority="251" verticalHuggingPriority="750" id="iEg-Rd-vKc">
                                                         <rect key="frame" x="62" y="11" width="223" height="21"/>
                                                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="left" title="Plugin not validated in Horos" id="3be-Xt-Zbo">
+                                                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="left" title="Not validated by Horos project" id="3be-Xt-Zbo">
                                                             <font key="font" metaFont="system" size="17"/>
                                                             <color key="textColor" red="1" green="0.0" blue="0.0" alpha="1" colorSpace="calibratedRGB"/>
                                                             <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>

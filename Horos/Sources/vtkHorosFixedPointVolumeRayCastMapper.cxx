@@ -53,6 +53,7 @@ vtkStandardNewMacro(vtkHorosFixedPointVolumeRayCastMapper);
 vtkHorosFixedPointVolumeRayCastMapper::vtkHorosFixedPointVolumeRayCastMapper()
 {
     this->MIPHelper = vtkHorosFixedPointVolumeRayCastMIPHelper::New();
+    this->MeanIPMode = 0;
 }
 
 void vtkHorosFixedPointVolumeRayCastMapper::DisplayRenderedImage( vtkRenderer *ren, vtkVolume   *vol )

@@ -15,7 +15,8 @@
  Erkennung, alles aus den Serien-Tags der ersten Datei je Serie:
    - Region   : Serienname + ProtocolName (0018,1030) + BodyPartExamined (0018,0015)
    - Fenster  : ueber die WL/WW-Regel aus Paket AE/AH (Name der Regel, z.B. "Bone (vet)")
-   - Kontrast : "nativ"/"N" gegen "KM"/"post KM"/"CE"/"C" als eigenes Wort
+   - Kontrast : "nativ"/"plain"/"pre"/"ohne KM" gegen "KM"/"post KM"/"CE"/"contrast"/"+C" als eigenes Wort;
+                ein einzelnes "C"/"N" nur als letztes Wort des Seriennamens (GE: "Head C", "Head N")
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>

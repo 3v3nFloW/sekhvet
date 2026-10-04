@@ -35,7 +35,6 @@
 }
 
 + (BOOL) isOsiriXInstalled;
-+ (void) performStartupO2HTasks:(BrowserController*) browserController;
 
 @property (assign) BrowserController* browserController;
 

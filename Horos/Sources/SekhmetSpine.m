@@ -20,6 +20,9 @@
 static SekhmetSpine *sekhmetSpine = nil;
 static NSMutableDictionary *sekhmetKnownNames = nil;   // NSValue(ROI*) -> zuletzt gesehener Name (erkennt Umbenennungen)
 static BOOL sekhmetRenumbering = NO;
+// SekhVet Paket CS: label textures, file-level so that closing a viewer can drop them (a StringTexture keeps the
+// NSOpenGLContext of every view it was drawn in). A plain dictionary, emptied on the main thread only.
+static NSMutableDictionary *sekhmetSpineTextCache = nil;
 static NSString* const kRegionLetters[ 5] = { @"C", @"T", @"L", @"S", @"Cd" };
 // Wirbelformel je Tierart: Hund/Katze, Kaninchen, Pferd (Cd offen)
 static const int kCounts[ 3][ 5] = { { 7, 13, 7, 3, 99 }, { 7, 12, 7, 4, 99 }, { 7, 18, 6, 5, 99 } };
@@ -83,6 +86,7 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
         store = [[NSMutableDictionary alloc] init];
         roiSeries = [[NSMutableDictionary alloc] init];
         notedViewers = [[NSMutableSet alloc] init];
+        studyDirs = [[NSMutableDictionary alloc] init];   // SekhVet Paket CS
         region = 2; number = 1; backwards = NO;
         NSInteger sp = MAX( 0, MIN( 2, [[NSUserDefaults standardUserDefaults] integerForKey: kSpeciesKey]));
         for( int i = 0; i < 5; i++) counts[ i] = kCounts[ sp][ i];
@@ -93,6 +97,7 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
         [nc addObserver: self selector: @selector(roiRemoved:) name: OsirixRemoveROINotification object: nil];
         [nc addObserver: self selector: @selector(viewerClosed:) name: OsirixCloseViewerNotification object: nil];
+        [nc addObserver: self selector: @selector(window3DClosed:) name: OsirixWindow3dCloseNotification object: nil];   // SekhVet Paket CS
         [nc addObserver: self selector: @selector(roiChanged:) name: OsirixROIChangeNotification object: nil];
         [nc addObserver: self selector: @selector(drawObjects:) name: OsirixDrawObjectsNotification object: nil];
         [nc addObserver: self selector: @selector(windowBecameKey:) name: NSWindowDidBecomeKeyNotification object: nil];
@@ -104,7 +109,7 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
 - (void) dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver: self];
-    [createdROIs release]; [lastVertebra release]; [store release]; [roiSeries release]; [notedViewers release];
+    [createdROIs release]; [lastVertebra release]; [store release]; [roiSeries release]; [notedViewers release]; [studyDirs release];
     [currentStudyUID release]; [tableRows release];
     [super dealloc];
 }
@@ -273,20 +278,32 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
     return NO;
 }
 
-- (NSString*) storeDirectory
+// SekhVet Paket CS: the folder lies in the database of the viewer that shows the study (remembered per study, so a later
+// save without an open viewer goes to the same place). It is NOT created here -- this is reached from the draw path;
+// saveStudy: creates it on the first write.
+- (NSString*) storeDirectoryForStudy:(NSString*) studyUID
 {
-    NSString *base = [[DicomDatabase activeLocalDatabase] baseDirPath];
-    if( base.length == 0) return nil;
-    NSString *dir = [base stringByAppendingPathComponent: @"SPINE"];
-    [[NSFileManager defaultManager] createDirectoryAtPath: dir withIntermediateDirectories: YES attributes: nil error: NULL];
-    return dir;
+    NSString *base = studyUID.length ? [studyDirs objectForKey: studyUID] : nil;
+    if( base.length == 0)
+    {
+        DicomDatabase *db = nil;
+        if( studyUID.length)
+            for( ViewerController *v in [ViewerController getDisplayed2DViewers])
+                if( [studyUID isEqualToString: [v studyInstanceUID]] && [v database]) { db = [v database]; break; }
+        BOOL fromViewer = db != nil;
+        if( db == nil) db = [DicomDatabase activeLocalDatabase];
+        base = [db baseDirPath];
+        if( base.length == 0) return nil;
+        if( fromViewer) [studyDirs setObject: base forKey: studyUID];
+    }
+    return [base stringByAppendingPathComponent: @"SPINE"];
 }
 
 - (NSString*) pathForStudy:(NSString*) studyUID
 {
     NSMutableCharacterSet *ok = [NSMutableCharacterSet alphanumericCharacterSet]; [ok addCharactersInString: @".-_"];
     NSString *safe = [[studyUID componentsSeparatedByCharactersInSet: [ok invertedSet]] componentsJoinedByString: @"_"];
-    NSString *dir = [self storeDirectory];
+    NSString *dir = [self storeDirectoryForStudy: studyUID];
     return dir && safe.length ? [dir stringByAppendingPathComponent: [safe stringByAppendingPathExtension: @"json"]] : nil;
 }
 
@@ -319,7 +336,21 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
     if( d == nil || path == nil) return;
     if( [[d objectForKey: @"labels"] count] == 0 && [d objectForKey: @"formula"] == nil) { [[NSFileManager defaultManager] removeItemAtPath: path error: NULL]; return; }
     NSData *raw = [NSJSONSerialization dataWithJSONObject: d options: NSJSONWritingPrettyPrinted error: NULL];
-    if( raw) [raw writeToFile: path atomically: YES];
+    if( raw == nil) return;
+    // SekhVet Paket CS: the SPINE folder appears with the first file, not when a study is merely drawn
+    [[NSFileManager defaultManager] createDirectoryAtPath: [path stringByDeletingLastPathComponent] withIntermediateDirectories: YES attributes: nil error: NULL];
+    [raw writeToFile: path atomically: YES];
+}
+
+// SekhVet Paket BX: Eintrag gehoert in diesen Patientenraum und traegt eine echte Lage.
+// Vor BX schrieb syncFromViewer fuer noch nicht geladene Schichten 0/0/0 ohne Frame of Reference; solche
+// Eintraege spannten mit dem ersten echten Wirbel eine Scheinstrecke auf, jede Schicht dahinter hiess z.B. "T13".
++ (BOOL) entry:(NSDictionary*) l usableFor:(NSString*) forUID
+{
+    NSString *f = [l objectForKey: @"for"];
+    if( f.length == 0 && [[l objectForKey: @"x"] floatValue] == 0 && [[l objectForKey: @"y"] floatValue] == 0 && [[l objectForKey: @"z"] floatValue] == 0) return NO;
+    if( forUID.length && f.length && [f isEqualToString: forUID] == NO) return NO;
+    return YES;
 }
 
 - (void) redrawAll
@@ -344,17 +375,31 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
     @try { seriesName = [[v currentSeries] valueForKey: @"name"]; } @catch (NSException *e) { }
     NSMutableArray *fresh = [NSMutableArray array];
     NSArray *roiList = [v roiList], *pixList = [v pixList];
+    NSMutableDictionary *previous = [NSMutableDictionary dictionary];   // SekhVet Paket BX: bisherige Lage je Label dieser Serie
+    for( NSDictionary *l in [[self dataForStudy: studyUID] objectForKey: @"labels"])
+        if( [[l objectForKey: @"series"] isEqualToString: seriesUID] && [SekhmetSpine entry: l usableFor: nil]) [previous setObject: l forKey: [l objectForKey: @"label"]];
     for( NSUInteger i = 0; i < roiList.count && i < pixList.count; i++)
     {
         DCMPix *pix = [pixList objectAtIndex: i];
         for( ROI *r in [roiList objectAtIndex: i])
         {
             if( [r type] != t2DPoint || [SekhmetSpine rankOfLabel: r.name] < 0) continue;
-            float loc[ 3];
-            [pix convertPixX: r.rect.origin.x pixY: r.rect.origin.y toDICOMCoords: loc pixelCenter: YES];
-            [fresh addObject: [NSDictionary dictionaryWithObjectsAndKeys: r.name, @"label",
-                               [NSNumber numberWithFloat: loc[ 0]], @"x", [NSNumber numberWithFloat: loc[ 1]], @"y", [NSNumber numberWithFloat: loc[ 2]], @"z",
-                               pix.frameofReferenceUID ? pix.frameofReferenceUID : @"", @"for", seriesUID, @"series", seriesName ? seriesName : @"", @"seriesName", nil]];
+            // SekhVet Paket BX: convertPixX liest Ursprung/Abstand ohne CheckLoad -- eine noch nicht geladene Schicht ergaebe 0/0/0
+            if( pix.isOriginDefined == NO) [pix CheckLoad];
+            NSDictionary *old = pix.isOriginDefined ? nil : [previous objectForKey: r.name];   // Bild ohne Ursprung (Roentgen) und ohne Vorgaenger: wie bisher
+            if( old)
+            {
+                NSLog( @"SekhVet spine labels: slice of %@ has no position -- kept the stored one", r.name);
+                [fresh addObject: old];
+            }
+            else
+            {
+                float loc[ 3];
+                [pix convertPixX: r.rect.origin.x pixY: r.rect.origin.y toDICOMCoords: loc pixelCenter: YES];
+                [fresh addObject: [NSDictionary dictionaryWithObjectsAndKeys: r.name, @"label",
+                                   [NSNumber numberWithFloat: loc[ 0]], @"x", [NSNumber numberWithFloat: loc[ 1]], @"y", [NSNumber numberWithFloat: loc[ 2]], @"z",
+                                   pix.frameofReferenceUID ? pix.frameofReferenceUID : @"", @"for", seriesUID, @"series", seriesName ? seriesName : @"", @"seriesName", nil]];
+            }
             [roiSeries setObject: seriesUID forKey: [NSValue valueWithPointer: r]];
             if( r.name) [sekhmetKnownNames setObject: r.name forKey: [NSValue valueWithPointer: r]];
             BOOL hide = [[NSUserDefaults standardUserDefaults] boolForKey: kMarkersOffKey];
@@ -384,7 +429,10 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
     NSString *seriesUID = [SekhmetSpine seriesUIDOfViewer: v];
     if( v == nil || seriesUID == nil) return;
     NSDictionary *info = [NSDictionary dictionaryWithObjectsAndKeys: [NSValue valueWithPointer: v], @"viewer", seriesUID, @"series", nil];
-    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(syncScheduled:) object: nil];
+    // SekhVet Paket CS: one pending sync per viewer and series. The argument is compared with isEqual:, so an equal
+    // dictionary cancels the earlier request of THIS viewer only (object: nil matched nothing; a blanket cancel would
+    // drop another viewer's sync). A drag now ends in one sync 0.25 s after the last change.
+    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(syncScheduled:) object: info];
     [self performSelector: @selector(syncScheduled:) withObject: info afterDelay: 0.25];
 }
 
@@ -427,7 +475,7 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
         if( number < 1)
         {
             if( region > 0) { region--; number = [self countForRegion: region]; }
-            else number = 1;
+            else number = 0;   // SekhVet Paket CS: nothing cranial of C1 -- "C0" marks the end (see atCranialEnd), it is never given out
         }
     }
     else
@@ -438,6 +486,12 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
             region++; number = 1;
         }
     }
+}
+
+// SekhVet Paket CS: counting backwards has passed C1. Labelling stops there instead of handing out "C1" again.
+- (BOOL) atCranialEnd
+{
+    return region == 0 && number < 1;
 }
 
 - (void) retreat
@@ -466,8 +520,7 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
     NSMutableSet *names = [NSMutableSet set];
     for( NSDictionary *l in [[self dataForStudy: studyUID] objectForKey: @"labels"])
     {
-        NSString *f = [l objectForKey: @"for"];
-        if( forUID.length && f.length && [f isEqualToString: forUID] == NO) continue;
+        if( [SekhmetSpine entry: l usableFor: forUID] == NO) continue;
         [names addObject: [l objectForKey: @"label"]];
         if( [SekhmetSpine parseLabel: [l objectForKey: @"label"] region: NULL number: NULL]) [vert addObject: l];
     }
@@ -478,6 +531,14 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
     for( NSUInteger i = 0; i + 1 < vert.count; i++)
     {
         NSDictionary *a = [vert objectAtIndex: i], *b = [vert objectAtIndex: i + 1];
+        // SekhVet Paket CS: a disc only between anatomically adjacent vertebrae (formula of this study, set by
+        // setCurrentStudy: before the click is counted). With only L1 and L4 set, a click between them is a vertebra.
+        NSInteger ar, an, br, bn;
+        if( [SekhmetSpine parseLabel: [a objectForKey: @"label"] region: &ar number: &an] == NO || [SekhmetSpine parseLabel: [b objectForKey: @"label"] region: &br number: &bn] == NO) continue;
+        BOOL savedBackwards = backwards; backwards = NO;
+        [self successorOfRegion: &ar number: &an];
+        backwards = savedBackwards;
+        if( ar != br || an != bn) continue;
         float A[ 3] = { [[a objectForKey: @"x"] floatValue], [[a objectForKey: @"y"] floatValue], [[a objectForKey: @"z"] floatValue] };
         float d[ 3] = { [[b objectForKey: @"x"] floatValue] - A[ 0], [[b objectForKey: @"y"] floatValue] - A[ 1], [[b objectForKey: @"z"] floatValue] - A[ 2] };
         float len2 = d[ 0]*d[ 0] + d[ 1]*d[ 1] + d[ 2]*d[ 2];
@@ -499,9 +560,19 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
     if( flags & NSEventModifierFlagOption)
     {
         // Bandscheibe zwischen dem letzten Wirbel und dem naechsten; zaehlt nicht weiter
-        NSString *next = [self peekLabel];
-        if( lastVertebra.length == 0) return [NSString stringWithFormat: @"%@-%@", next, next];
-        return backwards ? [NSString stringWithFormat: @"%@-%@", next, lastVertebra] : [NSString stringWithFormat: @"%@-%@", lastVertebra, next];
+        NSString *next = [self peekLabel], *prev = lastVertebra;
+        if( prev.length == 0)
+        {
+            // SekhVet Paket CS: no vertebra set in this run yet -- the disc lies between the next label and the one before
+            // it in counting order ("T13-L1" instead of "L1-L1")
+            NSInteger r = region, n = number;
+            BOOL saved = backwards; backwards = !backwards;
+            [self successorOfRegion: &r number: &n];
+            backwards = saved;
+            if( (r != region || n != number) && (r == 0 && n < 1) == NO) prev = [self labelFor: r number: n];
+        }
+        if( prev.length) return backwards ? [NSString stringWithFormat: @"%@-%@", next, prev] : [NSString stringWithFormat: @"%@-%@", prev, next];
+        // no vertebra cranial of C1: no disc there, the click sets the vertebra
     }
     if( p)
     {
@@ -521,7 +592,12 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
                 {
                     NSInteger r, n;
                     backwards = wantBackwards;
-                    if( [SekhmetSpine parseLabel: lastVertebra region: &r number: &n]) { [self successorOfRegion: &r number: &n]; region = r; number = n; }
+                    if( [SekhmetSpine parseLabel: lastVertebra region: &r number: &n])
+                    {
+                        [self successorOfRegion: &r number: &n];
+                        if( r == 0 && n < 1) backwards = NO;   // SekhVet Paket CS: first click was C1 -- there is nothing cranial of it, keep counting caudally
+                        else { region = r; number = n; }
+                    }
                 }
             }
         }
@@ -531,6 +607,8 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
     [lastVertebra release]; lastVertebra = [l retain];
     placedInRun++;
     [self advance];
+    // SekhVet Paket CS: C1 was the last one counting cranially -- end the labelling (after this click is through)
+    if( [self atCranialEnd]) [self performSelector: @selector(stop) withObject: nil afterDelay: 0];
     [self updateNextLabel];
     return l;
 }
@@ -539,7 +617,8 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
 {
     NSString *dir = backwards ? NSLocalizedString( @"→ cranial", nil) : NSLocalizedString( @"→ caudal", nil);
     if( [directionPopup indexOfSelectedItem] == 0 && placedInRun < 2) dir = NSLocalizedString( @"direction: 2nd click", nil);
-    [nextLabel setStringValue: [NSString stringWithFormat: NSLocalizedString( @"%@  Next: %@   (%@)", nil), active ? @"●" : @"○", [self peekLabel], dir]];
+    NSString *next = [self atCranialEnd] ? NSLocalizedString( @"— (C1 reached)", nil) : [self peekLabel];   // SekhVet Paket CS
+    [nextLabel setStringValue: [NSString stringWithFormat: NSLocalizedString( @"%@  Next: %@   (%@)", nil), active ? @"●" : @"○", next, dir]];
     [startButton setTitle: active ? NSLocalizedString( @"Stop", nil) : NSLocalizedString( @"Start", nil)];
 }
 
@@ -587,11 +666,39 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
                 if( [slice indexOfObjectIdenticalTo: roi] != NSNotFound) { [sekhmetSpine scheduleSyncForViewer: v]; return; }
 }
 
+// SekhVet Paket CS: the viewer that holds this ROI in its lists. Replaces [roi curView] -- an assign property that
+// may point to a view which no longer exists (tile change, closed window).
++ (ViewerController*) viewerOwningROI:(ROI*) roi
+{
+    if( roi == nil) return nil;
+    for( ViewerController *v in [ViewerController getDisplayed2DViewers])
+        for( NSArray *slice in [v roiList])
+            if( [slice indexOfObjectIdenticalTo: roi] != NSNotFound) return v;
+    return nil;
+}
+
+// SekhVet Paket CS: Backspace/Delete is taken only if there is a label of this run to take back AND the view that got
+// the key has no other ROI selected -- otherwise Horos deletes the selected ROI as usual. Esc ends the labelling.
 + (BOOL) handleKey:(unichar) c
 {
     if( [self isActive] == NO) return NO;
-    if( c == NSDeleteCharacter || c == NSBackspaceCharacter || c == 127 || c == 8) { [sekhmetSpine undo]; return YES; }
     if( c == 27) { [sekhmetSpine stop]; return YES; }
+    if( c == NSDeleteCharacter || c == NSBackspaceCharacter || c == 127 || c == 8)
+    {
+        ROI *last = [sekhmetSpine->createdROIs lastObject];
+        if( last == nil) return NO;
+        id fr = [[[NSApp currentEvent] window] firstResponder];
+        if( [fr isKindOfClass: [DCMView class]] == NO) fr = [[NSApp keyWindow] firstResponder];
+        if( [fr isKindOfClass: [DCMView class]])
+            for( ROI *r in [(DCMView*) fr curRoiList])
+            {
+                long mode = [r ROImode];
+                if( mode != ROI_selected && mode != ROI_selectedModify && mode != ROI_drawing) continue;
+                if( r != last && r.parentROI != last) return NO;   // another ROI is selected: the key is meant for it
+            }
+        [sekhmetSpine undo];
+        return YES;
+    }
     return NO;
 }
 
@@ -674,7 +781,7 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
     [sekhmetKnownNames setObject: new forKey: key];
 
     BOOL spine = [SekhmetSpine rankOfLabel: new] >= 0 || (old && [SekhmetSpine rankOfLabel: old] >= 0);
-    ViewerController *viewer = spine ? [SekhmetSpine viewerForView: [roi curView]] : nil;
+    ViewerController *viewer = spine ? [SekhmetSpine viewerOwningROI: roi.parentROI ? roi.parentROI : roi] : nil;   // SekhVet Paket CS: not via curView
     if( viewer && roi.parentROI == nil) [self scheduleSyncForViewer: viewer];   // verschoben oder umbenannt: Studienliste folgt
 
     if( old == nil || [old isEqualToString: new]) return;
@@ -699,11 +806,12 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
 // Alle Wirbel-Labels der Serie nach Rang ordnen, ab dem umbenannten Punkt neu durchzaehlen (Bandscheiben aus den Nachbarn)
 - (void) renumberFrom:(ROI*) target oldLabel:(NSString*) old region:(NSInteger) r number:(NSInteger) num
 {
-    id wc = [[target curView] windowController];
-    if( [wc isKindOfClass: [ViewerController class]] == NO) return;
+    ViewerController *wc = [SekhmetSpine viewerOwningROI: target];   // SekhVet Paket CS: not via curView
+    if( wc == nil) return;
+    NSString *studyUID = [wc studyInstanceUID];
 
     NSMutableArray *chain = [NSMutableArray array];
-    for( NSArray *slice in [(ViewerController*) wc roiList])
+    for( NSArray *slice in [wc roiList])
         for( ROI *x in slice)
             if( [x type] == t2DPoint && (x == target || [SekhmetSpine rankOfLabel: x.name] >= 0)) [chain addObject: x];
 
@@ -717,6 +825,11 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
 
     // Neuzaehlung laeuft immer kranial -> kaudal, unabhaengig von der Setz-Richtung
     BOOL savedBackwards = backwards; backwards = NO;
+    // SekhVet Paket CS: count with the vertebral formula of the ROI's own study, not with whatever the panel last showed
+    // (panel closed or showing another study: a stored L=6 was ignored and S1 became L7)
+    NSInteger savedCounts[ 5], studyCounts[ 5];
+    [self formulaOfStudy: studyUID into: studyCounts];
+    for( int i = 0; i < 5; i++) { savedCounts[ i] = counts[ i]; counts[ i] = studyCounts[ i]; }
     NSInteger cr = r, cn = num;
     NSString *prevVertebra = nil;
     sekhmetRenumbering = YES;
@@ -744,14 +857,16 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
     @catch (NSException *e) { NSLog( @"SekhVet spine labels: recount: %@", e); }
     sekhmetRenumbering = NO;
     backwards = savedBackwards;
+    for( int i = 0; i < 5; i++) counts[ i] = savedCounts[ i];
 
-    if( active && backwards == NO)   // Zaehlwerk laeuft ab dem letzten neuen Label weiter
+    // Zaehlwerk laeuft ab dem letzten neuen Label weiter (SekhVet Paket CS: only if the panel counts in that study)
+    if( active && backwards == NO && (currentStudyUID == nil || [currentStudyUID isEqualToString: studyUID]))
     {
         region = cr; number = cn;
         [lastVertebra release]; lastVertebra = [prevVertebra retain];
         [self updateNextLabel];
     }
-    [[target curView] setNeedsDisplay: YES];
+    [wc needsDisplayUpdate];
     NSLog( @"SekhVet spine labels: %@ -> %@, %d labels recounted from there", old, [self labelFor: r number: num], (int) (sorted.count - idx));
 }
 
@@ -883,8 +998,8 @@ static NSString* const kColorKey = @"SekhmetSpineTextColor";   // SekhVet Paket 
 
 static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green, float alpha, float x, float y, BOOL centered)
 {
-    static NSCache *cache = nil;
-    if( cache == nil) { cache = [[NSCache alloc] init]; cache.countLimit = 120; }
+    if( sekhmetSpineTextCache == nil) sekhmetSpineTextCache = [[NSMutableDictionary alloc] init];
+    NSMutableDictionary *cache = sekhmetSpineTextCache;
     CGLContextObj cgl_ctx = [[NSOpenGLContext currentContext] CGLContextObj];   // CGLMacro: die gl-Aufrufe brauchen ihn im Sichtbereich
     if( cgl_ctx == nil) return;
     float sf = v.window.backingScaleFactor > 0 ? v.window.backingScaleFactor : 1;
@@ -900,6 +1015,7 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
         sT = [[[StringTexture alloc] initWithString: txt withAttributes: attrib] autorelease];
         [sT setAntiAliasing: YES];
         [sT genTextureWithBackingScaleFactor: sf];
+        if( cache.count >= 120) [cache removeAllObjects];   // SekhVet Paket CS: bounded without NSCache (its eviction may run off the main thread)
         [cache setObject: sT forKey: key];
     }
     float w = [sT texSize].width, h = [sT texSize].height;
@@ -940,8 +1056,7 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
     NSMutableArray *labels = [NSMutableArray array], *vert = [NSMutableArray array];
     for( NSDictionary *l in all)
     {
-        NSString *f = [l objectForKey: @"for"];
-        if( forUID.length && f.length && [f isEqualToString: forUID] == NO) continue;
+        if( [SekhmetSpine entry: l usableFor: forUID] == NO) continue;
         [labels addObject: l];
         if( [SekhmetSpine parseLabel: [l objectForKey: @"label"] region: NULL number: NULL]) [vert addObject: l];
     }
@@ -964,8 +1079,6 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
         float len = sqrtf( axis[ 0]*axis[ 0] + axis[ 1]*axis[ 1] + axis[ 2]*axis[ 2]);
         if( len > 1) { axis[ 0] /= len; axis[ 1] /= len; axis[ 2] /= len; haveAxis = YES; }
     }
-    float across = haveAxis ? fabsf( axis[ 0]*nrm[ 0] + axis[ 1]*nrm[ 1] + axis[ 2]*nrm[ 2]) : 0;
-    (void) across;
     int planeClass = [SekhmetSpine planeClassForPix: pix vertebrae: vert];
     BOOL transverse = planeClass == 0;
     BOOL showMarkers = [[NSUserDefaults standardUserDefaults] boolForKey: kMarkersOffKey] == NO;
@@ -1000,7 +1113,10 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
     if( transverse == NO && labels.count)
     {
         // SekhVet Paket BT: projizierte Punkte nur in der sagittalen Ansicht, ausser der Schalter holt sie auch in die dorsale
-        if( showMarkers && (planeClass == 1 || elsewhere))
+        // SekhVet Paket CS: the projection divides by the pixel spacing -- without a usable one (0, negative, NaN) nothing is projected
+        float spX = pix.pixelSpacingX, spY = pix.pixelSpacingY;
+        BOOL spacingOK = isfinite( spX) && isfinite( spY) && spX > 0 && spY > 0;
+        if( spacingOK && showMarkers && (planeClass == 1 || elsewhere))
         {
             NSString *viewSeries = [SekhmetSpine seriesUIDOfViewer: viewer];
             float thick = MAX( 1.0f, pix.sliceThickness);
@@ -1010,10 +1126,10 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
             {
                 float B[ 3] = { A[ 0] + axis[ 0] * 50, A[ 1] + axis[ 1] * 50, A[ 2] + axis[ 2] * 50 }, sa[ 3], sb[ 3];
                 [pix convertDICOMCoords: A toSliceCoords: sa pixelCenter: YES]; [pix convertDICOMCoords: B toSliceCoords: sb pixelCenter: YES];
-                NSPoint pa = [v ConvertFromGL2View: NSMakePoint( sa[ 0] / pix.pixelSpacingX, sa[ 1] / pix.pixelSpacingY)];
-                NSPoint pb = [v ConvertFromGL2View: NSMakePoint( sb[ 0] / pix.pixelSpacingX, sb[ 1] / pix.pixelSpacingY)];
+                NSPoint pa = [v ConvertFromGL2View: NSMakePoint( sa[ 0] / spX, sa[ 1] / spY)];
+                NSPoint pb = [v ConvertFromGL2View: NSMakePoint( sb[ 0] / spX, sb[ 1] / spY)];
                 float dx = pb.x - pa.x, dy = pb.y - pa.y, len = sqrtf( dx*dx + dy*dy);
-                if( len > 1) { dirV = NSMakePoint( dy / len, -dx / len); if( dirV.y > 0) dirV = NSMakePoint( -dirV.x, -dirV.y); }   // nach oben im Bild
+                if( isfinite( len) && len > 1) { dirV = NSMakePoint( dy / len, -dx / len); if( dirV.y > 0) dirV = NSMakePoint( -dirV.x, -dirV.y); }   // nach oben im Bild
             }
             for( NSDictionary *l in labels)
             {
@@ -1022,8 +1138,8 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
                 // In der eigenen Serie zeichnet Horos die ROI selbst, sobald die Schicht sie enthaelt (MPR: Kopie innerhalb der Schichtdicke)
                 if( dist < thick && [[l objectForKey: @"series"] isEqualToString: viewSeries]) continue;
                 [pix convertDICOMCoords: P toSliceCoords: sc pixelCenter: YES];
-                float px = sc[ 0] / pix.pixelSpacingX, py = sc[ 1] / pix.pixelSpacingY;
-                if( px < 0 || py < 0 || px > pix.pwidth || py > pix.pheight) continue;
+                float px = sc[ 0] / spX, py = sc[ 1] / spY;
+                if( (px >= 0 && py >= 0 && px <= pix.pwidth && py <= pix.pheight) == NO) continue;   // SekhVet Paket CS: written so that NaN is rejected too
                 NSPoint c = [v ConvertFromGL2View: NSMakePoint( px, py)];
                 BOOL disc = [SekhmetSpine isDiscLabel: [l objectForKey: @"label"]];
                 float alpha = dist < thick ? 0.95f : 0.6f, rad = (disc ? 3 : 4) * sf, off = (disc ? 22 : 34) * sf;
@@ -1051,13 +1167,21 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
 
 #pragma mark - Liste im Panel
 
+// SekhVet Paket CS: vertebral formula of one study (the stored one, else the species default), whatever the panel shows
+- (void) formulaOfStudy:(NSString*) studyUID into:(NSInteger*) c
+{
+    NSInteger sp = MAX( 0, MIN( 2, [speciesPopup indexOfSelectedItem]));
+    for( int i = 0; i < 5; i++) c[ i] = kCounts[ sp][ i];
+    NSArray *f = studyUID.length ? [[self dataForStudy: studyUID] objectForKey: @"formula"] : nil;
+    if( [f isKindOfClass: [NSArray class]] && f.count == 4)
+        for( int i = 0; i < 4; i++) c[ i] = MAX( 1, [[f objectAtIndex: i] integerValue]);
+}
+
 - (void) setCurrentStudy:(NSString*) studyUID
 {
     if( studyUID.length == 0 || [studyUID isEqualToString: currentStudyUID]) return;
     [currentStudyUID release]; currentStudyUID = [studyUID copy];
-    NSArray *f = [[self dataForStudy: studyUID] objectForKey: @"formula"];
-    if( f.count == 4) for( int i = 0; i < 4; i++) counts[ i] = MAX( 1, [[f objectAtIndex: i] integerValue]);
-    else { NSInteger sp = MAX( 0, [speciesPopup indexOfSelectedItem]); for( int i = 0; i < 4; i++) counts[ i] = kCounts[ sp][ i]; }
+    [self formulaOfStudy: studyUID into: counts];
     [self showFormula];
     [self reloadTable];
 }
@@ -1174,18 +1298,25 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
 
 - (void) viewerClosed:(NSNotification*) n
 {
-    // ROIs des schliessenden Viewers vergessen, sonst zeigt curView ins Leere
+    // ROIs des schliessenden Viewers vergessen (SekhVet Paket CS: found through the viewer's own lists, all movie
+    // indices, instead of dereferencing curView)
     id v = [n object];
-    for( NSInteger i = (NSInteger) createdROIs.count - 1; i >= 0; i--)
-    {
-        ROI *r = [createdROIs objectAtIndex: i];
-        if( [r curView] == nil || [[r curView] windowController] == v) [createdROIs removeObjectAtIndex: i];
-    }
     if( [v isKindOfClass: [ViewerController class]])
-        for( NSArray *slice in [(ViewerController*) v roiList])
-            for( ROI *x in slice) { [sekhmetKnownNames removeObjectForKey: [NSValue valueWithPointer: x]]; [roiSeries removeObjectForKey: [NSValue valueWithPointer: x]]; }
+        for( long m = 0; m < [(ViewerController*) v maxMovieIndex]; m++)
+            for( NSArray *slice in [(ViewerController*) v roiList: m])
+                for( ROI *x in slice)
+                {
+                    [createdROIs removeObjectIdenticalTo: x];
+                    [sekhmetKnownNames removeObjectForKey: [NSValue valueWithPointer: x]]; [roiSeries removeObjectForKey: [NSValue valueWithPointer: x]];
+                }
+    [sekhmetSpineTextCache removeAllObjects];   // SekhVet Paket CS: the textures hold the GL contexts of the closing views
     NSString *prefix = [NSString stringWithFormat: @"%p|", v];
     for( NSString *k in [notedViewers allObjects]) if( [k hasPrefix: prefix]) [notedViewers removeObject: k];
+}
+
+- (void) window3DClosed:(NSNotification*) n   // SekhVet Paket CS: same for a closing MPR window
+{
+    [sekhmetSpineTextCache removeAllObjects];
 }
 
 #pragma mark - Aktionen
@@ -1413,8 +1544,7 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
     NSMutableArray *vert = [NSMutableArray array];
     for( NSDictionary *l in [[self dataForStudy: studyUID] objectForKey: @"labels"])
     {
-        NSString *f = [l objectForKey: @"for"];
-        if( forUID.length && f.length && [f isEqualToString: forUID] == NO) continue;
+        if( [SekhmetSpine entry: l usableFor: forUID] == NO) continue;
         if( [SekhmetSpine parseLabel: [l objectForKey: @"label"] region: NULL number: NULL]) [vert addObject: l];
     }
     [vert sortUsingComparator: ^NSComparisonResult( NSDictionary *a, NSDictionary *b) {
@@ -1490,6 +1620,11 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
     [out appendFormat: @"level(-5)=%@ level(-15)=%@ level(6)=%@ level(10)=%@ level(14)=%@ level(49)=%@ level(55)=%@",
      [self levelForPosition: -5 points: pts], [self levelForPosition: -15 points: pts], [self levelForPosition: 6 points: pts], [self levelForPosition: 10 points: pts],
      [self levelForPosition: 14 points: pts], [self levelForPosition: 49 points: pts], [self levelForPosition: 55 points: pts]];
+    // SekhVet Paket BX: Eintrag ohne Lage (0/0/0, kein Frame of Reference) zaehlt nicht, echte und fremde wie bisher
+    NSDictionary *nowhere = [NSDictionary dictionaryWithObjectsAndKeys: @"T8", @"label", @0, @"x", @0, @"y", @0, @"z", @"", @"for", nil];
+    NSDictionary *real = [NSDictionary dictionaryWithObjectsAndKeys: @"T9", @"label", @-7, @"x", @223, @"y", @1163, @"z", @"1.2.3", @"for", nil];
+    [out appendFormat: @" usable(nowhere)=%d usable(real)=%d usable(real,other FoR)=%d usable(real,any)=%d",
+     [self entry: nowhere usableFor: @"1.2.3"], [self entry: real usableFor: @"1.2.3"], [self entry: real usableFor: @"9.9"], [self entry: real usableFor: nil]];
     for( int i = 0; i < 5; i++) s->counts[ i] = sc[ i];
     s->region = sreg; s->number = snum; s->backwards = sb;
     return out;
@@ -1497,18 +1632,6 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
 
 // SEKHVET_SPINE_E2E_TEST=1 (60 s nach dem Start, Studie vorher per XML-RPC oeffnen): drei Wirbelpunkte in die erste Serie,
 // Studienliste + Datei pruefen, Hoehe je Schicht in ALLEN Viewern loggen, umbenennen (Neuzaehlung), wieder loeschen.
-+ (NSArray*) debugSortedVertebrae:(NSString*) studyUID
-{
-    NSMutableArray *vert = [NSMutableArray array];
-    for( NSDictionary *l in [[[self shared] dataForStudy: studyUID] objectForKey: @"labels"])
-        if( [self parseLabel: [l objectForKey: @"label"] region: NULL number: NULL]) [vert addObject: l];
-    [vert sortUsingComparator: ^NSComparisonResult( NSDictionary *a, NSDictionary *b) {
-        double ra = [SekhmetSpine rankOfLabel: [a objectForKey: @"label"]], rb = [SekhmetSpine rankOfLabel: [b objectForKey: @"label"]];
-        return ra < rb ? NSOrderedAscending : (ra > rb ? NSOrderedDescending : NSOrderedSame);
-    }];
-    return vert;
-}
-
 + (void) debugE2E
 {
     static int step = 0; static ViewerController *src = nil; static NSMutableArray *made = nil;
@@ -1537,7 +1660,7 @@ static void sekhmetSpineText( DCMView *v, NSString *txt, float size, BOOL green,
     }
     else if( step == 1 || step == 3)
     {
-        NSArray *vert = [self debugSortedVertebrae: [src studyInstanceUID]];
+        NSArray *vert = [s sortedVertebraeOfStudy: [src studyInstanceUID] frameOfReference: nil];   // SekhVet Paket CS: the duplicate debugSortedVertebrae: is gone
         for( ViewerController *v in [ViewerController getDisplayed2DViewers])
         {
             NSMutableString *seq = [NSMutableString string]; NSString *prev = @"?";

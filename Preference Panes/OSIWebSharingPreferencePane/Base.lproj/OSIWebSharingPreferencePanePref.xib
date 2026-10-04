@@ -170,7 +170,7 @@
                                 <button id="1061">
                                     <rect key="frame" x="15" y="95" width="418" height="18"/>
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <buttonCell key="cell" type="check" title="Use templates at ~/Library/Application Support/Horos/WebServicesHTML/" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" scrollable="YES" lineBreakMode="clipping" state="on" inset="2" id="1094">
+                                    <buttonCell key="cell" type="check" title="Use templates at ~/Library/Application Support/SekhVet/WebServicesHTML/" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" scrollable="YES" lineBreakMode="clipping" state="on" inset="2" id="1094">
                                         <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                                         <font key="font" metaFont="smallSystem"/>
                                     </buttonCell>
@@ -203,7 +203,7 @@
                                 <button id="1064">
                                     <rect key="frame" x="15" y="246" width="236" height="18"/>
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <buttonCell key="cell" type="check" title="Authorize Weasis &amp; Horos as web viewer" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" scrollable="YES" lineBreakMode="clipping" state="on" inset="2" id="1091">
+                                    <buttonCell key="cell" type="check" title="Allow Weasis &amp; SekhVet as web viewer" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" scrollable="YES" lineBreakMode="clipping" state="on" inset="2" id="1091">
                                         <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                                         <font key="font" metaFont="smallSystem"/>
                                     </buttonCell>
@@ -522,7 +522,7 @@
                                 <textField verticalHuggingPriority="750" id="1082">
                                     <rect key="frame" x="130" y="37" width="275" height="19"/>
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <textFieldCell key="cell" controlSize="small" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" sendsActionOnEndEditing="YES" state="on" borderStyle="bezel" placeholderString="for example: horos@horosproject.org" drawsBackground="YES" id="1087">
+                                    <textFieldCell key="cell" controlSize="small" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" sendsActionOnEndEditing="YES" state="on" borderStyle="bezel" placeholderString="for example: portal@example.org" drawsBackground="YES" id="1087">
                                         <font key="font" metaFont="smallSystem"/>
                                         <color key="textColor" name="textColor" catalog="System" colorSpace="catalog"/>
                                         <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
@@ -532,7 +532,7 @@
                                         <outlet property="nextKeyView" destination="1081" id="Ojg-na-v5S"/>
                                     </connections>
                                 </textField>
-                                <textField toolTip="OsiriX Web Server address, as displayed in the email sent to the users." verticalHuggingPriority="750" id="1081">
+                                <textField toolTip="SekhVet Web Server address, as displayed in the email sent to the users." verticalHuggingPriority="750" id="1081">
                                     <rect key="frame" x="409" y="15" width="78" height="19"/>
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                                     <textFieldCell key="cell" controlSize="small" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" sendsActionOnEndEditing="YES" state="on" borderStyle="bezel" drawsBackground="YES" id="1088">
@@ -1211,7 +1211,7 @@ DQ
                     <button verticalHuggingPriority="750" id="645">
                         <rect key="frame" x="235" y="439" width="70" height="17"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <buttonCell key="cell" type="roundRect" title="OsiriX Tables" bezelStyle="roundedRect" alignment="center" controlSize="mini" borderStyle="border" inset="2" id="648">
+                        <buttonCell key="cell" type="roundRect" title="Tables" bezelStyle="roundedRect" alignment="center" controlSize="mini" borderStyle="border" inset="2" id="648">
                             <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                             <font key="font" metaFont="miniSystem"/>
                         </buttonCell>

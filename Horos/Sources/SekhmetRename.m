@@ -14,6 +14,12 @@
 #import "MutableArrayCategory.h"
 #import "WaitRendering.h"
 #import "ViewerController.h"
+#import "DicomImage.h"                 // SekhVet Paket CS: inDatabaseFolder (linked files)
+#import "DicomFileDCMTKCategory.h"     // SekhVet Paket CS: character set of a file
+#import "DICOMToNSString.h"            // SekhVet Paket CS: encodingForDICOMCharacterSet:
+#include <stdio.h>
+#include <unistd.h>
+#include <limits.h>
 
 static SekhmetRename *sekhmetRename = nil;
 
@@ -39,6 +45,9 @@ static NSString* sekhmetRawName( DicomStudy *st)
 - (NSTextField*) label:(NSString*) text frame:(NSRect) r bold:(BOOL) bold small:(BOOL) small;
 - (NSTextField*) field:(NSRect) r placeholder:(NSString*) ph;
 - (void) reloadPatients;
+- (void) forgetStudies;                                                                  // SekhVet Paket CS
++ (DicomDatabase*) databaseForStudies:(NSArray*) studies error:(NSString**) error;       // SekhVet Paket CS
++ (NSString*) characterSetOfFiles:(NSArray*) files notHolding:(NSArray*) values;         // SekhVet Paket CS
 - (void) fillFromName:(NSString*) name patientID:(NSString*) pid dob:(NSDate*) dob sex:(NSString*) sex;
 - (IBAction) patientChosen:(id) sender;
 - (IBAction) rename:(id) sender;
@@ -80,6 +89,101 @@ static NSString* sekhmetRawName( DicomStudy *st)
 
 #pragma mark - Motor
 
++ (NSString*) rawNameOfStudy:(DicomStudy*) study
+{
+    return sekhmetRawName( study);
+}
+
+// SekhVet Paket CS: the window is not modal, so the studies may have been deleted or the database
+// switched while it was open. Returns the local database all studies belong to, or nil plus a message.
++ (DicomDatabase*) databaseForStudies:(NSArray*) studies error:(NSString**) error
+{
+    NSString *gone = NSLocalizedString( @"The selected studies are no longer available (deleted, or the database was switched). Select them again in the database window.", nil);
+    DicomDatabase *db = [[BrowserController currentBrowser] database];
+    if( db == nil || [db isLocal] == NO)
+    {
+        if( error) *error = NSLocalizedString( @"Rename Patient works only in a local database.", nil);
+        return nil;
+    }
+    @try
+    {
+        for( DicomStudy *st in studies)
+        {
+            NSManagedObjectContext *c = [st isKindOfClass: [DicomStudy class]] ? [st managedObjectContext] : nil;
+            if( c == nil || [st isDeleted] || [DicomDatabase databaseForContext: c] != db)
+            {
+                if( error) *error = gone;
+                return nil;
+            }
+            [st willAccessValueForKey: nil];   // fires the fault; raises if the row is gone
+        }
+    }
+    @catch (NSException *e)
+    {
+        if( error) *error = gone;
+        return nil;
+    }
+    return db;
+}
+
+// SekhVet Paket CS: nil = every value can be written into every file; otherwise the DICOM character
+// set that cannot hold them. Same choice of character set and same conversion as modifyDicom:dicomFiles:.
++ (NSString*) characterSetOfFiles:(NSArray*) files notHolding:(NSArray*) values
+{
+    NSMutableDictionary *known = [NSMutableDictionary dictionary];
+    for( NSString *f in files)
+    {
+        NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+        NSString *cs = nil;
+        @try { cs = [[DicomFile getEncodingArrayForFile: f] objectAtIndex: 0]; }
+        @catch (NSException *e) { cs = nil; }
+        if( cs == nil) cs = @"";
+        NSNumber *fits = [known objectForKey: cs];
+        if( fits == nil)
+        {
+            NSStringEncoding enc = [NSString encodingForDICOMCharacterSet: cs];
+            BOOL all = YES;
+            for( NSString *v in values)
+                if( [v cStringUsingEncoding: enc] == NULL) { all = NO; break; }
+            fits = [NSNumber numberWithBool: all];
+            [known setObject: fits forKey: cs];
+        }
+        BOOL ok = [fits boolValue];
+        [cs retain];
+        [pool release];
+        [cs autorelease];
+        if( ok == NO) return cs.length ? cs : @"ISO_IR 100";
+    }
+    return nil;
+}
+
+static unsigned long long sekhmetFreeBytes( NSString *path)
+{
+    NSNumber *n = [[[NSFileManager defaultManager] attributesOfFileSystemForPath: path error: NULL] objectForKey: NSFileSystemFreeSize];
+    return n ? [n unsignedLongLongValue] : ULLONG_MAX;   // unknown: do not block
+}
+
+// SekhVet Paket CS: put one backed-up file back in place of the original, atomically where possible.
+static BOOL sekhmetRestoreFile( NSString *backup, NSString *original)
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if( [fm fileExistsAtPath: backup] == NO) return NO;
+    NSString *tmp = [original stringByAppendingString: @".sekhvet-restore"];
+    [fm removeItemAtPath: tmp error: NULL];
+    if( [fm copyItemAtPath: backup toPath: tmp error: NULL] && rename( [tmp fileSystemRepresentation], [original fileSystemRepresentation]) == 0) return YES;
+    [fm removeItemAtPath: tmp error: NULL];
+    return NO;
+}
+
+// SekhVet Paket CS: rewritten to be all-or-nothing per study.
+//  1. Everything is validated BEFORE any file is touched: studies still exist, local database, no linked
+//     files outside the database folder, all files present, new values encodable in every file's
+//     character set, enough free disk space.
+//  2. Per study every file is copied to <database folder>/SekhVet-Rename-Backup.noindex/<UUID>/ first
+//     (not TEMP.noindex: that folder is emptied at every start). If a single file of the study fails,
+//     ALL files of that study are restored and its database entry stays as it was.
+//  3. The backup is deleted only after all files are written and the database is saved.
+// The log carries counts and StudyInstanceUIDs only, never names or patient IDs.
 + (BOOL) applyName:(NSString*) name patientID:(NSString*) pid birthDate:(NSDate*) dob sex:(NSString*) sex toStudies:(NSArray*) studies error:(NSString**) error
 {
     NSCharacterSet *ws = [NSCharacterSet whitespaceAndNewlineCharacterSet];
@@ -96,75 +200,219 @@ static NSString* sekhmetRawName( DicomStudy *st)
         return NO;
     }
 
-    [ViewerController closeAllWindows];   // wie Horos' Unify: kein Viewer auf Dateien, die gleich umgeschrieben werden
-
-    NSString *dobDICOM = dob ? [[self dicomDateFormatter] stringFromDate: dob] : nil;
-    NSMutableArray *failed = [NSMutableArray array];
-
-    for( DicomStudy *study in studies)
+    NSString *problem = nil;
+    DicomDatabase *db = [self databaseForStudies: studies error: &problem];
+    if( db == nil)
     {
-        NSString *oldName = sekhmetRawName( study);
-        NSString *oldID = study.patientID ? study.patientID : @"";
-        NSMutableArray *files = [NSMutableArray arrayWithArray: [[study paths] allObjects]];
-        [files removeDuplicatedStrings];
-
-        // Historie wie Horos' Unify: bisherige Werte an OtherPatientIDs / OtherPatientNames anhaengen.
-        // (Horos liest die beiden Tags dort vertauscht; hier richtig herum.)
-        NSString *otherIDs = @"", *otherNames = @"";
-        if( files.count)
-        {
-            DCMObject *o = [DCMObject objectWithContentsOfFile: [files objectAtIndex: 0] decodingPixelData: NO];
-            if( [o attributeValueWithName: @"OtherPatientIDs"]) otherIDs = [o attributeValueWithName: @"OtherPatientIDs"];
-            if( [o attributeValueWithName: @"OtherPatientNames"]) otherNames = [o attributeValueWithName: @"OtherPatientNames"];
-        }
-        if( otherIDs.length) otherIDs = [otherIDs stringByAppendingString: @" - "];
-        if( otherNames.length) otherNames = [otherNames stringByAppendingString: @" - "];
-        otherIDs = [otherIDs stringByAppendingString: oldID];
-        otherNames = [otherNames stringByAppendingString: oldName];
-
-        NSMutableArray *tagAndValues = [NSMutableArray array];
-        [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,0010)"], name, nil]];
-        [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,0020)"], pid, nil]];
-        if( dobDICOM) [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,0030)"], dobDICOM, nil]];
-        if( sex.length) [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,0040)"], sex, nil]];
-        [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,1000)"], otherIDs, nil]];
-        [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,1001)"], otherNames, nil]];
-
-        BOOL ok = YES;
-        @try
-        {
-            if( files.count) ok = [XMLController modifyDicom: tagAndValues dicomFiles: files];
-            for( NSString *f in files) [[NSFileManager defaultManager] removeItemAtPath: [f stringByAppendingString: @".bak"] error: NULL];
-        }
-        @catch (NSException *e) { NSLog( @"SekhVet Rename: %@", e); ok = NO; }
-
-        if( ok == NO)
-        {
-            NSLog( @"SekhVet Rename: files of %@ (%@) NOT written, database unchanged", oldName, oldID);
-            [failed addObject: [NSString stringWithFormat: @"%@ (%@)", oldName, oldID]];
-            continue;
-        }
-
-        // Datenbank erst nach den Dateien; patientUID wie beim Import, damit die Studien
-        // unter EINEM Patienten zusammenlaufen. Ohne neues Geburtsdatum zaehlt das alte.
-        NSMutableDictionary *src = [NSMutableDictionary dictionary];
-        [src setObject: name forKey: @"patientName"];
-        [src setObject: pid forKey: @"patientID"];
-        NSDate *uidDOB = dob ? dob : study.dateOfBirth;
-        if( uidDOB) [src setObject: uidDOB forKey: @"patientBirthDate"];
-        study.name = name;
-        study.patientID = pid;
-        study.patientUID = [DicomFile patientUID: src];
-        if( dob) study.dateOfBirth = dob;
-        if( sex.length) study.patientSex = sex;
-        NSLog( @"SekhVet Rename: %@ %@ -> %@ %@ (%lu files)", oldName, oldID, name, pid, (unsigned long) files.count);
+        if( error) *error = problem;
+        return NO;
     }
 
-    [[[BrowserController currentBrowser] database] save: nil];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *dobDICOM = dob ? [[self dicomDateFormatter] stringFromDate: dob] : nil;
+    NSMutableArray *plans = [NSMutableArray array];
+    unsigned long long largestStudy = 0, largestFile = 0;
+
+    // ---- 1. validate everything; nothing is modified in this block
+    @try
+    {
+        for( DicomStudy *study in studies)
+        {
+            NSString *oldName = sekhmetRawName( study);
+            NSString *oldID = study.patientID ? study.patientID : @"";
+            NSString *label = [NSString stringWithFormat: @"%@ (%@)", oldName, oldID];   // for the dialog only, never logged
+
+            NSUInteger linked = 0;
+            for( id im in [study images])
+                if( [[im valueForKey: @"inDatabaseFolder"] boolValue] == NO) linked++;
+            if( linked)
+            {
+                if( error) *error = [NSString stringWithFormat: NSLocalizedString( @"%@: %lu image(s) of this study are only linked — their files live outside the SekhVet database folder (for example on a network drive, a CD copy or in another program's database). Rename Patient does not rewrite files it does not own. Copy the study into the database first (right-click it › “Copy Linked Files to Database Folder”), then rename. Nothing was changed.", nil), label, (unsigned long) linked];
+                return NO;
+            }
+
+            NSMutableArray *files = [NSMutableArray arrayWithArray: [[study paths] allObjects]];
+            [files removeDuplicatedStrings];
+
+            unsigned long long bytes = 0;
+            NSUInteger missing = 0;
+            for( NSString *f in files)
+            {
+                NSDictionary *a = [fm attributesOfItemAtPath: f error: NULL];
+                if( a == nil || [fm isWritableFileAtPath: f] == NO) { missing++; continue; }
+                unsigned long long s = [a fileSize];
+                bytes += s;
+                if( s > largestFile) largestFile = s;
+            }
+            if( missing)
+            {
+                if( error) *error = [NSString stringWithFormat: NSLocalizedString( @"%@: %lu of %lu file(s) of this study are missing or not writable. Nothing was changed.", nil), label, (unsigned long) missing, (unsigned long) files.count];
+                return NO;
+            }
+            if( bytes > largestStudy) largestStudy = bytes;
+
+            // Historie wie Horos' Unify: bisherige Werte an OtherPatientIDs / OtherPatientNames anhaengen.
+            // (Horos liest die beiden Tags dort vertauscht; hier richtig herum.)
+            NSString *otherIDs = @"", *otherNames = @"";
+            if( files.count)
+            {
+                DCMObject *o = [DCMObject objectWithContentsOfFile: [files objectAtIndex: 0] decodingPixelData: NO];
+                if( [[o attributeValueWithName: @"OtherPatientIDs"] isKindOfClass: [NSString class]]) otherIDs = [o attributeValueWithName: @"OtherPatientIDs"];
+                if( [[o attributeValueWithName: @"OtherPatientNames"] isKindOfClass: [NSString class]]) otherNames = [o attributeValueWithName: @"OtherPatientNames"];
+            }
+            if( otherIDs.length) otherIDs = [otherIDs stringByAppendingString: @" - "];
+            if( otherNames.length) otherNames = [otherNames stringByAppendingString: @" - "];
+            otherIDs = [otherIDs stringByAppendingString: oldID];
+            otherNames = [otherNames stringByAppendingString: oldName];
+
+            NSMutableArray *tagAndValues = [NSMutableArray array];
+            [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,0010)"], name, nil]];
+            [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,0020)"], pid, nil]];
+            if( dobDICOM) [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,0030)"], dobDICOM, nil]];
+            if( sex.length) [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,0040)"], sex, nil]];
+            [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,1000)"], otherIDs, nil]];
+            [tagAndValues addObject: [NSArray arrayWithObjects: [DCMAttributeTag tagWithTagString: @"(0010,1001)"], otherNames, nil]];
+
+            // One pass over the files for all values; the message then says whether the NEW values or the history do not fit
+            NSMutableArray *allValues = [NSMutableArray array];
+            for( NSArray *tv in tagAndValues) [allValues addObject: [tv lastObject]];
+            NSString *cs = [self characterSetOfFiles: files notHolding: allValues];
+            if( cs)
+            {
+                NSStringEncoding enc = [NSString encodingForDICOMCharacterSet: cs];
+                if( [name cStringUsingEncoding: enc] == NULL || [pid cStringUsingEncoding: enc] == NULL)
+                {
+                    if( error) *error = [NSString stringWithFormat: NSLocalizedString( @"%@: the new name or patient ID contains characters that cannot be stored in the character set of these DICOM files (%@). Use only characters of that character set — for ISO_IR 100 that is Western European (Latin-1), without letters such as ł, š, ő, without € and without typographic quotes or dashes. Nothing was changed.", nil), label, cs];
+                }
+                else if( error) *error = [NSString stringWithFormat: NSLocalizedString( @"%@: the previous name or ID cannot be stored in the character set of all DICOM files of this study (%@), so the history in Other Patient Names / IDs cannot be written. Nothing was changed.", nil), label, cs];
+                return NO;
+            }
+
+            [plans addObject: [NSDictionary dictionaryWithObjectsAndKeys: study, @"study", files, @"files", tagAndValues, @"values", label, @"label", nil]];
+        }
+    }
+    @catch (NSException *e)
+    {
+        NSLog( @"SekhVet Rename: validation raised %@", e.name);
+        if( error) *error = NSLocalizedString( @"The selected studies could not be read (deleted in the meantime?). Nothing was changed.", nil);
+        return NO;
+    }
+
+    NSString *backupRoot = [[db dataBaseDirPath] stringByAppendingPathComponent: @"SekhVet-Rename-Backup.noindex"];
+    const unsigned long long reserve = 64ULL * 1024 * 1024;
+    unsigned long long need = largestStudy + largestFile + reserve;
+    if( sekhmetFreeBytes( [db dataBaseDirPath]) < need || sekhmetFreeBytes( [db dataDirPath]) < largestFile + reserve)
+    {
+        if( error) *error = [NSString stringWithFormat: NSLocalizedString( @"Not enough free disk space for the safety copy: %@ are needed on the volume of the database. Nothing was changed.", nil),
+                             [NSByteCountFormatter stringFromByteCount: (long long) need countStyle: NSByteCountFormatterCountStyleFile]];
+        return NO;
+    }
+
+    [ViewerController closeAllWindows];   // wie Horos' Unify: kein Viewer auf Dateien, die gleich umgeschrieben werden
+
+    // ---- 2. per study: backup, rewrite, database, remove backup
+    NSMutableArray *failed = [NSMutableArray array];
+
+    for( NSDictionary *plan in plans)
+    {
+        NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+        DicomStudy *study = [plan objectForKey: @"study"];
+        NSArray *files = [plan objectForKey: @"files"];
+        NSString *label = [plan objectForKey: @"label"];
+        NSString *reason = nil;
+        NSString *backupDir = [backupRoot stringByAppendingPathComponent: [[NSUUID UUID] UUIDString]];
+        NSMutableArray *backups = [NSMutableArray array];   // same order as files
+        BOOL keepBackup = NO;
+
+        @try
+        {
+            NSString *studyUID = [study valueForKey: @"studyInstanceUID"];
+
+            // a) safety copy of every file
+            BOOL copied = [fm createDirectoryAtPath: backupDir withIntermediateDirectories: YES attributes: nil error: NULL];
+            for( NSUInteger i = 0; copied && i < files.count; i++)
+            {
+                NSString *b = [backupDir stringByAppendingPathComponent: [NSString stringWithFormat: @"%lu.dcm", (unsigned long) i]];
+                copied = [fm copyItemAtPath: [files objectAtIndex: i] toPath: b error: NULL];
+                if( copied) [backups addObject: b];
+            }
+            BOOL touched = copied;   // from here on the files of the study may have been rewritten
+            if( copied == NO) reason = NSLocalizedString( @"the safety copy could not be created — nothing was changed", nil);
+
+            // b) rewrite the files
+            if( reason == nil)
+            {
+                BOOL ok = YES;
+                @try { if( files.count) ok = [XMLController modifyDicom: [plan objectForKey: @"values"] dicomFiles: files]; }
+                @catch (NSException *e) { NSLog( @"SekhVet Rename: modifyDicom raised %@", e.name); ok = NO; }
+                if( ok == NO) reason = NSLocalizedString( @"at least one DICOM file could not be rewritten", nil);
+            }
+
+            // c) database, only after all files; patientUID wie beim Import, damit die Studien
+            //    unter EINEM Patienten zusammenlaufen. Ohne neues Geburtsdatum zaehlt das alte.
+            if( reason == nil)
+            {
+                NSString *oldRaw = [[sekhmetRawName( study) copy] autorelease], *oldPID = [[study.patientID copy] autorelease], *oldUID = [[study.patientUID copy] autorelease];
+                NSDate *oldDOB = [[study.dateOfBirth retain] autorelease];
+                NSString *oldSex = [[study.patientSex copy] autorelease];
+
+                NSMutableDictionary *src = [NSMutableDictionary dictionary];
+                [src setObject: name forKey: @"patientName"];
+                [src setObject: pid forKey: @"patientID"];
+                NSDate *uidDOB = dob ? dob : study.dateOfBirth;
+                if( uidDOB) [src setObject: uidDOB forKey: @"patientBirthDate"];
+                study.name = name;
+                study.patientID = pid;
+                study.patientUID = [DicomFile patientUID: src];
+                if( dob) study.dateOfBirth = dob;
+                if( sex.length) study.patientSex = sex;
+
+                if( [db save: NULL] == NO)
+                {
+                    study.name = oldRaw;
+                    study.patientID = oldPID;
+                    study.patientUID = oldUID;
+                    if( dob) study.dateOfBirth = oldDOB;
+                    if( sex.length) study.patientSex = oldSex;
+                    reason = NSLocalizedString( @"the database could not be saved", nil);
+                }
+            }
+
+            // d) failure after the files were touched: put ALL files of this study back
+            if( reason && touched)
+            {
+                NSUInteger notRestored = 0;
+                for( NSUInteger i = 0; i < files.count; i++)
+                    if( sekhmetRestoreFile( [backups objectAtIndex: i], [files objectAtIndex: i]) == NO) notRestored++;
+                if( notRestored)
+                {
+                    keepBackup = YES;
+                    reason = [reason stringByAppendingFormat: NSLocalizedString( @"; %lu file(s) could NOT be restored — the untouched originals are kept in %@ (files 0.dcm, 1.dcm, …)", nil), (unsigned long) notRestored, backupDir];
+                }
+                else reason = [reason stringByAppendingString: NSLocalizedString( @" — all files of the study were restored, database entry unchanged", nil)];
+                NSLog( @"SekhVet Rename: study %@ NOT renamed, %lu files, %lu not restored", studyUID, (unsigned long) files.count, (unsigned long) notRestored);
+            }
+            else if( reason) NSLog( @"SekhVet Rename: study %@ NOT renamed, no file touched", studyUID);
+            else NSLog( @"SekhVet Rename: study %@ renamed, %lu files", studyUID, (unsigned long) files.count);
+        }
+        @catch (NSException *e)
+        {
+            // Unexpected (e.g. the study vanished in between): keep the backup, it may be the only intact copy
+            NSLog( @"SekhVet Rename: exception %@ while renaming a study", e.name);
+            keepBackup = YES;
+            reason = [NSString stringWithFormat: NSLocalizedString( @"unexpected error — the safety copy of the files is kept in %@", nil), backupDir];
+        }
+
+        if( keepBackup == NO) [fm removeItemAtPath: backupDir error: NULL];
+        if( reason) [failed addObject: [NSString stringWithFormat: @"%@: %@", label, reason]];
+        [pool release];
+    }
+
+    rmdir( [backupRoot fileSystemRepresentation]);   // only succeeds when empty, i.e. no backup was kept
 
     if( failed.count)
     {
-        if( error) *error = [NSString stringWithFormat: NSLocalizedString( @"The DICOM files of these studies could not be changed, their database entries were left as they were:\n%@", nil), [failed componentsJoinedByString: @"\n"]];
+        if( error) *error = [NSString stringWithFormat: NSLocalizedString( @"These studies were NOT renamed:\n%@", nil), [failed componentsJoinedByString: @"\n"]];
         return NO;
     }
     return YES;
@@ -324,6 +572,13 @@ static NSString* sekhmetRawName( DicomStudy *st)
         NSRunAlertPanel( NSLocalizedString( @"Rename Patient", nil), NSLocalizedString( @"Select one or more studies in the database first.", nil), nil, nil, nil);
         return;
     }
+    // SekhVet Paket CS: refuse early (remote database, stale objects) instead of failing on "Rename…"
+    NSString *problem = nil;
+    if( [SekhmetRename databaseForStudies: s error: &problem] == nil)
+    {
+        NSRunAlertPanel( NSLocalizedString( @"Rename Patient", nil), @"%@", nil, nil, nil, problem);
+        return;
+    }
     [studies release];
     studies = [s retain];
     [self window];   // Fenster laden
@@ -349,9 +604,17 @@ static NSString* sekhmetRawName( DicomStudy *st)
     [self fillFromName: [d objectForKey: @"name"] patientID: [d objectForKey: @"patientID"] dob: [d objectForKey: @"dateOfBirth"] sex: [d objectForKey: @"patientSex"]];
 }
 
+// SekhVet Paket CS: the window does not keep managed objects longer than it needs them
+- (void) forgetStudies
+{
+    [studies release];
+    studies = nil;
+}
+
 - (IBAction) cancel:(id) sender
 {
     [[self window] orderOut: self];
+    [self forgetStudies];
 }
 
 - (IBAction) rename:(id) sender
@@ -378,12 +641,27 @@ static NSString* sekhmetRawName( DicomStudy *st)
     NSString *sex = nil;
     if( [sexPopup indexOfSelectedItem] > 0) sex = [sexPopup titleOfSelectedItem];
 
+    // SekhVet Paket CS: the studies may have been deleted, or the database switched, while this
+    // window was open -- say so and close instead of raising a Core Data fault exception
+    NSString *problem = nil;
     NSUInteger fileCount = 0;
-    for( DicomStudy *st in studies) fileCount += [[st paths] count];
+    if( studies.count == 0) problem = NSLocalizedString( @"No study selected.", nil);
+    else if( [SekhmetRename databaseForStudies: studies error: &problem])
+    {
+        @try { for( DicomStudy *st in studies) fileCount += [[st paths] count]; }
+        @catch (NSException *e) { problem = NSLocalizedString( @"The selected studies are no longer available (deleted, or the database was switched). Select them again in the database window.", nil); }
+    }
+    if( problem)
+    {
+        [[self window] orderOut: self];
+        [self forgetStudies];
+        NSRunAlertPanel( NSLocalizedString( @"Rename Patient", nil), @"%@", nil, nil, nil, problem);
+        return;
+    }
 
     NSAlert *a = [[[NSAlert alloc] init] autorelease];
     [a setMessageText: [NSString stringWithFormat: NSLocalizedString( @"Rename to %@ (%@)?", nil), name, pid]];
-    [a setInformativeText: [NSString stringWithFormat: NSLocalizedString( @"This DEFINITIVELY rewrites %lu DICOM files of %lu study(ies) and updates the database. Open viewers will be closed.", nil), (unsigned long) fileCount, (unsigned long) studies.count]];
+    [a setInformativeText: [NSString stringWithFormat: NSLocalizedString( @"This DEFINITIVELY rewrites %lu DICOM files of %lu study(ies) and updates the database. Open viewers will be closed. A safety copy of each study is kept until all its files are written; if one file fails, the whole study is put back as it was.", nil), (unsigned long) fileCount, (unsigned long) studies.count]];
     [a addButtonWithTitle: NSLocalizedString( @"Rename", nil)];
     [a addButtonWithTitle: NSLocalizedString( @"Cancel", nil)];
     if( [a runModal] != NSAlertFirstButtonReturn) return;
@@ -392,7 +670,9 @@ static NSString* sekhmetRawName( DicomStudy *st)
     WaitRendering *wait = [[[WaitRendering alloc] init: NSLocalizedString( @"Updating files...", nil)] autorelease];
     [wait showWindow: self];
     NSString *error = nil;
-    BOOL ok = [SekhmetRename applyName: name patientID: pid birthDate: dob sex: sex toStudies: studies error: &error];
+    NSArray *targets = [[studies retain] autorelease];
+    [self forgetStudies];   // SekhVet Paket CS
+    BOOL ok = [SekhmetRename applyName: name patientID: pid birthDate: dob sex: sex toStudies: targets error: &error];
     [wait close];
 
     BrowserController *b = [BrowserController currentBrowser];

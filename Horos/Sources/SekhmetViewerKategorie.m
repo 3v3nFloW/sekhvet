@@ -10,6 +10,8 @@
  ============================================================================*/
 
 #import "SekhmetViewerKategorie.h"
+#import "BrowserController.h"
+#import "DicomStudy.h"
 #import "DCMView.h"
 #import "AppController.h"
 #import "Notifications.h"
@@ -19,19 +21,32 @@
 #import "SekhmetSpine.h"
 #import "SekhmetNorberg.h"
 #import "SekhmetUSKalibrierung.h"
+#import "SekhmetUeberlagerung.h" // SekhVet Paket CJ
+#import "SekhmetMessNavigator.h" // SekhVet Paket DO
 #import "DCMPix.h"
 #import <objc/runtime.h>
 
 NSString* const SekhmetVetPresetToolbarItemIdentifier = @"SekhmetVetPreset";
 NSString* const SekhmetSpineToolbarItemIdentifier = @"SekhmetSpine";
 NSString* const SekhmetNorbergToolbarItemIdentifier = @"SekhmetNorberg";
-NSString* const SekhmetNorbergDeleteToolbarItemIdentifier = @"SekhmetNorbergDelete";
 NSString* const SekhmetDIToolbarItemIdentifier = @"SekhmetDI";
-NSString* const SekhmetDIDeleteToolbarItemIdentifier = @"SekhmetDIDelete";
 NSString* const SekhmetMPRSwapToolbarItemIdentifier = @"SekhmetMPRSwap"; // SekhVet Paket BW-2
 NSString* const SekhmetScreenAreaToolbarItemIdentifier = @"SekhmetScreenArea";
+NSString* const SekhmetReportPilotViewerToolbarItemIdentifier = @"SekhmetReportPilotViewer"; // privat, nur mit Einstellung SekhVetReportPilot
+
+// Linkbau steht im Datenbankfenster (BrowserController.m), hier nur benutzt
+@interface BrowserController (SekhmetReportPilot)
++ (BOOL) sekhmetReportPilotAktiv;
++ (BOOL) sekhmetReportPilotOeffnen:(DicomStudy*) studie;
+@end
 
 @implementation ViewerController (SekhVet)
+
+// Privat (03.10.2026): die Studie, die in diesem Viewer offen ist, an ReportPilot -- ohne erst ins Datenbankfenster zu wechseln.
+- (IBAction) sekhmetReportPilotViewer:(id) sender
+{
+    if( [BrowserController sekhmetReportPilotOeffnen: [self currentStudy]] == NO) NSBeep();
+}
 
 // Sekhmet: Werkzeug "Punkt in anderen Serien zeigen" (OsiriX-MD-Toolbar); Klick ins Bild ruft DCMView sync3DPosition
 - (IBAction) sekhmetShow3DPointTool:(id) sender
@@ -85,24 +100,16 @@ NSString* const SekhmetScreenAreaToolbarItemIdentifier = @"SekhmetScreenArea";
     [[SekhmetSpine shared] toggleWithWindowController: self];
 }
 
+// SekhVet Paket CS: ein Umschaltknopf je Messung statt "setzen" + "loeschen" — an = Messung liegt auf dem Bild,
+// abwaehlen entfernt sie (Cmd-Z holt sie zurueck). Die Knoepfe selbst baut SekhmetNorberg (configureToolbarItem:...).
 - (IBAction) sekhmetNorbergTool:(id) sender // SekhVet Paket V
 {
-    [[SekhmetNorberg shared] placeInViewer: self];
-}
-
-- (IBAction) sekhmetNorbergDeleteTool:(id) sender // SekhVet Paket W
-{
-    [[SekhmetNorberg shared] deleteInViewer: self];
+    [SekhmetNorberg toggleDistractionIndex: NO inViewer: self];
 }
 
 - (IBAction) sekhmetDITool:(id) sender // SekhVet Paket BD
 {
-    [[SekhmetNorberg shared] placeDIInViewer: self];
-}
-
-- (IBAction) sekhmetDIDeleteTool:(id) sender // SekhVet Paket BD
-{
-    [[SekhmetNorberg shared] deleteDIInViewer: self];
+    [SekhmetNorberg toggleDistractionIndex: YES inViewer: self];
 }
 
 // SekhVet Paket V: die Toolbar sichert ihre Anordnung (autosavesConfiguration) — ein neuer Standard-Knopf erscheint sonst nur
@@ -111,12 +118,18 @@ NSString* const SekhmetScreenAreaToolbarItemIdentifier = @"SekhmetScreenArea";
 {
     if( toolbar == nil) return;
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    // Paket W: Norberg + Delete Norberg (one key); Paket BD: Distraction Index; Paket BE: Delete DI — each with its own key,
-    // so installations that already have the earlier buttons get the new one once as well. Paket BW-2: Swap MPR behind Point.
-    NSString *wanted[ 5] = { SekhmetNorbergToolbarItemIdentifier, SekhmetNorbergDeleteToolbarItemIdentifier, SekhmetDIToolbarItemIdentifier, SekhmetDIDeleteToolbarItemIdentifier, SekhmetMPRSwapToolbarItemIdentifier };
-    NSString *after[ 5]  = { SekhmetSpineToolbarItemIdentifier, SekhmetNorbergToolbarItemIdentifier, SekhmetNorbergDeleteToolbarItemIdentifier, SekhmetDIToolbarItemIdentifier, @"Sekhmet3DPoint" };
-    NSString *key[ 5]    = { @"SekhmetNorbergToolbarInserted2", @"SekhmetNorbergToolbarInserted2", @"SekhmetDIToolbarInserted", @"SekhmetDIDeleteToolbarInserted", @"SekhmetMPRSwapToolbarInserted" };
-    for( int w = 0; w < 5; w++)
+    // Paket W: Norberg; Paket BD: Distraction Index — each with its own key, so installations that already have the earlier
+    // button get the new one once as well. Paket BW-2: Swap MPR behind Point. Paket CS: the two "Delete" buttons are gone
+    // (the measurement buttons toggle); a saved toolbar that still lists them simply loses them (unknown identifier -> nil).
+    // SekhVet Paket DO: Messungen-Navigator und "Delete All" hinter dem Distraktionsindex
+    enum { kCount = 6 };
+    NSString *wanted[ kCount] = { SekhmetNorbergToolbarItemIdentifier, SekhmetDIToolbarItemIdentifier, SekhmetMPRSwapToolbarItemIdentifier, SekhmetOverlayToolbarItemIdentifier,
+                                  SekhmetMessNavigatorToolbarItemIdentifier, SekhmetMessLoeschenToolbarItemIdentifier };
+    NSString *after[ kCount]  = { SekhmetSpineToolbarItemIdentifier, SekhmetNorbergToolbarItemIdentifier, @"Sekhmet3DPoint", SekhmetMPRSwapToolbarItemIdentifier,
+                                  SekhmetDIToolbarItemIdentifier, SekhmetMessNavigatorToolbarItemIdentifier };
+    NSString *key[ kCount]    = { @"SekhmetNorbergToolbarInserted2", @"SekhmetDIToolbarInserted", @"SekhmetMPRSwapToolbarInserted", @"SekhmetOverlayToolbarInserted",
+                                  @"SekhmetMessNavigatorToolbarInserted", @"SekhmetMessLoeschenToolbarInserted" };
+    for( int w = 0; w < kCount; w++)
     {
         if( [ud boolForKey: key[ w]]) continue;
         NSInteger idx = -1, i = 0;
@@ -131,7 +144,15 @@ NSString* const SekhmetScreenAreaToolbarItemIdentifier = @"SekhmetScreenArea";
         if( idx < 0) idx = [[toolbar items] count];
         [toolbar insertItemWithItemIdentifier: wanted[ w] atIndex: idx];
     }
-    for( int w = 0; w < 5; w++) [ud setBool: YES forKey: key[ w]];
+    for( int w = 0; w < kCount; w++) [ud setBool: YES forKey: key[ w]];
+    // privat: ReportPilot einmalig ans Ende (nur wo die Einstellung gesetzt und ReportPilot installiert ist)
+    if( [BrowserController sekhmetReportPilotAktiv] && [ud boolForKey: @"SekhmetReportPilotViewerToolbarInserted"] == NO)
+    {
+        BOOL present = NO;
+        for( NSToolbarItem *it in [toolbar items]) if( [[it itemIdentifier] isEqualToString: SekhmetReportPilotViewerToolbarItemIdentifier]) present = YES;
+        if( present == NO) [toolbar insertItemWithItemIdentifier: SekhmetReportPilotViewerToolbarItemIdentifier atIndex: [[toolbar items] count]];
+        [ud setBool: YES forKey: @"SekhmetReportPilotViewerToolbarInserted"];
+    }
 }
 
 - (IBAction) sekhmetScreenAreaChanged:(id) sender

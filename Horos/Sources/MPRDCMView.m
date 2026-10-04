@@ -39,6 +39,8 @@
 #import "options.h"
 
 #import "SekhmetSpine.h" // Sekhmet
+#import "SekhmetUeberlagerung.h" // SekhVet Paket CJ: Ueberlagern
+#import "SekhmetLupe.h" // SekhVet Paket CE
 #import "MPRDCMView.h"
 #import "VRController.h"
 #import "VRView.h"
@@ -266,6 +268,9 @@ unsigned int minimumStep;
 			[[views[ i] openGLContext] update];   // Zeichenflaeche des NSOpenGLView auf den neuen Rahmen bringen
 	[self sekhmetRenderVisibleViews];
 	for( int i = 0; i < 3; i++) [views[ i] setNeedsDisplay: YES];
+	// SekhVet Paket CS (review finding 4): a hanging protocol applied during the zoom could not set the collapsed
+	// views; now that all three have their size again, complete it (no-op unless one is pending).
+	if( windowController.sekhmetFrameZoomed == NO) [windowController sekhmetApplyPendingHangingProtocol];
 }
 
 - (void) checkForFrame
@@ -607,9 +612,13 @@ unsigned int minimumStep;
             [pix setOrientation: orientation];
             [pix setSliceThickness: [vrView getClippingRangeThicknessInMm]];
             [windowController sekhmetApplyConvolutionToPix: pix]; // Sekhmet: Faltung auf das Schnittbild
+            for( ROI *sekhmetR in curRoiList) [sekhmetR recompute]; // SekhVet Paket CO: neues Schnittbild (andere Overlay-Serie, Schichtdicke, Filter) -> Mittelwert/SD der Messungen verfallen
             
             // SekhVet Paket BF: Diagnose fuer "Bild tiefschwarz / alles weiss" — ein Schnittbild aus lauter gleichen Werten
             // ist nie ein echtes Bild. Einmal je Vorfall ins Protokoll (Konsole / log show, Prozess Horos).
+            // SekhVet Paket CS (review finding 11): "once per incident" was only the comment - the line was logged at
+            // every render, and scrolling past the edge of the volume flooded the log. Now once per view until a
+            // normal image has been rendered again.
             {
                 float *f = [pix fImage];
                 long n = (long) w * h;
@@ -619,8 +628,12 @@ unsigned int minimumStep;
                     float v0 = f[ 0];
                     for( int k = 1; k < 64 && uniform; k++)
                         if( f[ (n - 1) * k / 63] != v0) uniform = NO;
-                    if( uniform)
+                    if( uniform == NO) sekhmetUniformLogged = NO;
+                    else if( sekhmetUniformLogged == NO)
+                    {
+                        sekhmetUniformLogged = YES;
                         NSLog( @"SekhVet MPR: uniform slice image (value %.1f, %ldx%ld) in view %d, frame %.0fx%.0f, vrView %.0fx%.0f, WL/WW %.0f/%.0f, LOD %.2f, zoomed %d", v0, w, h, viewID, [self frame].size.width, [self frame].size.height, [vrView frame].size.width, [vrView frame].size.height, previousWL, previousWW, LOD, (int) windowController.sekhmetFrameZoomed);
+                    }
                 }
             }
             
@@ -1135,6 +1148,10 @@ unsigned int minimumStep;
     
     unichar c = [[theEvent characters] characterAtIndex:0];
     
+    // SekhVet Paket CE: solange eine Lupe steht, gehoeren ihr +/-, Pfeile — vor dem Fadenkreuz-Verschieben
+    if( [self sekhmetLupeTaste: c]) return;
+    if( [SekhmetUeberlagerung handleKeyEvent: theEvent inView: self]) return; // SekhVet Paket CJ: Stapel auch im MPR
+    
 	if( c ==  ' ' || c == 27) // 27 : escape
 	{
 		[windowController keyDown:theEvent];
@@ -1162,7 +1179,7 @@ unsigned int minimumStep;
             if( c == NSLeftArrowFunctionKey)
                 c = NSRightArrowFunctionKey;
             
-            if( c == NSRightArrowFunctionKey)
+            else if( c == NSRightArrowFunctionKey) // Sekhmet (DC): ohne else lief die zweite Abfrage gleich wieder zurueck, links und rechts gingen in dieselbe Richtung (nach ThalesMMS/horos 32cc286b)
                 c = NSLeftArrowFunctionKey;
         }
         
@@ -1171,7 +1188,7 @@ unsigned int minimumStep;
             if( c == NSUpArrowFunctionKey)
                 c = NSDownArrowFunctionKey;
             
-            if( c == NSDownArrowFunctionKey)
+            else if( c == NSDownArrowFunctionKey) // Sekhmet (DC): ohne else lief die zweite Abfrage gleich wieder zurueck, links und rechts gingen in dieselbe Richtung (nach ThalesMMS/horos 32cc286b)
                 c = NSUpArrowFunctionKey;
         }
         
@@ -1436,6 +1453,8 @@ static ROI *sekhmetLastAdded = nil;
 #pragma mark Mouse Events	
 
 // SekhVet: Fadenkreuz-Zonen einstellbar (Bildschirmpunkte); Horos: 10/10. Zu grosse Zonen lassen den Cursor staendig wechseln.
+// SekhVet Paket CS: the defaults are registered in DefaultsOsiriX.m (18 / 12) and the panel stores at least 3. The
+// lower bound only guards against a zero or negative value written by hand, which would make the crosshair ungrabbable.
 static float sekhmetCenterZone( void) { float v = [[NSUserDefaults standardUserDefaults] floatForKey: @"SekhmetMPRCenterZone"]; return v > 0 ? v : 18; }
 static float sekhmetLineZone( void)   { float v = [[NSUserDefaults standardUserDefaults] floatForKey: @"SekhmetMPRLineZone"];   return v > 0 ? v : 12; }
 #define BS sekhmetCenterZone()
@@ -1551,6 +1570,8 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 
 - (void)scrollWheel:(NSEvent *)theEvent
 {
+	if( [self sekhmetLupeRad: theEvent]) return; // SekhVet Paket CE: Rad bei sichtbarer Lupe = Lupenzoom
+	
 	[windowController addToUndoQueue:@"mprCamera"];
 	
 	if( [[self window] firstResponder] != self)
@@ -1575,6 +1596,9 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 {
 	[self flagsChanged: theEvent];
 
+	sekhmetRightDownPoint = [theEvent locationInWindow]; // SekhVet Paket CV
+	sekhmetRightDragged = NO;
+
 	[windowController addToUndoQueue:@"mprCamera"];
 	
 	if( [[self window] firstResponder] != self)
@@ -1595,6 +1619,12 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 - (void)rightMouseDragged:(NSEvent *)theEvent
 {
 	[self flagsChanged: theEvent];
+	
+	// SekhVet Paket CV: a few points of jitter are still a click
+	NSPoint sekhmetNow = [theEvent locationInWindow];
+	if( fabs( sekhmetNow.x - sekhmetRightDownPoint.x) > 3 || fabs( sekhmetNow.y - sekhmetRightDownPoint.y) > 3)
+		sekhmetRightDragged = YES;
+	if( sekhmetRightDragged == NO) return;
 	
 	[self restoreCamera];
 	
@@ -1636,6 +1666,15 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 	[self updateViewMPR];
 	
 	[self updateMousePosition: theEvent];
+	
+	// SekhVet Paket CV: right click without drag opens the tools menu at the pointer, as the 2D viewer does
+	// (DCMView rightMouseUp:). The choice sets the tool of the left mouse button for this MPR window.
+	if( sekhmetRightDragged == NO && sekhmetDetached == NO && [theEvent clickCount] == 1
+	   && ([theEvent modifierFlags] & (NSEventModifierFlagCommand | NSEventModifierFlagOption | NSEventModifierFlagControl | NSEventModifierFlagShift)) == 0)
+	{
+		NSMenu *sekhmetMenu = [windowController sekhmetToolsMenu];
+		if( sekhmetMenu) [NSMenu popUpContextMenu: sekhmetMenu withEvent: theEvent forView: self];
+	}
 }
 
 - (void) magicTrick	// Dont ask me to explain this function... it's just magic : rendering time is increased by 2 after this call...
@@ -1653,6 +1692,8 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 {
 	if( [[self window] firstResponder] != self)
 		[[self window] makeFirstResponder: self];
+	
+	sekhmetRotatePrev = [self convertPoint: [theEvent locationInWindow] fromView: nil]; // SekhVet Paket CY
 	
 	dontCheckRoiChange = YES;
 	
@@ -2014,9 +2055,20 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 			windowController.lowLOD = YES;
 			
 			if( [vrView _tool] == tRotate)
+			{
 				[self.pix orientation: before];
 			
-			[vrView mouseDragged: theEvent];
+				// SekhVet Paket CY: roll the camera ourselves. [vrView mouseDragged:] handed VTK's Spin the mouse in
+				// WINDOW coordinates while Spin pivots on the centre of the hidden render window, so the pivot sat
+				// somewhere else than the viewport centre and the angle gain was 1/r; the helper damps it near the centre.
+				NSPoint sekhmetCur = [self convertPoint: [theEvent locationInWindow] fromView: nil];
+				float sekhmetDelta = [DCMView sekhmetRotateDeltaFrom: sekhmetRotatePrev to: sekhmetCur viewSize: [self frame].size];
+				if( xFlipped != yFlipped) sekhmetDelta = -sekhmetDelta; // a single flip mirrors the sense of rotation on screen
+				[vrView Roll: sekhmetDelta];
+				sekhmetRotatePrev = sekhmetCur;
+			}
+			else
+				[vrView mouseDragged: theEvent];
 			
 			if( [vrView _tool] == tRotate)
 			{

@@ -537,7 +537,7 @@ static OFBool decompressFile(DcmFileFormat fileformat, const char *fname, char *
 		DCMObject *dcmObject = [[DCMObject alloc] initWithContentsOfFile: path decodingPixelData: NO];
 		
 		unlink( outfname);
-		[dcmObject writeToFile: outpath withTransferSyntax:[DCMTransferSyntax ImplicitVRLittleEndianTransferSyntax] quality:1 AET:@"Horos" atomically:YES];
+		[dcmObject writeToFile: outpath withTransferSyntax:[DCMTransferSyntax ImplicitVRLittleEndianTransferSyntax] quality:1 AET:@"SekhVet" atomically:YES];
 		[dcmObject release];
 	}
 	else
@@ -596,7 +596,7 @@ static OFBool compressFile(DcmFileFormat fileformat, const char *fname, char *ou
             {
                 DCMTransferSyntax *tsx = [DCMTransferSyntax JPEG2000LossyTransferSyntax];
                                         
-                [dcmObject writeToFile:outpath withTransferSyntax: tsx quality: opt_Quality AET:@"Horos" atomically:YES];
+                [dcmObject writeToFile:outpath withTransferSyntax: tsx quality: opt_Quality AET:@"SekhVet" atomically:YES];
             }
             @catch( NSException *e)
             {
@@ -617,7 +617,7 @@ static OFBool compressFile(DcmFileFormat fileformat, const char *fname, char *ou
             
             @try
             {
-                [dcmObject writeToFile:outpath withTransferSyntax:[DCMTransferSyntax JPEG2000LosslessTransferSyntax] quality: DCMLosslessQuality AET:@"Horos" atomically:YES];
+                [dcmObject writeToFile:outpath withTransferSyntax:[DCMTransferSyntax JPEG2000LosslessTransferSyntax] quality: DCMLosslessQuality AET:@"SekhVet" atomically:YES];
             }
             @catch( NSException *e)
             {

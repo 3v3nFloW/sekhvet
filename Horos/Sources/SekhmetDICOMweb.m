@@ -11,15 +11,50 @@
 #import "DicomSeries.h"
 #import "DicomImage.h"
 #import "DicomFile.h"
+#import "ThreadsManager.h"      // SekhVet Paket CH: Versand in der Aktivitaetsliste
+#import "NSThread+N2.h"
+#import "AppController.h"       // SekhVet Paket CH: Mitteilung am Ende
 #import "DCMObject.h"             // SekhVet Paket BQ: SeriesInstanceUID aus dem Dateikopf
 #import "PieChartImage.h"     // Paket AO: dieselbe Kugel wie Horos' Q/R-Fenster
 #import "ImageAndTextCell.h"  // Paket AO: Kugel links vom Namen
 #import <Security/Security.h>
+#include <arpa/inet.h>            // SekhVet Paket CS: inet_pton for the clear-text check
 
 NSString* const SekhmetDICOMwebNodesKey = @"SekhmetDICOMwebNodes";
 static NSString* const kService = @"SekhVet DICOMweb";
 static SekhmetDICOMweb *sekhmetDICOMweb = nil;
-static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der Schluesselbund verweigert (z.B. ssh-Sitzung)
+// Fallback, wenn der Schluesselbund verweigert (z.B. ssh-Sitzung).
+// SekhVet Paket CS: holds a password ONLY while the keychain refused to store it; after a successful
+// SecItemAdd nothing is kept in plain text for the life of the process.
+static NSMutableDictionary *sekhmetSessionPasswords = nil;
+// SekhVet Paket CS: node URLs for which the user accepted sending credentials over plain http to a public host
+static NSString* const SekhmetDICOMwebCleartextKey = @"SekhmetDICOMwebCleartextConsent";
+// SekhVet Paket CS: upper bound for one buffered WADO-RS instance (or a non-multipart body)
+static const NSUInteger SekhmetWadoMaxBufferBytes = 2048UL * 1024UL * 1024UL;
+static const int SekhmetQidoStudyLimit = 300;                     // Sekhmet (DD)
+static const NSUInteger SekhmetStowBatchFiles = 50;                 // Sekhmet (DD): STOW-RS in Portionen
+static const unsigned long long SekhmetStowBatchBytes = 64ULL * 1024 * 1024;
+// SekhVet Paket DN: automatic refresh, institution filters (kept over a restart)
+static NSString* const SekhmetDICOMwebAutoMinutesKey = @"SekhmetDICOMwebAutoMinutes";            // 0 = off
+static NSString* const SekhmetDICOMwebAutoRetrieveKey = @"SekhmetDICOMwebAutoRetrieve";
+static NSString* const SekhmetDICOMwebInstitutionFilterKey = @"SekhmetDICOMwebInstitutionFilter"; // missing = on
+static NSString* const SekhmetDICOMwebInstitutionTextKey = @"SekhmetDICOMwebInstitutionText";
+static NSString* const SekhmetDICOMwebSelectedNodeKey = @"SekhmetDICOMwebSelectedNode";          // account "url|user"
+
+// SekhVet Paket CS: everything a server sends is untrusted -- nil instead of an object of the wrong class
+static id sekhmetTyped( id obj, Class cls)
+{
+    return [obj isKindOfClass: cls] ? obj : nil;
+}
+
+// SekhVet Paket CS: a UID from the server goes into a URL path -- escape everything that could leave its segment
+static NSString* sekhmetPathEscape( NSString *s)
+{
+    NSMutableCharacterSet *allowed = [[[NSCharacterSet URLPathAllowedCharacterSet] mutableCopy] autorelease];
+    [allowed removeCharactersInString: @"/;?#%"];
+    NSString *e = [s stringByAddingPercentEncodingWithAllowedCharacters: allowed];
+    return e ? e : @"";
+}
 
 @interface SekhmetDICOMweb ()
 - (void) buildUI;
@@ -38,7 +73,16 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 - (NSString*) localTextForSeries:(NSDictionary*) s inStudy:(NSDictionary*) r;       // Paket AM
 - (void) loadSeriesForStudy:(NSMutableDictionary*) study;                           // Paket AM
 - (NSArray*) missingSeriesJobsForStudy:(NSDictionary*) study;                      // Paket BS
-- (void) retrieveMissingAfterLoad:(NSDictionary*) study;                            // Paket BS
+- (void) retrieveMissingAfterLoad:(NSDictionary*) study node:(NSDictionary*) node;  // Paket BS; SekhVet Paket CS: bound to the node
+- (BOOL) mayUseNode:(NSDictionary*) node;                                           // SekhVet Paket CS
+- (void) dropResultsIfNodeChanged;                                                  // SekhVet Paket CS
+- (int) enqueueJobs:(NSArray*) jobs node:(NSDictionary*) node;                      // SekhVet Paket CS
+- (void) seriesLoadFailedForStudy:(NSDictionary*) study status:(NSString*) status;  // SekhVet Paket CS
+- (void) sendPaths:(NSArray*) paths toNode:(NSDictionary*) node studies:(NSUInteger) studies fromWindow:(BOOL) fromWindow; // SekhVet Paket CS
+- (IBAction) nodeChanged:(id) sender;                                               // SekhVet Paket CS
+- (IBAction) stopRetrieve:(id) sender;                                              // SekhVet Paket CS
++ (NSString*) accountForNode:(NSDictionary*) node;
++ (NSDictionary*) localStatusForStudies:(NSArray*) studies;                         // SekhVet Paket CS
 - (void) sortResults;                                                              // Paket BU
 - (void) retrieveFailed:(NSString*) message;                                        // Paket BU
 #if SEKHVET_TESTHAKEN
@@ -52,7 +96,14 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 - (void) annotateSeries:(NSMutableDictionary*) s inStudy:(NSDictionary*) r;       // Paket AO
 - (float) legendIn:(NSView*) cv x:(float) x y:(float) y percentage:(float) p text:(NSString*) t; // Paket AO
 - (int) drainMultipartFinal:(BOOL) final;
-- (void) stowFinishedWithData:(NSData*) data response:(NSURLResponse*) response error:(NSError*) error;
+- (void) searchAutomatically:(BOOL) automatic;                                     // SekhVet Paket DN
++ (NSArray*) institutionListForNode:(NSDictionary*) node;                         // SekhVet Paket DN
++ (NSArray*) institutionPatterns:(NSString*) text;                                // SekhVet Paket DN
++ (BOOL) institution:(NSString*) name matchesAny:(NSArray*) patterns;             // SekhVet Paket DN
+- (void) updateInstitutionFilterButton;                                           // SekhVet Paket DN
+- (void) restoreAutoSettings;                                                     // SekhVet Paket DN
+- (void) setupAutoTimer:(BOOL) refreshSoon;                                       // SekhVet Paket DN
+- (void) autoRetrieveNew;                                                         // SekhVet Paket DN
 @end
 
 @implementation SekhmetDICOMweb
@@ -64,21 +115,14 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     return sekhmetDICOMweb;
 }
 
-+ (NSArray*) defaultNodes
++ (void) registerDefaults:(NSMutableDictionary*) defaultValues
 {
     // Keine vorbelegten Knoten: der Quelltext ist LGPL und wird veroeffentlicht,
     // Adressen und Benutzer der eigenen Infrastruktur gehoeren nicht hinein
     // (Review 12.09.2026). Knoten legt man im DICOMweb-Fenster mit "+" an.
-    // Installationen, die je einen Knoten bearbeitet haben (saveNodes), behalten
-    // ihre Liste in den Prefs; wer nur die alten Vorgaben nutzte, legt die
-    // Knoten einmal neu an -- gleicher URL + Benutzer findet das Passwort im
-    // Schluesselbund wieder (accountForNode = url|user).
-    return [NSArray array];
-}
-
-+ (void) registerDefaults:(NSMutableDictionary*) defaultValues
-{
-    [defaultValues setObject: [self defaultNodes] forKey: SekhmetDICOMwebNodesKey];
+    // SekhVet Paket CS: +defaultNodes removed (it only returned an empty array). This method stays:
+    // DefaultsOsiriX.m calls it by name.
+    [defaultValues setObject: [NSArray array] forKey: SekhmetDICOMwebNodesKey];
 }
 
 - (IBAction) showWindow:(id) sender
@@ -116,23 +160,46 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     return pw;
 }
 
-+ (void) setPassword:(NSString*) pw forNode:(NSDictionary*) node
+// SekhVet Paket CS: returns whether the keychain really holds the password now (pw empty: whether the item is gone).
+// On failure the password is kept for this session only, and the caller tells the user so.
++ (BOOL) setPassword:(NSString*) pw forNode:(NSDictionary*) node
 {
-    if( node == nil) return;
-    if( sekhmetSessionPasswords == nil) sekhmetSessionPasswords = [[NSMutableDictionary alloc] init];
-    if( pw.length) [sekhmetSessionPasswords setObject: pw forKey: [self accountForNode: node]];
-    else [sekhmetSessionPasswords removeObjectForKey: [self accountForNode: node]];
+    if( node == nil) return NO;
+    NSString *account = [self accountForNode: node];
+    [sekhmetSessionPasswords removeObjectForKey: account];
     NSDictionary *q = [NSDictionary dictionaryWithObjectsAndKeys:
                        (id) kSecClassGenericPassword, (id) kSecClass,
                        kService, (id) kSecAttrService,
-                       [self accountForNode: node], (id) kSecAttrAccount, nil];
-    SecItemDelete( (CFDictionaryRef) q);
-    if( pw.length == 0) return;
+                       account, (id) kSecAttrAccount, nil];
+    OSStatus del = SecItemDelete( (CFDictionaryRef) q);
+    if( pw.length == 0) return del == errSecSuccess || del == errSecItemNotFound;
+    NSData *secret = [pw dataUsingEncoding: NSUTF8StringEncoding];
     NSMutableDictionary *a = [NSMutableDictionary dictionaryWithDictionary: q];
-    [a setObject: [pw dataUsingEncoding: NSUTF8StringEncoding] forKey: (id) kSecValueData];
-    [a setObject: @"SekhVet DICOMweb Passwort" forKey: (id) kSecAttrLabel];
+    [a setObject: secret forKey: (id) kSecValueData];
+    [a setObject: @"SekhVet DICOMweb password" forKey: (id) kSecAttrLabel];
     OSStatus st = SecItemAdd( (CFDictionaryRef) a, NULL);
-    if( st != errSecSuccess) NSLog( @"SekhVet DICOMweb: keychain error %d", (int) st);
+    if( st == errSecDuplicateItem)   // the old item could not be deleted (created by another build): overwrite it
+        st = SecItemUpdate( (CFDictionaryRef) q, (CFDictionaryRef) [NSDictionary dictionaryWithObject: secret forKey: (id) kSecValueData]);
+    if( st == errSecSuccess) return YES;
+    NSLog( @"SekhVet DICOMweb: keychain error %d", (int) st);
+    if( sekhmetSessionPasswords == nil) sekhmetSessionPasswords = [[NSMutableDictionary alloc] init];
+    [sekhmetSessionPasswords setObject: pw forKey: account];
+    return NO;
+}
+
+// SekhVet Paket CS: a node was removed or its URL / user changed -- its keychain item (account = url|user)
+// would stay behind for ever. Not deleted while another node in the list still uses the same account.
++ (BOOL) forgetAccount:(NSString*) account unlessUsedBy:(NSArray*) nodeList
+{
+    if( account.length == 0) return NO;
+    for( NSDictionary *n in nodeList)
+        if( [[self accountForNode: n] isEqualToString: account]) return NO;
+    [sekhmetSessionPasswords removeObjectForKey: account];
+    NSDictionary *q = [NSDictionary dictionaryWithObjectsAndKeys:
+                       (id) kSecClassGenericPassword, (id) kSecClass,
+                       kService, (id) kSecAttrService,
+                       account, (id) kSecAttrAccount, nil];
+    return SecItemDelete( (CFDictionaryRef) q) == errSecSuccess;
 }
 
 #pragma mark - Init / UI
@@ -151,8 +218,14 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     {
         results = [[NSMutableArray alloc] init];
         nodes = [[NSMutableArray alloc] init];
+        // SekhVet Paket CS: the retrieve queue lives in memory and every job carries its node. It used to be a
+        // user default, so jobs left over from an earlier session or a crash were merged into the next retrieve.
+        retrieveQueue = [[NSMutableArray alloc] init];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey: @"SekhmetDICOMwebRetrieveQueue"];
+        autoRetrieved = [[NSMutableDictionary alloc] init];   // SekhVet Paket DN
         [self buildUI];
         [self loadNodes];
+        [self restoreAutoSettings];                            // SekhVet Paket DN: node, filters, automatic refresh
         [w center];
     }
     return self;
@@ -160,10 +233,14 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
 - (void) dealloc
 {
-    [session invalidateAndCancel]; [session release]; [retrieveTask release]; [stowTask release]; [stowTempPath release]; [retrieveStamp release];
+    [session invalidateAndCancel]; [session release]; [retrieveTask release]; [retrieveStamp release];
     [retrieveJob release]; [lastRetrieveError release];   // Paket BU
     [receivedData release]; [retrieveBoundary release]; [retrieveStudyUID release];
+    [retrieveQueue release]; [retrieveNode release]; [resultsNode release]; [quietTried release];   // SekhVet Paket CS
+    [retrieveAfterLoad release]; [quietLoads release];                                              // SekhVet Paket CS: were never released
     [results release]; [nodes release];
+    [autoTimer invalidate]; [autoTimer release]; [autoRetrieved release];                           // SekhVet Paket DN
+    [pickerWindow release]; [pickerItems release]; [pickerCounts release]; [pickerNode release];    // SekhVet Paket DN-2
     [super dealloc];
 }
 
@@ -196,7 +273,8 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 - (NSTableColumn*) column:(NSString*) ident width:(float) w editable:(BOOL) e
 {
     NSTableColumn *c = [[[NSTableColumn alloc] initWithIdentifier: ident] autorelease];
-    [[c headerCell] setStringValue: ident]; [c setWidth: w]; [c setEditable: e];
+    // SekhVet Paket CS: the identifier stays the (English) key, the header shows its localisation
+    [[c headerCell] setStringValue: NSLocalizedString( ident, nil)]; [c setWidth: w]; [c setEditable: e];
     return c;
 }
 
@@ -209,6 +287,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     [cv addSubview: [self label: NSLocalizedString( @"Node:", nil) frame: NSMakeRect( 20, y + 2, 60, 20)]];
     nodePopup = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 80, y - 2, 260, 26) pullsDown: NO] autorelease];
     [nodePopup setAutoresizingMask: NSViewMinYMargin];
+    [nodePopup setTarget: self]; [nodePopup setAction: @selector(nodeChanged:)];   // SekhVet Paket CS: results belong to one node
     [cv addSubview: nodePopup];
     stowButton = [self button: NSLocalizedString( @"Send selected studies (STOW-RS)", nil) frame: NSMakeRect( 560, y - 4, 240, 30) action: @selector(stow:)];
     [cv addSubview: stowButton];
@@ -216,18 +295,22 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     y -= 34;
     nameField = [self field: NSMakeRect( 20, y, 180, 22) placeholder: NSLocalizedString( @"Name (partial)", nil)];
     idField = [self field: NSMakeRect( 210, y, 120, 22) placeholder: NSLocalizedString( @"Patient ID", nil)];
-    dateFromField = [self field: NSMakeRect( 340, y, 100, 22) placeholder: @"von JJJJMMTT"];
-    dateToField = [self field: NSMakeRect( 450, y, 100, 22) placeholder: @"bis JJJJMMTT"];
+    dateFromField = [self field: NSMakeRect( 340, y, 100, 22) placeholder: NSLocalizedString( @"from YYYYMMDD", nil)];
+    dateToField = [self field: NSMakeRect( 450, y, 100, 22) placeholder: NSLocalizedString( @"to YYYYMMDD", nil)];
     modalityField = [self field: NSMakeRect( 560, y, 70, 22) placeholder: @"CT/MR/DX"];
-    searchButton = [self button: NSLocalizedString( @"Search", nil) frame: NSMakeRect( 640, y - 4, 100, 30) action: @selector(search:)];
-    [cv addSubview: nameField]; [cv addSubview: idField]; [cv addSubview: dateFromField]; [cv addSubview: dateToField]; [cv addSubview: modalityField]; [cv addSubview: searchButton];
+    // SekhVet Paket DN: institution (part of the name; several separated by ";"). Filtered here, not sent to the node --
+    // QIDO-RS servers differ in whether they match InstitutionName at all, and case-sensitively.
+    institutionField = [self field: NSMakeRect( 640, y, 170, 22) placeholder: NSLocalizedString( @"Institution (partial; a; b)", nil)];
+    [institutionField setToolTip: NSLocalizedString( @"Show only studies whose institution name contains this text (upper/lower case and accents do not matter). Several names: separate them with \";\". The node is asked as usual; the filter is applied to its answer.", nil)];
+    searchButton = [self button: NSLocalizedString( @"Search", nil) frame: NSMakeRect( 820, y - 4, 100, 30) action: @selector(search:)];
+    [cv addSubview: nameField]; [cv addSubview: idField]; [cv addSubview: dateFromField]; [cv addSubview: dateToField]; [cv addSubview: modalityField]; [cv addSubview: institutionField]; [cv addSubview: searchButton];
 
     // Paket R: Zeitraum ohne Datumseingabe -> fuellt von/bis und sucht sofort
     y -= 30;
     [cv addSubview: [self label: NSLocalizedString( @"Period:", nil) frame: NSMakeRect( 20, y + 2, 70, 20)]];
     periodPopup = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 90, y - 2, 170, 26) pullsDown: NO] autorelease];
     [periodPopup addItemsWithTitles: [NSArray arrayWithObjects: NSLocalizedString( @"Any date", nil), NSLocalizedString( @"Today", nil), NSLocalizedString( @"Yesterday", nil),
-                                      NSLocalizedString( @"Last 3 days", nil), NSLocalizedString( @"Last 4 days", nil), NSLocalizedString( @"Last week", nil), NSLocalizedString( @"Last month", nil), nil]];
+                                      NSLocalizedString( @"Last 2 days", nil), /* Paket CL */ NSLocalizedString( @"Last 3 days", nil), NSLocalizedString( @"Last 4 days", nil), NSLocalizedString( @"Last week", nil), NSLocalizedString( @"Last month", nil), nil]];
     [periodPopup setAutoresizingMask: NSViewMinYMargin];
     [periodPopup setTarget: self]; [periodPopup setAction: @selector(periodChanged:)];
     [cv addSubview: periodPopup];
@@ -239,6 +322,43 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     lx = [self legendIn: cv x: lx y: y percentage: 1.0 text: NSLocalizedString( @"here", nil)];
     lx = [self legendIn: cv x: lx y: y percentage: 0.4 text: NSLocalizedString( @"partly here", nil)];
     [self legendIn: cv x: lx y: y percentage: 0.0 text: NSLocalizedString( @"not here", nil)];
+
+    // SekhVet Paket DN: automatic refresh (like OsiriX' auto query/retrieve) and the institution list of the node
+    y -= 30;
+    NSTextField *autoLabel = [self label: NSLocalizedString( @"Auto-refresh:", nil) frame: NSMakeRect( 20, y + 2, 90, 20)];
+    [autoLabel setAutoresizingMask: NSViewMinYMargin];
+    [cv addSubview: autoLabel];
+    autoPopup = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 110, y - 2, 150, 26) pullsDown: NO] autorelease];
+    [autoPopup addItemWithTitle: NSLocalizedString( @"Off", nil)];
+    [[autoPopup lastItem] setTag: 0];
+    for( NSNumber *m in [NSArray arrayWithObjects: @1, @3, @5, @10, @15, @30, nil])
+    {
+        [autoPopup addItemWithTitle: [NSString stringWithFormat: NSLocalizedString( @"Every %d min.", nil), [m intValue]]];
+        [[autoPopup lastItem] setTag: [m intValue]];
+    }
+    [autoPopup setAutoresizingMask: NSViewMinYMargin];
+    [autoPopup setTarget: self]; [autoPopup setAction: @selector(autoChanged:)];
+    [autoPopup setToolTip: NSLocalizedString( @"Repeat the search with the current fields every few minutes — also while this window is closed. Kept after a restart.", nil)];
+    [cv addSubview: autoPopup];
+    autoRetrieveButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 275, y + 1, 280, 18)] autorelease];
+    [autoRetrieveButton setButtonType: NSButtonTypeSwitch];
+    [autoRetrieveButton setTitle: NSLocalizedString( @"Retrieve new studies automatically", nil)];
+    [autoRetrieveButton setFont: [NSFont systemFontOfSize: 12]];
+    [autoRetrieveButton setAutoresizingMask: NSViewMinYMargin];
+    [autoRetrieveButton setTarget: self]; [autoRetrieveButton setAction: @selector(autoChanged:)];
+    [autoRetrieveButton setToolTip: NSLocalizedString( @"After every automatic refresh, studies of the list that are not (completely) here are retrieved by WADO-RS. Needs a period (e.g. Today). Only the studies the filters show.", nil)];
+    [cv addSubview: autoRetrieveButton];
+    // SekhVet Paket DN-2: the list is chosen from the institutions the node really has
+    chooseInstitutionsButton = [self button: NSLocalizedString( @"Choose…", nil) frame: NSMakeRect( 860, y - 5, 100, 30) action: @selector(chooseInstitutions:)];
+    [chooseInstitutionsButton setToolTip: NSLocalizedString( @"Read all institutions of this node and tick the ones to show", nil)];
+    [cv addSubview: chooseInstitutionsButton];
+    institutionFilterButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 560, y + 1, 295, 18)] autorelease];
+    [institutionFilterButton setButtonType: NSButtonTypeSwitch];
+    [institutionFilterButton setFont: [NSFont systemFontOfSize: 12]];
+    [institutionFilterButton setAutoresizingMask: NSViewMinYMargin];
+    [institutionFilterButton setTarget: self]; [institutionFilterButton setAction: @selector(institutionFilterChanged:)];
+    [institutionFilterButton setToolTip: NSLocalizedString( @"Show only studies of the referring institutions listed for this node (column \"Institutions filter\" in the node list below, separated by \";\").", nil)];
+    [cv addSubview: institutionFilterButton];
 
     // Ergebnisse
     float tableTop = y - 12, tableBottom = 250;
@@ -289,7 +409,12 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     retrieveButton = [self button: NSLocalizedString( @"Retrieve (WADO-RS)", nil) frame: NSMakeRect( 20, y - 2, 180, 30) action: @selector(retrieve:)];
     [retrieveButton setAutoresizingMask: NSViewMaxYMargin];
     [cv addSubview: retrieveButton];
-    progress = [[[NSProgressIndicator alloc] initWithFrame: NSMakeRect( 210, y + 6, 200, 16)] autorelease];
+    // SekhVet Paket CS: a running retrieve (and everything still queued) can be stopped
+    stopButton = [self button: NSLocalizedString( @"Stop", nil) frame: NSMakeRect( 204, y - 2, 70, 30) action: @selector(stopRetrieve:)];
+    [stopButton setAutoresizingMask: NSViewMaxYMargin];
+    [stopButton setEnabled: NO];
+    [cv addSubview: stopButton];
+    progress = [[[NSProgressIndicator alloc] initWithFrame: NSMakeRect( 282, y + 6, 128, 16)] autorelease];
     [progress setStyle: NSProgressIndicatorStyleBar]; [progress setIndeterminate: YES]; [progress setHidden: YES];
     [progress setAutoresizingMask: NSViewMaxYMargin];
     [cv addSubview: progress];
@@ -302,28 +427,32 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     NSTextField *l = [self label: NSLocalizedString( @"Nodes (URL up to /dicom-web, password in keychain):", nil) frame: NSMakeRect( 20, y, 500, 20)];
     [l setAutoresizingMask: NSViewMaxYMargin]; [cv addSubview: l];
     y -= 130;
-    NSScrollView *nsv = [[[NSScrollView alloc] initWithFrame: NSMakeRect( 20, y, 560, 124)] autorelease];
+    // SekhVet Paket DN: one column more -- the referring institutions shown for this node; table wider, buttons to the right
+    NSScrollView *nsv = [[[NSScrollView alloc] initWithFrame: NSMakeRect( 20, y, 760, 124)] autorelease];
     [nsv setAutoresizingMask: NSViewMaxYMargin];
-    nodeTable = [[[NSTableView alloc] initWithFrame: NSMakeRect( 0, 0, 560, 124)] autorelease];
+    nodeTable = [[[NSTableView alloc] initWithFrame: NSMakeRect( 0, 0, 760, 124)] autorelease];
     [nodeTable setIdentifier: @"nodes"];
-    [nodeTable addTableColumn: [self column: @"Node" width: 150 editable: YES]];
-    [nodeTable addTableColumn: [self column: @"URL" width: 300 editable: YES]];
-    [nodeTable addTableColumn: [self column: @"User" width: 90 editable: YES]];
-    [nodeTable setDataSource: self]; [nodeTable setDelegate: self];
+    [nodeTable addTableColumn: [self column: @"Node" width: 130 editable: YES]];
+    [nodeTable addTableColumn: [self column: @"URL" width: 260 editable: YES]];
+    [nodeTable addTableColumn: [self column: @"User" width: 80 editable: YES]];
+    NSTableColumn *instCol = [self column: @"Institutions filter" width: 270 editable: YES];
+    [[instCol headerCell] setStringValue: NSLocalizedString( @"Institutions filter (a; b; …)", nil)];
+    [nodeTable addTableColumn: instCol];
+    [nodeTable setDataSource: self];   // SekhVet Paket CS: no delegate -- no table delegate method is implemented
     [nodeTable setUsesAlternatingRowBackgroundColors: YES];
     [nsv setDocumentView: nodeTable]; [nsv setHasVerticalScroller: YES]; [nsv setBorderType: NSBezelBorder];
     [cv addSubview: nsv];
 
-    NSButton *plus = [self button: @"+" frame: NSMakeRect( 590, y + 96, 40, 26) action: @selector(addNode:)];
-    NSButton *minus = [self button: @"−" frame: NSMakeRect( 635, y + 96, 40, 26) action: @selector(removeNode:)];
+    NSButton *plus = [self button: @"+" frame: NSMakeRect( 790, y + 96, 40, 26) action: @selector(addNode:)];
+    NSButton *minus = [self button: @"−" frame: NSMakeRect( 835, y + 96, 40, 26) action: @selector(removeNode:)];
     [plus setAutoresizingMask: NSViewMaxYMargin]; [minus setAutoresizingMask: NSViewMaxYMargin];
     [cv addSubview: plus]; [cv addSubview: minus];
 
-    passwordField = [[[NSSecureTextField alloc] initWithFrame: NSMakeRect( 590, y + 50, 200, 22)] autorelease];
+    passwordField = [[[NSSecureTextField alloc] initWithFrame: NSMakeRect( 790, y + 50, 170, 22)] autorelease];
     [passwordField setPlaceholderString: NSLocalizedString( @"Password of the selected node", nil)];
     [passwordField setAutoresizingMask: NSViewMaxYMargin];
     [cv addSubview: passwordField];
-    NSButton *save = [self button: NSLocalizedString( @"Save password", nil) frame: NSMakeRect( 590, y + 14, 200, 30) action: @selector(savePassword:)];
+    NSButton *save = [self button: NSLocalizedString( @"Save password", nil) frame: NSMakeRect( 790, y + 14, 170, 30) action: @selector(savePassword:)];
     [save setAutoresizingMask: NSViewMaxYMargin];
     [cv addSubview: save];
 }
@@ -340,6 +469,247 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     [nodePopup removeAllItems];
     for( NSDictionary *n in nodes) [nodePopup addItemWithTitle: [n objectForKey: @"name"]];
     if( sel >= 0 && sel < (NSInteger) nodes.count) [nodePopup selectItemAtIndex: sel];
+    [self dropResultsIfNodeChanged];   // SekhVet Paket CS: the same index may now be another node
+    [self updateInstitutionFilterButton];   // SekhVet Paket DN: the list may have been edited
+}
+
+// SekhVet Paket DN: the node's list of referring institutions -- "institutions" in the node, separated by ";"
++ (NSArray*) institutionListForNode:(NSDictionary*) node
+{
+    return [self institutionPatterns: sekhmetTyped( [node objectForKey: @"institutions"], [NSString class])];
+}
+
++ (NSArray*) institutionPatterns:(NSString*) text
+{
+    NSMutableArray *a = [NSMutableArray array];
+    for( NSString *p in [text ?: @"" componentsSeparatedByCharactersInSet: [NSCharacterSet characterSetWithCharactersInString: @";\n"]])
+    {
+        NSString *t = [p stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if( t.length) [a addObject: t];
+    }
+    return a;
+}
+
+// contains, ignoring upper/lower case and accents ("tierklinik zurich" finds "Tierklinik Zürich AG").
+// SekhVet Paket DN-2: the entry "(none)" stands for studies without an institution name.
+static NSString* const SekhmetNoInstitution = @"(none)";
+
++ (BOOL) institution:(NSString*) name matchesAny:(NSArray*) patterns
+{
+    NSString *n = [name ?: @"" stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+    for( NSString *p in patterns)
+    {
+        if( [p caseInsensitiveCompare: SekhmetNoInstitution] == NSOrderedSame) { if( n.length == 0) return YES; continue; }
+        if( [n rangeOfString: p options: NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
+#pragma mark - Institutionen waehlen (SekhVet Paket DN-2)
+
+// Wunsch 04.10.2026: die Liste nicht abtippen, sondern aus dem fuellen, was der Knoten wirklich hat, und
+// ankreuzen, was angezeigt werden soll. Gelesen wird seitenweise nur das Feld InstitutionName aller Studien.
+static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoechstens 20 000 Studien
+
+- (void) buildPicker
+{
+    pickerWindow = [[NSWindow alloc] initWithContentRect: NSMakeRect( 0, 0, 520, 460) styleMask: NSWindowStyleMaskTitled backing: NSBackingStoreBuffered defer: YES];
+    [pickerWindow setReleasedWhenClosed: NO];
+    NSView *cv = [pickerWindow contentView];
+    NSTextField *t = [self label: NSLocalizedString( @"Show the studies of these institutions (ticked):", nil) frame: NSMakeRect( 20, 424, 480, 20)];
+    [t setFont: [NSFont boldSystemFontOfSize: 12]];
+    [cv addSubview: t];
+    NSScrollView *sv = [[[NSScrollView alloc] initWithFrame: NSMakeRect( 20, 90, 480, 326)] autorelease];
+    pickerTable = [[[NSTableView alloc] initWithFrame: NSMakeRect( 0, 0, 480, 326)] autorelease];
+    [pickerTable setIdentifier: @"institutions"];
+    NSTableColumn *on = [[[NSTableColumn alloc] initWithIdentifier: @"on"] autorelease];
+    [[on headerCell] setStringValue: @""]; [on setWidth: 24];
+    NSButtonCell *box = [[[NSButtonCell alloc] init] autorelease];
+    [box setButtonType: NSButtonTypeSwitch]; [box setTitle: @""];
+    [on setDataCell: box];
+    [pickerTable addTableColumn: on];
+    NSTableColumn *nameCol = [[[NSTableColumn alloc] initWithIdentifier: @"name"] autorelease];
+    [[nameCol headerCell] setStringValue: NSLocalizedString( @"Institution", nil)]; [nameCol setWidth: 360]; [nameCol setEditable: NO];
+    [pickerTable addTableColumn: nameCol];
+    NSTableColumn *countCol = [[[NSTableColumn alloc] initWithIdentifier: @"count"] autorelease];
+    [[countCol headerCell] setStringValue: NSLocalizedString( @"Studies", nil)]; [countCol setWidth: 70]; [countCol setEditable: NO];
+    [pickerTable addTableColumn: countCol];
+    [pickerTable setDataSource: self];
+    [pickerTable setUsesAlternatingRowBackgroundColors: YES];
+    [sv setDocumentView: pickerTable]; [sv setHasVerticalScroller: YES]; [sv setBorderType: NSBezelBorder];
+    [cv addSubview: sv];
+    pickerStatus = [self label: @"" frame: NSMakeRect( 20, 62, 480, 20)];
+    [cv addSubview: pickerStatus];
+    for( NSView *v in @[ [self button: NSLocalizedString( @"All", nil) frame: NSMakeRect( 20, 16, 70, 30) action: @selector(pickerAll:)],
+                          [self button: NSLocalizedString( @"None", nil) frame: NSMakeRect( 94, 16, 70, 30) action: @selector(pickerNone:)],
+                          [self button: NSLocalizedString( @"Cancel", nil) frame: NSMakeRect( 300, 16, 96, 30) action: @selector(pickerCancel:)]])
+    {
+        [(NSButton*) v setAutoresizingMask: NSViewNotSizable];
+        [cv addSubview: v];
+    }
+    pickerSaveButton = [self button: NSLocalizedString( @"Save", nil) frame: NSMakeRect( 404, 16, 96, 30) action: @selector(pickerSave:)];
+    [pickerSaveButton setAutoresizingMask: NSViewNotSizable];
+    [pickerSaveButton setKeyEquivalent: @"\r"];
+    [cv addSubview: pickerSaveButton];
+}
+
+- (IBAction) chooseInstitutions:(id) sender
+{
+    NSDictionary *node = [[[self currentNode] copy] autorelease];
+    if( node == nil) { [self setStatus: NSLocalizedString( @"No node", nil)]; return; }
+    if( [self mayUseNode: node] == NO) return;
+    if( pickerWindow == nil) [self buildPicker];
+    if( pickerItems == nil) pickerItems = [[NSMutableArray alloc] init];
+    [pickerItems removeAllObjects];
+    [pickerCounts release]; pickerCounts = [[NSMutableDictionary alloc] init];
+    [pickerNode release]; pickerNode = [node retain];
+    pickerGeneration++;
+    [pickerTable reloadData];
+    [pickerSaveButton setEnabled: NO];
+    [pickerStatus setStringValue: NSLocalizedString( @"Reading the institutions of the node…", nil)];
+    [pickerWindow setTitle: [NSString stringWithFormat: NSLocalizedString( @"Institutions of %@", nil), [node objectForKey: @"name"] ?: @""]];
+    [[self window] beginSheet: pickerWindow completionHandler: nil];
+    [self readInstitutionsPage: 0 generation: pickerGeneration];
+}
+
+- (void) readInstitutionsPage:(int) page generation:(int) generation
+{
+    NSString *url = [NSString stringWithFormat: @"%@/studies?includefield=00080080&limit=%d&offset=%d", [pickerNode objectForKey: @"url"], SekhmetPickerPage, page * SekhmetPickerPage];
+    NSMutableURLRequest *req = [self requestForURL: url accept: @"application/dicom+json" node: pickerNode];
+    NSURLSessionDataTask *task = [[self session] dataTaskWithRequest: req completionHandler: ^(NSData *data, NSURLResponse *response, NSError *error) {
+        if( generation != pickerGeneration) return;   // sheet closed or opened again meanwhile
+        @try
+        {
+            NSInteger code = [response isKindOfClass: [NSHTTPURLResponse class]] ? [(NSHTTPURLResponse*) response statusCode] : 0;
+            id json = (code == 200 && data.length) ? [NSJSONSerialization JSONObjectWithData: data options: 0 error: NULL] : (code == 204 ? [NSArray array] : nil);
+            if( error || [json isKindOfClass: [NSArray class]] == NO)
+            {
+                [pickerStatus setStringValue: error ? [NSString stringWithFormat: NSLocalizedString( @"Error: %@", nil), error.localizedDescription]
+                                                    : (code == 401 ? NSLocalizedString( @"401: user/password rejected", nil) : [NSString stringWithFormat: @"HTTP %d", (int) code])];
+                if( page > 0) [self finishInstitutionPicker: YES];
+                return;
+            }
+            for( NSDictionary *item in json)
+            {
+                if( [item isKindOfClass: [NSDictionary class]] == NO) continue;
+                NSString *name = [[self value: item tag: @"00080080"] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if( name.length == 0) name = SekhmetNoInstitution;
+                [pickerCounts setObject: [NSNumber numberWithInt: [[pickerCounts objectForKey: name] intValue] + 1] forKey: name];
+            }
+            int studies = 0;
+            for( NSNumber *c in [pickerCounts allValues]) studies += [c intValue];
+            [pickerStatus setStringValue: [NSString stringWithFormat: NSLocalizedString( @"Reading… %d studies, %d institutions", nil), studies, (int) pickerCounts.count]];
+            if( [json count] >= (NSUInteger) SekhmetPickerPage && page + 1 < SekhmetPickerMaxPages) [self readInstitutionsPage: page + 1 generation: generation];
+            else [self finishInstitutionPicker: [json count] >= (NSUInteger) SekhmetPickerPage];
+        }
+        @catch (NSException *e)
+        {
+            NSLog( @"SekhVet DICOMweb: institution list raised %@", e.name);
+            [pickerStatus setStringValue: NSLocalizedString( @"Error: the answer of the node could not be read", nil)];
+        }
+    }];
+    [task resume];
+}
+
+// Ticked = matches the list stored with the node. Entries of that list the node no longer has stay (ticked, 0 studies).
+- (void) finishInstitutionPicker:(BOOL) truncated
+{
+    NSArray *stored = [SekhmetDICOMweb institutionListForNode: pickerNode];
+    NSMutableSet *covered = [NSMutableSet set];
+    [pickerItems removeAllObjects];
+    int studies = 0;
+    for( NSString *name in pickerCounts)
+    {
+        BOOL on = [name isEqualToString: SekhmetNoInstitution] ? [SekhmetDICOMweb institution: @"" matchesAny: stored] : [SekhmetDICOMweb institution: name matchesAny: stored];
+        for( NSString *p in stored)
+            if( [name rangeOfString: p options: NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch].location != NSNotFound) [covered addObject: p];
+        studies += [[pickerCounts objectForKey: name] intValue];
+        [pickerItems addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys: name, @"name", [pickerCounts objectForKey: name], @"count", [NSNumber numberWithBool: on], @"on", nil]];
+    }
+    for( NSString *p in stored)
+        if( [covered containsObject: p] == NO && [pickerCounts objectForKey: p] == nil)
+            [pickerItems addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys: p, @"name", @0, @"count", @YES, @"on", nil]];
+    [pickerItems sortUsingComparator: ^NSComparisonResult( NSDictionary *a, NSDictionary *b) {
+        return [[a objectForKey: @"name"] localizedStandardCompare: [b objectForKey: @"name"]];
+    }];
+    [pickerTable reloadData];
+    [pickerSaveButton setEnabled: YES];
+    NSString *s = [NSString stringWithFormat: NSLocalizedString( @"%d institutions in %d studies", nil), (int) pickerCounts.count, studies];
+    if( truncated) s = [s stringByAppendingString: NSLocalizedString( @" (stopped after 20 000 studies)", nil)];
+    [pickerStatus setStringValue: s];
+}
+
+- (IBAction) pickerAll:(id) sender { for( NSMutableDictionary *d in pickerItems) [d setObject: @YES forKey: @"on"]; [pickerTable reloadData]; }
+- (IBAction) pickerNone:(id) sender { for( NSMutableDictionary *d in pickerItems) [d setObject: @NO forKey: @"on"]; [pickerTable reloadData]; }
+
+- (void) closePicker
+{
+    pickerGeneration++;
+    [[self window] endSheet: pickerWindow];
+    [pickerWindow orderOut: nil];
+}
+
+- (IBAction) pickerCancel:(id) sender
+{
+    [self closePicker];
+}
+
+- (IBAction) pickerSave:(id) sender
+{
+    NSMutableArray *names = [NSMutableArray array];
+    for( NSDictionary *d in pickerItems)
+        if( [[d objectForKey: @"on"] boolValue]) [names addObject: [[d objectForKey: @"name"] stringByReplacingOccurrencesOfString: @";" withString: @" "]];
+    NSString *account = [SekhmetDICOMweb accountForNode: pickerNode];
+    for( NSMutableDictionary *n in nodes)
+        if( [[SekhmetDICOMweb accountForNode: n] isEqualToString: account] && [[n objectForKey: @"name"] isEqual: [pickerNode objectForKey: @"name"]])
+        {
+            [n setObject: [names componentsJoinedByString: @"; "] forKey: @"institutions"];
+            break;
+        }
+    [self closePicker];
+    if( names.count) [[NSUserDefaults standardUserDefaults] setBool: YES forKey: SekhmetDICOMwebInstitutionFilterKey];
+    [self saveNodes];   // -> loadNodes -> updateInstitutionFilterButton
+    [self search: self];
+}
+
+- (void) updateInstitutionFilterButton
+{
+    NSUInteger n = [[SekhmetDICOMweb institutionListForNode: [self currentNode]] count];
+    id stored = [[NSUserDefaults standardUserDefaults] objectForKey: SekhmetDICOMwebInstitutionFilterKey];
+    [institutionFilterButton setTitle: n ? [NSString stringWithFormat: NSLocalizedString( @"Only the %d chosen institutions", nil), (int) n]
+                                         : NSLocalizedString( @"Only chosen institutions (none chosen)", nil)];
+    [institutionFilterButton setEnabled: n > 0];
+    [institutionFilterButton setState: (n > 0 && (stored == nil || [stored boolValue])) ? NSControlStateValueOn : NSControlStateValueOff];
+}
+
+- (IBAction) institutionFilterChanged:(id) sender
+{
+    [[NSUserDefaults standardUserDefaults] setBool: [institutionFilterButton state] == NSControlStateValueOn forKey: SekhmetDICOMwebInstitutionFilterKey];
+    if( resultsNode) [self search: sender];   // the list on screen follows at once
+}
+
+// SekhVet Paket CS: results (and what is expanded below them) came from exactly one node. When another
+// node is selected, or the selected one now has another URL / user, they are cleared -- otherwise
+// "Retrieve" would send their StudyInstanceUIDs, with the other node's credentials, to a different server.
+- (void) dropResultsIfNodeChanged
+{
+    if( resultsNode == nil) return;
+    NSDictionary *now = [self currentNode];
+    if( now && [[SekhmetDICOMweb accountForNode: now] isEqualToString: [SekhmetDICOMweb accountForNode: resultsNode]]) return;
+    [resultsNode release]; resultsNode = nil;
+    [results removeAllObjects];
+    [quietLoads removeAllObjects]; [quietTried removeAllObjects];
+    [resultTable reloadData];
+    [self setStatus: NSLocalizedString( @"Node changed — results cleared, search again", nil)];
+}
+
+- (IBAction) nodeChanged:(id) sender
+{
+    [self dropResultsIfNodeChanged];
+    // SekhVet Paket DN: the automatic refresh asks the node chosen here, also after a restart
+    NSDictionary *n = [self currentNode];
+    if( n) [[NSUserDefaults standardUserDefaults] setObject: [SekhmetDICOMweb accountForNode: n] forKey: SekhmetDICOMwebSelectedNodeKey];
+    [self updateInstitutionFilterButton];
 }
 
 - (void) saveNodes
@@ -357,7 +727,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
 - (IBAction) addNode:(id) sender
 {
-    [nodes addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys: @"Neuer Knoten", @"name", @"http://server:8042/dicom-web", @"url", @"", @"user", nil]];
+    [nodes addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys: NSLocalizedString( @"New node", nil), @"name", @"http://server:8042/dicom-web", @"url", @"", @"user", nil]];
     [self saveNodes];
     [nodeTable editColumn: 0 row: nodes.count - 1 withEvent: nil select: YES];
 }
@@ -365,7 +735,21 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 - (IBAction) removeNode:(id) sender
 {
     NSInteger r = [nodeTable selectedRow];
-    if( r >= 0 && r < (NSInteger) nodes.count) { [nodes removeObjectAtIndex: r]; [self saveNodes]; }
+    if( r >= 0 && r < (NSInteger) nodes.count)
+    {
+        // SekhVet Paket CS: take the node's keychain item and its clear-text consent with it
+        NSString *account = [SekhmetDICOMweb accountForNode: [nodes objectAtIndex: r]];
+        NSString *url = [[[[nodes objectAtIndex: r] objectForKey: @"url"] retain] autorelease];
+        [nodes removeObjectAtIndex: r];
+        [SekhmetDICOMweb forgetAccount: account unlessUsedBy: nodes];
+        if( url && [[nodes valueForKey: @"url"] containsObject: url] == NO)
+        {
+            NSMutableArray *consent = [NSMutableArray arrayWithArray: [[NSUserDefaults standardUserDefaults] stringArrayForKey: SekhmetDICOMwebCleartextKey]];
+            [consent removeObject: url];
+            [[NSUserDefaults standardUserDefaults] setObject: consent forKey: SekhmetDICOMwebCleartextKey];
+        }
+        [self saveNodes];
+    }
 }
 
 - (IBAction) savePassword:(id) sender
@@ -373,9 +757,22 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     NSInteger r = [nodeTable selectedRow];
     if( r < 0) r = [nodePopup indexOfSelectedItem];
     if( r < 0 || r >= (NSInteger) nodes.count) { [self setStatus: NSLocalizedString( @"No node selected", nil)]; return; }
-    [SekhmetDICOMweb setPassword: [passwordField stringValue] forNode: [nodes objectAtIndex: r]];
+    // SekhVet Paket CS: say what really happened -- the keychain can refuse (locked, ssh session, item of another build)
+    BOOL empty = [[passwordField stringValue] length] == 0;
+    BOOL stored = [SekhmetDICOMweb setPassword: [passwordField stringValue] forNode: [nodes objectAtIndex: r]];
     [passwordField setStringValue: @""];
-    [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Password for \"%@\" saved", nil), [[nodes objectAtIndex: r] objectForKey: @"name"]]];
+    NSString *nodeName = [[nodes objectAtIndex: r] objectForKey: @"name"];
+    if( empty) [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Password for \"%@\" removed", nil), nodeName]];
+    else if( stored) [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Password for \"%@\" saved", nil), nodeName]];
+    else
+    {
+        [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Keychain refused the password for \"%@\" — it works until SekhVet quits only", nil), nodeName]];
+        NSAlert *a = [[[NSAlert alloc] init] autorelease];
+        [a setAlertStyle: NSAlertStyleWarning];
+        [a setMessageText: NSLocalizedString( @"The password could not be saved in the keychain", nil)];
+        [a setInformativeText: [NSString stringWithFormat: NSLocalizedString( @"macOS refused to store the password for \"%@\" (keychain locked, access denied, or no login session). SekhVet keeps it in memory until it quits; after the next start you have to enter it again. Unlock the login keychain (Keychain Access) and save the password once more.", nil), nodeName]];
+        [a runModal];
+    }
 }
 
 #pragma mark - HTTP
@@ -399,10 +796,80 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     if( session == nil)
     {
         NSURLSessionConfiguration *c = [NSURLSessionConfiguration ephemeralSessionConfiguration];
-        c.timeoutIntervalForResource = 3600;
+        c.timeoutIntervalForResource = 24 * 3600;   // SekhVet Paket CS: was 1 h, which cut every longer transfer; a stalled one still ends after 600 s without data (request timeout)
         session = [[NSURLSession sessionWithConfiguration: c delegate: self delegateQueue: [NSOperationQueue mainQueue]] retain];
     }
     return session;
+}
+
+// SekhVet Paket CS: a redirect is followed only to the same host and never from https down to http.
+// Otherwise the 3xx answer itself is delivered ("HTTP 302") -- the queries carry patient names and IDs
+// in the URL, they must not be replayed to whatever host a proxy or captive portal names.
+- (void) URLSession:(NSURLSession*) s task:(NSURLSessionTask*) task willPerformHTTPRedirection:(NSHTTPURLResponse*) response newRequest:(NSURLRequest*) request completionHandler:(void (^)(NSURLRequest*)) completionHandler
+{
+    NSURL *from = task.currentRequest.URL ? task.currentRequest.URL : task.originalRequest.URL, *to = request.URL;
+    BOOL sameHost = from.host.length && to.host.length && [from.host caseInsensitiveCompare: to.host] == NSOrderedSame;
+    BOOL downgrade = [[from.scheme lowercaseString] isEqualToString: @"https"] && [[to.scheme lowercaseString] isEqualToString: @"https"] == NO;
+    completionHandler( (sameHost && downgrade == NO) ? request : nil);
+}
+
+// SekhVet Paket CS: YES = this Mac, a private or link-local address, a Tailscale address (100.64.0.0/10,
+// fd7a:…) or a name that only resolves inside a local network. Plain http to such a host is the normal
+// in-clinic setup (Orthanc on the LAN) and is not questioned.
++ (BOOL) hostIsLocal:(NSString*) host
+{
+    host = [[host lowercaseString] stringByTrimmingCharactersInSet: [NSCharacterSet characterSetWithCharactersInString: @"[]"]];
+    NSRange zone = [host rangeOfString: @"%"];
+    if( zone.location != NSNotFound) host = [host substringToIndex: zone.location];
+    if( host.length == 0) return NO;
+
+    struct in_addr a4;
+    struct in6_addr a6;
+    if( inet_pton( AF_INET, [host UTF8String], &a4) == 1)
+    {
+        uint32_t ip = ntohl( a4.s_addr);
+        return (ip >> 24) == 127 || (ip >> 24) == 10 || (ip >> 20) == 0xAC1 || (ip >> 16) == 0xC0A8 || (ip >> 16) == 0xA9FE || (ip >> 22) == (0x64400000U >> 22);
+    }
+    if( inet_pton( AF_INET6, [host UTF8String], &a6) == 1)
+    {
+        const uint8_t *b = a6.s6_addr;
+        BOOL loopback = YES;
+        for( int i = 0; i < 15; i++) if( b[ i]) loopback = NO;
+        if( b[ 15] != 1) loopback = NO;
+        return loopback || (b[ 0] & 0xFE) == 0xFC || (b[ 0] == 0xFE && (b[ 1] & 0xC0) == 0x80);
+    }
+    if( [host isEqualToString: @"localhost"] || [host rangeOfString: @"."].location == NSNotFound) return YES;   // single-label name: resolved by the LAN
+    for( NSString *suffix in [NSArray arrayWithObjects: @".local", @".lan", @".home.arpa", @".internal", @".localdomain", @".ts.net", nil])
+        if( [host hasSuffix: suffix]) return YES;
+    return NO;
+}
+
+// SekhVet Paket CS: a node with a user name sends "Authorization: Basic" with every request. Over plain
+// http to a host outside the local network, user, password, patient names and images are readable on the
+// way. Asked once per node URL (remembered in the defaults); NO = the user declined. Main thread only.
+- (BOOL) mayUseNode:(NSDictionary*) node
+{
+    NSString *urlString = sekhmetTyped( [node objectForKey: @"url"], [NSString class]);
+    if( [sekhmetTyped( [node objectForKey: @"user"], [NSString class]) length] == 0) return YES;
+    NSURL *u = urlString.length ? [NSURL URLWithString: urlString] : nil;
+    if( u == nil || [[[u scheme] lowercaseString] isEqualToString: @"http"] == NO) return YES;
+    if( [SekhmetDICOMweb hostIsLocal: [u host]]) return YES;
+    NSArray *consent = [[NSUserDefaults standardUserDefaults] stringArrayForKey: SekhmetDICOMwebCleartextKey];
+    if( [consent containsObject: urlString]) return YES;
+
+    NSAlert *a = [[[NSAlert alloc] init] autorelease];
+    [a setAlertStyle: NSAlertStyleWarning];
+    [a setMessageText: [NSString stringWithFormat: NSLocalizedString( @"“%@” is not encrypted", nil), sekhmetTyped( [node objectForKey: @"name"], [NSString class]) ?: urlString]];
+    [a setInformativeText: [NSString stringWithFormat: NSLocalizedString( @"%@\n\nThis address uses http:// and is not in your local network. User name, password, patient names and images would cross the Internet unencrypted, readable by anyone on the way. Use an https:// address if the server offers one.\n\n“Send anyway” is remembered for this node.", nil), urlString]];
+    [a addButtonWithTitle: NSLocalizedString( @"Cancel", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Send anyway", nil)];
+    if( [a runModal] != NSAlertSecondButtonReturn)
+    {
+        [self setStatus: NSLocalizedString( @"Cancelled — nothing was sent to the node", nil)];
+        return NO;
+    }
+    [[NSUserDefaults standardUserDefaults] setObject: [(consent ? consent : [NSArray array]) arrayByAddingObject: urlString] forKey: SekhmetDICOMwebCleartextKey];
+    return YES;
 }
 
 - (void) setStatus:(NSString*) s
@@ -410,14 +877,26 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     [statusField setStringValue: s ? s : @""];
 }
 
+// SekhVet Paket CS: always returns an NSString, whatever the server put into the JSON (NSNull, numbers,
+// nested objects). Before, a non-dictionary attribute raised and a non-string value was returned as is.
 - (NSString*) value:(NSDictionary*) item tag:(NSString*) tag
 {
-    id v = [[item objectForKey: tag] objectForKey: @"Value"];
-    if( [v isKindOfClass: [NSArray class]] == NO || [v count] == 0) return @"";
+    NSDictionary *attr = sekhmetTyped( [sekhmetTyped( item, [NSDictionary class]) objectForKey: tag], [NSDictionary class]);
+    NSArray *v = sekhmetTyped( [attr objectForKey: @"Value"], [NSArray class]);
+    if( v.count == 0) return @"";
     id first = [v objectAtIndex: 0];
-    if( [first isKindOfClass: [NSDictionary class]]) return [first objectForKey: @"Alphabetic"] ? [first objectForKey: @"Alphabetic"] : @"";
-    if( [v count] > 1) return [v componentsJoinedByString: @"/"];
-    return [first description];
+    if( [first isKindOfClass: [NSDictionary class]])   // PN: {"Alphabetic": "…"}
+    {
+        NSString *alpha = sekhmetTyped( [first objectForKey: @"Alphabetic"], [NSString class]);
+        return alpha ? alpha : @"";
+    }
+    NSMutableArray *parts = [NSMutableArray array];
+    for( id e in v)
+    {
+        if( [e isKindOfClass: [NSString class]]) [parts addObject: e];
+        else if( [e isKindOfClass: [NSNumber class]]) [parts addObject: [e stringValue]];
+    }
+    return [parts componentsJoinedByString: @"/"];
 }
 
 - (NSString*) timeString:(NSString*) t // Build 67: DICOM TM "HHMMSS.ffffff" -> "HH:MM"
@@ -452,10 +931,11 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     {
         case 1: from = today; break;
         case 2: from = [cal dateByAddingUnit: NSCalendarUnitDay value: -1 toDate: today options: 0]; to = from; break;
-        case 3: from = [cal dateByAddingUnit: NSCalendarUnitDay value: -2 toDate: today options: 0]; break;
-        case 4: from = [cal dateByAddingUnit: NSCalendarUnitDay value: -3 toDate: today options: 0]; break;
-        case 5: from = [cal dateByAddingUnit: NSCalendarUnitDay value: -7 toDate: today options: 0]; break;
-        case 6: from = [cal dateByAddingUnit: NSCalendarUnitMonth value: -1 toDate: today options: 0]; break;
+        case 3: from = [cal dateByAddingUnit: NSCalendarUnitDay value: -1 toDate: today options: 0]; break;   // Paket CL: "Last 2 days" = gestern + heute
+        case 4: from = [cal dateByAddingUnit: NSCalendarUnitDay value: -2 toDate: today options: 0]; break;
+        case 5: from = [cal dateByAddingUnit: NSCalendarUnitDay value: -3 toDate: today options: 0]; break;
+        case 6: from = [cal dateByAddingUnit: NSCalendarUnitDay value: -7 toDate: today options: 0]; break;
+        case 7: from = [cal dateByAddingUnit: NSCalendarUnitMonth value: -1 toDate: today options: 0]; break;
         default: break;
     }
     [dateFromField setStringValue: from ? [self periodDateString: from] : @""];
@@ -465,8 +945,38 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
 - (IBAction) search:(id) sender
 {
-    NSDictionary *node = [self currentNode];
+    [self searchAutomatically: NO];
+}
+
+// SekhVet Paket DN: automatic = started by the auto-refresh timer. Then the selection and the expanded studies of the
+// list survive the refresh, and new results may be retrieved afterwards (autoRetrieveNew).
+- (void) searchAutomatically:(BOOL) automatic
+{
+    NSDictionary *node = [[[self currentNode] copy] autorelease];   // SekhVet Paket CS: snapshot -- the results are bound to this node
     if( node == nil) { [self setStatus: NSLocalizedString( @"No node", nil)]; return; }
+    if( [self mayUseNode: node] == NO) return;                      // SekhVet Paket CS: plain http to a public host, asked once
+
+    // SekhVet Paket DN: institution filters -- the field (kept over a restart) and the list stored with the node
+    NSString *institutionText = [[institutionField stringValue] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+    [[NSUserDefaults standardUserDefaults] setObject: institutionText forKey: SekhmetDICOMwebInstitutionTextKey];
+    NSArray *fieldPatterns = [SekhmetDICOMweb institutionPatterns: institutionText];
+    NSArray *listPatterns = [institutionFilterButton state] == NSControlStateValueOn ? [SekhmetDICOMweb institutionListForNode: node] : [NSArray array];
+    NSMutableSet *selectedUIDs = [NSMutableSet set], *expandedUIDs = [NSMutableSet set], *previousUIDs = [NSMutableSet set];
+    if( automatic && resultsNode && [[SekhmetDICOMweb accountForNode: resultsNode] isEqualToString: [SekhmetDICOMweb accountForNode: node]])
+    {
+        for( NSDictionary *r in results)
+        {
+            NSString *u = [r objectForKey: @"uid"];
+            if( u == nil) continue;
+            [previousUIDs addObject: u];
+            if( [resultTable isItemExpanded: r]) [expandedUIDs addObject: u];
+        }
+        [[resultTable selectedRowIndexes] enumerateIndexesUsingBlock: ^(NSUInteger idx, BOOL *stop) {
+            id item = [resultTable itemAtRow: idx];
+            NSString *u = [item objectForKey: @"seriesUID"] ? nil : [item objectForKey: @"uid"];
+            if( u) [selectedUIDs addObject: u];
+        }];
+    }
 
     NSMutableArray *params = [NSMutableArray array];
     NSString *name = [[nameField stringValue] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
@@ -474,68 +984,255 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     NSString *from = [[dateFromField stringValue] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
     NSString *to = [[dateToField stringValue] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
     NSString *mod = [[[modalityField stringValue] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]] uppercaseString];
-    NSCharacterSet *allowed = [NSCharacterSet URLQueryAllowedCharacterSet];
+    // SekhVet Paket CS: URLQueryAllowedCharacterSet leaves & + = ; untouched -- a name like "A&B" or "Smith+Co"
+    // split or altered the query. Every value is encoded, including dates and modality.
+    NSMutableCharacterSet *allowed = [[[NSCharacterSet URLQueryAllowedCharacterSet] mutableCopy] autorelease];
+    [allowed removeCharactersInString: @"&+=;#"];
+    NSString* (^enc)(NSString*) = ^NSString* (NSString *v) {
+        NSString *e = [v stringByAddingPercentEncodingWithAllowedCharacters: allowed];
+        return e ? e : @"";
+    };
 
-    if( name.length) [params addObject: [NSString stringWithFormat: @"PatientName=%@", [[NSString stringWithFormat: @"*%@*", name] stringByAddingPercentEncodingWithAllowedCharacters: allowed]]];
-    if( pid.length) [params addObject: [NSString stringWithFormat: @"PatientID=%@", [pid stringByAddingPercentEncodingWithAllowedCharacters: allowed]]];
-    if( from.length || to.length) [params addObject: [NSString stringWithFormat: @"StudyDate=%@-%@", from, to]];
-    if( mod.length) [params addObject: [NSString stringWithFormat: @"ModalitiesInStudy=%@", mod]];
+    if( name.length) [params addObject: [NSString stringWithFormat: @"PatientName=%@", enc( [NSString stringWithFormat: @"*%@*", name])]];
+    if( pid.length) [params addObject: [NSString stringWithFormat: @"PatientID=%@", enc( pid)]];
+    if( from.length || to.length) [params addObject: [NSString stringWithFormat: @"StudyDate=%@-%@", enc( from), enc( to)]];
+    if( mod.length) [params addObject: [NSString stringWithFormat: @"ModalitiesInStudy=%@", enc( mod)]];
     [params addObject: @"includefield=00201206,00201208,00080061,00080080"]; // Build 67: + InstitutionName
-    [params addObject: @"limit=300"];
+    [params addObject: [NSString stringWithFormat: @"limit=%d", SekhmetQidoStudyLimit]];
 
     NSString *url = [NSString stringWithFormat: @"%@/studies?%@", [node objectForKey: @"url"], [params componentsJoinedByString: @"&"]];
     NSMutableURLRequest *req = [self requestForURL: url accept: @"application/dicom+json" node: node];
 
-    [self setStatus: NSLocalizedString( @"Searching…", nil)];
+    [self setStatus: automatic ? NSLocalizedString( @"Auto-refresh: searching…", nil) : NSLocalizedString( @"Searching…", nil)];
     [progress setHidden: NO]; [progress startAnimation: nil];
     [searchButton setEnabled: NO];
 
     NSURLSessionDataTask *task = [[self session] dataTaskWithRequest: req completionHandler: ^(NSData *data, NSURLResponse *response, NSError *error) {
         [progress stopAnimation: nil]; [progress setHidden: YES];
         [searchButton setEnabled: YES];
-        NSInteger code = [(NSHTTPURLResponse*) response statusCode];
-        if( error) { [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Error: %@", nil), error.localizedDescription]]; return; }
-        if( code == 401) { [self setStatus: NSLocalizedString( @"401: user/password rejected (save the password below)", nil)]; return; }
-        if( code == 204 || data.length == 0) { [results removeAllObjects]; [resultTable reloadData]; [self setStatus: NSLocalizedString( @"No results", nil)]; return; }
-        if( code != 200) { [self setStatus: [NSString stringWithFormat: @"HTTP %d", (int) code]]; return; }
-
-        NSError *jerr = nil;
-        id json = [NSJSONSerialization JSONObjectWithData: data options: 0 error: &jerr];
-        if( [json isKindOfClass: [NSArray class]] == NO) { [self setStatus: NSLocalizedString( @"Response is not DICOM JSON", nil)]; return; }
-
-        [results removeAllObjects];
-        for( NSDictionary *item in json)
+        @try   // SekhVet Paket CS: an exception in a session callback would terminate the app
         {
-            if( [item isKindOfClass: [NSDictionary class]] == NO) continue;
-            NSString *studyUID = [self value: item tag: @"0020000D"];
-            if( studyUID.length == 0) continue;
-            [results addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys:
-                                 [self value: item tag: @"00100010"], @"Name",
-                                 [self value: item tag: @"00100020"], @"ID",
-                                 [self value: item tag: @"00080020"], @"Date",
-                                 [self timeString: [self value: item tag: @"00080030"]], @"Time",       // Build 67
-                                 [self value: item tag: @"00080080"], @"Institution",                   // Build 67
-                                 [self value: item tag: @"00080061"], @"Modality",
-                                 [self value: item tag: @"00081030"], @"Description",
-                                 [self value: item tag: @"00201206"], @"Series",
-                                 [self value: item tag: @"00201208"], @"Images",
-                                 studyUID, @"uid",
-                                 // NSOutlineView fuehrt ihre Items in einer hash-basierten Zuordnung, und
-                                 // NSDictionary leitet seinen hash aus der ANZAHL der Eintraege ab. Wurde
-                                 // beim Aufklappen "children"/"loading" nachtraeglich angelegt, sprang der
-                                 // hash und die Outline fand die Zeile nicht mehr wieder: aufklappen ging,
-                                 // einklappen nicht mehr (15.09.2026). Darum stehen alle spaeter belegten
-                                 // Schluessel schon hier — danach wird nur noch der WERT getauscht.
-                                 [NSMutableArray array], @"children",
-                                 [NSNumber numberWithBool: NO], @"loaded",
-                                 [NSNumber numberWithBool: NO], @"loading", nil]];
+            NSInteger code = [response isKindOfClass: [NSHTTPURLResponse class]] ? [(NSHTTPURLResponse*) response statusCode] : 0;
+            if( error) { [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Error: %@", nil), error.localizedDescription]]; return; }
+            // SekhVet Paket CS: another node was selected while the search ran -- this answer is not for the visible node
+            NSDictionary *now = [self currentNode];
+            if( now == nil || [[SekhmetDICOMweb accountForNode: now] isEqualToString: [SekhmetDICOMweb accountForNode: node]] == NO)
+            {
+                [self setStatus: NSLocalizedString( @"Node changed — search again", nil)];
+                return;
+            }
+            if( code == 401) { [self setStatus: NSLocalizedString( @"401: user/password rejected (save the password below)", nil)]; return; }
+            if( code != 200 && code != 204) { [self setStatus: [NSString stringWithFormat: @"HTTP %d", (int) code]]; return; }   // SekhVet Paket CS: an empty error answer is not "No results"
+
+            id json = nil;
+            if( code == 200 && data.length)
+            {
+                json = [NSJSONSerialization JSONObjectWithData: data options: 0 error: NULL];
+                if( [json isKindOfClass: [NSArray class]] == NO) { [self setStatus: NSLocalizedString( @"Response is not DICOM JSON", nil)]; return; }
+            }
+
+            [resultsNode release]; resultsNode = [node retain];   // SekhVet Paket CS
+            [quietTried removeAllObjects];
+            [results removeAllObjects];
+            hiddenByInstitution = 0;   // SekhVet Paket DN
+            for( NSDictionary *item in json)
+            {
+                if( [item isKindOfClass: [NSDictionary class]] == NO) continue;
+                NSString *studyUID = [self value: item tag: @"0020000D"];
+                if( studyUID.length == 0) continue;
+                // SekhVet Paket DN: institution field AND (if switched on) the node's list -- each matches by "contains"
+                NSString *institution = [self value: item tag: @"00080080"];
+                if( (fieldPatterns.count && [SekhmetDICOMweb institution: institution matchesAny: fieldPatterns] == NO)
+                   || (listPatterns.count && [SekhmetDICOMweb institution: institution matchesAny: listPatterns] == NO))
+                {
+                    hiddenByInstitution++;
+                    continue;
+                }
+                [results addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                                     [self value: item tag: @"00100010"], @"Name",
+                                     [self value: item tag: @"00100020"], @"ID",
+                                     [self value: item tag: @"00080020"], @"Date",
+                                     [self timeString: [self value: item tag: @"00080030"]], @"Time",       // Build 67
+                                     [self value: item tag: @"00080080"], @"Institution",                   // Build 67
+                                     [self value: item tag: @"00080061"], @"Modality",
+                                     [self value: item tag: @"00081030"], @"Description",
+                                     [self value: item tag: @"00201206"], @"Series",
+                                     [self value: item tag: @"00201208"], @"Images",
+                                     studyUID, @"uid",
+                                     // NSOutlineView fuehrt ihre Items in einer hash-basierten Zuordnung, und
+                                     // NSDictionary leitet seinen hash aus der ANZAHL der Eintraege ab. Wurde
+                                     // beim Aufklappen "children"/"loading" nachtraeglich angelegt, sprang der
+                                     // hash und die Outline fand die Zeile nicht mehr wieder: aufklappen ging,
+                                     // einklappen nicht mehr (15.09.2026). Darum stehen alle spaeter belegten
+                                     // Schluessel schon hier — danach wird nur noch der WERT getauscht.
+                                     [NSMutableArray array], @"children",
+                                     [NSNumber numberWithBool: NO], @"loaded",
+                                     [NSNumber numberWithBool: NO], @"loading", nil]];
+            }
+            // SekhVet Paket DN: say how many the institution filters hid; an automatic refresh also says when and how many are new
+            NSString *hiddenText = hiddenByInstitution ? [NSString stringWithFormat: NSLocalizedString( @" (%d hidden by the institution filter)", nil), hiddenByInstitution] : @"";
+            NSString *autoText = @"";
+            if( automatic)
+            {
+                NSDateFormatter *f = [[[NSDateFormatter alloc] init] autorelease];
+                [f setDateFormat: @"HH:mm"];
+                int fresh = 0;
+                for( NSDictionary *r in results) if( previousUIDs.count && [previousUIDs containsObject: [r objectForKey: @"uid"]] == NO) fresh++;
+                autoText = fresh ? [NSString stringWithFormat: NSLocalizedString( @"Auto-refresh %@, %d new: ", nil), [f stringFromDate: [NSDate date]], fresh]
+                                 : [NSString stringWithFormat: NSLocalizedString( @"Auto-refresh %@: ", nil), [f stringFromDate: [NSDate date]]];
+            }
+            if( results.count == 0) { [resultTable reloadData]; [self setStatus: [NSString stringWithFormat: @"%@%@%@", autoText, NSLocalizedString( @"No results", nil), hiddenText]]; return; }
+            [self annotateLocalStatus];   // Paket AM: was liegt schon in der eigenen Datenbank?
+            [self sortResults];           // Paket BU: nach der Spalte, die der Benutzer gewaehlt hat (Vorgabe Datum, neueste zuerst)
+            [resultTable reloadData];
+            if( automatic)   // SekhVet Paket DN: expanded studies and the selection survive the refresh
+            {
+                NSMutableIndexSet *rows = [NSMutableIndexSet indexSet];
+                for( NSMutableDictionary *r in [NSArray arrayWithArray: results])
+                {
+                    NSString *u = [r objectForKey: @"uid"];
+                    if( [expandedUIDs containsObject: u]) [resultTable expandItem: r];   // loads the series again (outlineViewItemWillExpand:)
+                    if( [selectedUIDs containsObject: u])
+                    {
+                        NSInteger row = [resultTable rowForItem: r];
+                        if( row >= 0) [rows addIndex: row];
+                    }
+                }
+                if( rows.count) [resultTable selectRowIndexes: rows byExtendingSelection: NO];
+            }
+            // Sekhmet (DD): bei voller Seite sagen, dass es mehr geben kann - vorher wurde still bei 300 abgeschnitten
+            // (nach ThalesMMS/horos e948e313, dort mit Paging)
+            NSUInteger answered = [json isKindOfClass: [NSArray class]] ? [json count] : 0;
+            NSString *warning = [[(NSHTTPURLResponse*) response allHeaderFields] objectForKey: @"Warning"];
+            if( answered >= SekhmetQidoStudyLimit || [warning rangeOfString: @"299"].location != NSNotFound)
+                [self setStatus: [NSString stringWithFormat: @"%@%@%@", autoText, [NSString stringWithFormat: NSLocalizedString( @"%d studies — the node may have more: narrow the search (name, ID, date)", nil), (int) results.count], hiddenText]];
+            else
+                [self setStatus: [NSString stringWithFormat: @"%@%@%@", autoText, [NSString stringWithFormat: NSLocalizedString( @"%d studies", nil), (int) results.count], hiddenText]];
+            if( automatic && [autoRetrieveButton state] == NSControlStateValueOn) [self autoRetrieveNew];   // SekhVet Paket DN
         }
-        [self annotateLocalStatus];   // Paket AM: was liegt schon in der eigenen Datenbank?
-        [self sortResults];           // Paket BU: nach der Spalte, die der Benutzer gewaehlt hat (Vorgabe Datum, neueste zuerst)
-        [resultTable reloadData];
-        [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"%d studies", nil), (int) results.count]];
+        @catch (NSException *e)
+        {
+            NSLog( @"SekhVet DICOMweb: search answer raised %@", e.name);
+            [resultTable reloadData];
+            [self setStatus: NSLocalizedString( @"Error: the answer of the node could not be read", nil)];
+        }
     }];
     [task resume];
+}
+
+#pragma mark - Automatische Aktualisierung (SekhVet Paket DN)
+
+// Wunsch 04.10.2026: wie OsiriX' "Autom. Suchen/Anfordern" -- die Suche mit den aktuellen Feldern alle
+// 1-30 Minuten wiederholen (auch bei geschlossenem Fenster, ueber einen Neustart hinweg) und neue Treffer auf Wunsch
+// selbst holen. Die Felder Name/ID/Modalitaet gelten, wie sie im Fenster stehen; nach einem Neustart sind sie leer,
+// Zeitraum "Today", Institution und Knoten wie zuletzt.
+
++ (void) startAutoRefreshIfConfigured
+{
+    if( [[NSUserDefaults standardUserDefaults] integerForKey: SekhmetDICOMwebAutoMinutesKey] > 0)
+        [SekhmetDICOMweb shared];   // init -> restoreAutoSettings starts the timer
+}
+
+- (void) restoreAutoSettings
+{
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSString *account = [d stringForKey: SekhmetDICOMwebSelectedNodeKey];
+    for( NSUInteger i = 0; account && i < nodes.count; i++)
+        if( [[SekhmetDICOMweb accountForNode: [nodes objectAtIndex: i]] isEqualToString: account]) { [nodePopup selectItemAtIndex: i]; break; }
+    [institutionField setStringValue: [d stringForKey: SekhmetDICOMwebInstitutionTextKey] ?: @""];
+    [self updateInstitutionFilterButton];
+    NSInteger minutes = [d integerForKey: SekhmetDICOMwebAutoMinutesKey];
+    if( [autoPopup indexOfItemWithTag: minutes] < 0) minutes = 0;
+    [autoPopup selectItemWithTag: minutes];
+    [autoRetrieveButton setState: [d boolForKey: SekhmetDICOMwebAutoRetrieveKey] ? NSControlStateValueOn : NSControlStateValueOff];
+    [self setupAutoTimer: minutes > 0];
+}
+
+- (IBAction) autoChanged:(id) sender
+{
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSInteger minutes = [[autoPopup selectedItem] tag];
+    BOOL fetch = [autoRetrieveButton state] == NSControlStateValueOn;
+    // retrieving by itself without a period would pull every study the node has -- refuse with a word instead
+    if( fetch && minutes > 0 && [[dateFromField stringValue] length] == 0 && [[dateToField stringValue] length] == 0)
+    {
+        NSAlert *a = [[[NSAlert alloc] init] autorelease];
+        [a setMessageText: NSLocalizedString( @"Automatic retrieve needs a period", nil)];
+        [a setInformativeText: NSLocalizedString( @"Choose a period first (for example \"Today\" or \"Last 2 days\"). Without one, every study of the node that is not here would be retrieved.", nil)];
+        [a runModal];
+        [autoRetrieveButton setState: NSControlStateValueOff];
+        fetch = NO;
+    }
+    [d setInteger: minutes forKey: SekhmetDICOMwebAutoMinutesKey];
+    [d setBool: fetch forKey: SekhmetDICOMwebAutoRetrieveKey];
+    NSDictionary *n = [self currentNode];
+    if( n) [d setObject: [SekhmetDICOMweb accountForNode: n] forKey: SekhmetDICOMwebSelectedNodeKey];
+    [self setupAutoTimer: sender == autoPopup && minutes > 0];   // switched on: first refresh right away
+    if( minutes == 0) [self setStatus: NSLocalizedString( @"Auto-refresh off", nil)];
+}
+
+- (void) setupAutoTimer:(BOOL) refreshSoon
+{
+    [autoTimer invalidate]; [autoTimer release]; autoTimer = nil;
+    NSInteger minutes = [[autoPopup selectedItem] tag];
+    if( minutes <= 0) return;
+    autoTimer = [[NSTimer scheduledTimerWithTimeInterval: minutes * 60.0 target: self selector: @selector(autoTimerFired:) userInfo: nil repeats: YES] retain];
+    [autoTimer setTolerance: 5];
+    if( refreshSoon) [self performSelector: @selector(autoTimerFired:) withObject: nil afterDelay: 2];
+}
+
+- (void) autoTimerFired:(NSTimer*) t
+{
+    if( [[autoPopup selectedItem] tag] <= 0) return;
+    if( [searchButton isEnabled] == NO) return;               // a search is still running
+    if( [[self window] attachedSheet]) return;
+    if( [periodPopup indexOfSelectedItem] > 0) [self applyPeriodAndSearch: NO];   // "Today" moves on at midnight
+    [self searchAutomatically: YES];
+}
+
+// After an automatic refresh: every study of the (filtered) list that is not completely here is retrieved -- once per
+// session, and again only when the node has more images of it than at the last automatic retrieve (still arriving).
+- (void) autoRetrieveNew
+{
+    if( resultsNode == nil) return;
+    if( [[dateFromField stringValue] length] == 0 && [[dateToField stringValue] length] == 0)
+    {
+        [self setStatus: [[statusField stringValue] stringByAppendingString: NSLocalizedString( @" — automatic retrieve needs a period", nil)]];
+        return;
+    }
+    NSDictionary *node = [[resultsNode retain] autorelease];
+    NSMutableArray *jobs = [NSMutableArray array];
+    int partial = 0;
+    for( NSMutableDictionary *r in [NSArray arrayWithArray: results])
+    {
+        NSString *uid = [r objectForKey: @"uid"];
+        if( uid.length == 0) continue;
+        id f = [r objectForKey: @"localFraction"];
+        int remote = [[r objectForKey: @"Images"] intValue];
+        int have = [[[r objectForKey: @"local"] objectForKey: @"images"] intValue];
+        float frac = [f isKindOfClass: [NSNumber class]] ? [f floatValue] : (have > 0 ? 1.0f : 0.0f);   // NSNull = node gave no image count
+        if( frac >= 1.0f) continue;
+        NSNumber *done = [autoRetrieved objectForKey: uid];
+        if( done && remote <= [done intValue]) continue;
+        [autoRetrieved setObject: [NSNumber numberWithInt: remote] forKey: uid];
+        if( frac > 0)   // part is here: only the missing series (series list first, if not loaded yet)
+        {
+            if( [[r objectForKey: @"loaded"] boolValue]) [jobs addObjectsFromArray: [self missingSeriesJobsForStudy: r]];
+            else
+            {
+                if( retrieveAfterLoad == nil) retrieveAfterLoad = [[NSMutableSet alloc] init];
+                [retrieveAfterLoad addObject: uid];
+                [self loadSeriesForStudy: r];
+            }
+            partial++;
+        }
+        else [jobs addObject: uid];
+    }
+    if( jobs.count == 0 && partial == 0) return;
+    BOOL running = (retrieveStudyUID != nil || retrieveQueue.count > 0);
+    int added = [self enqueueJobs: jobs node: node];
+    NSLog( @"SekhVet DICOMweb: auto-retrieve %d jobs (%d partly here)", added, partial);
+    if( running == NO && retrieveQueue.count) { filesWritten = 0; failedJobs = 0; [self retrieveNextStudy]; }
 }
 
 #pragma mark - Was liegt schon hier? (Paket AM)
@@ -566,14 +1263,29 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
 + (NSDictionary*) localStatusForStudyUID:(NSString*) studyUID
 {
-    NSMutableDictionary *series = [NSMutableDictionary dictionary];
-    int images = 0, localizer = 0;
+    NSArray *studies = nil;
     if( studyUID.length)
     {
         @try
         {
             DicomDatabase *db = [DicomDatabase activeLocalDatabase];
-            NSArray *studies = [db objectsForEntity: [db studyEntity] predicate: [NSPredicate predicateWithFormat: @"studyInstanceUID == %@", studyUID]];
+            studies = [db objectsForEntity: [db studyEntity] predicate: [NSPredicate predicateWithFormat: @"studyInstanceUID == %@", studyUID]];
+        }
+        @catch (NSException *e) { NSLog( @"SekhVet DICOMweb: reading local studies: %@", e.name); studies = nil; }
+    }
+    return [self localStatusForStudies: studies];
+}
+
+// SekhVet Paket CS: the counting, separated from the fetch -- annotateLocalStatus fetches the local
+// studies of ALL results in one go instead of one Core Data fetch per result row.
++ (NSDictionary*) localStatusForStudies:(NSArray*) studies
+{
+    NSMutableDictionary *series = [NSMutableDictionary dictionary];
+    int images = 0, localizer = 0;
+    if( studies.count)
+    {
+        @try
+        {
             for( DicomStudy *st in studies)
             {
                 for( DicomSeries *se in [[st valueForKey: @"series"] allObjects])
@@ -583,7 +1295,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
                     // numberOfImages NICHT roh lesen: bei Multiframe-Serien (US-Cine-Loops) legt Horos
                     // dort den NEGIERTEN Zaehler ab ("There are frames!", DicomSeries.m:600). Roh summiert
                     // wurde der Bestand negativ, localFractionForStudy: sah <= 0 und malte trotz vollstaendig
-                    // geholter Studie einen leeren Kreis (15.09.2026 an drei US-Studien aus Mellingen gesehen).
+                    // geholter Studie einen leeren Kreis (15.09.2026 an drei US-Studien gesehen).
                     // noFiles ist Horos' eigener Zugriff und dreht das Vorzeichen zurueck.
                     int n = [[se valueForKey: @"noFiles"] intValue];
                     images += n;
@@ -607,7 +1319,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
                 }
             }
         }
-        @catch (NSException *e) { NSLog( @"SekhVet DICOMweb: reading local studies: %@", e); }
+        @catch (NSException *e) { NSLog( @"SekhVet DICOMweb: reading local studies: %@", e.name); }
     }
     return [NSDictionary dictionaryWithObjectsAndKeys: series, @"series", [NSNumber numberWithInt: images], @"images",
             [NSNumber numberWithInt: localizer], @"localizer", nil];
@@ -730,10 +1442,31 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
 - (void) annotateLocalStatus
 {
+    // SekhVet Paket CS: this runs on the main thread after every search and retrieve. It used to do one
+    // Core Data fetch per result (up to 300); now ONE fetch covers all results.
+    NSMutableDictionary *localByUID = [NSMutableDictionary dictionary];   // StudyInstanceUID -> NSMutableArray of DicomStudy
+    if( results.count)
+    {
+        @try
+        {
+            DicomDatabase *db = [DicomDatabase activeLocalDatabase];
+            NSArray *uids = [results valueForKey: @"uid"];
+            for( DicomStudy *st in [db objectsForEntity: [db studyEntity] predicate: [NSPredicate predicateWithFormat: @"studyInstanceUID IN %@", uids]])
+            {
+                NSString *u = [st valueForKey: @"studyInstanceUID"];
+                if( u.length == 0) continue;
+                NSMutableArray *list = [localByUID objectForKey: u];
+                if( list == nil) { list = [NSMutableArray array]; [localByUID setObject: list forKey: u]; }
+                [list addObject: st];
+            }
+        }
+        @catch (NSException *e) { NSLog( @"SekhVet DICOMweb: reading local studies: %@", e.name); }
+    }
+
     int quiet = 0;
     for( NSMutableDictionary *r in results)
     {
-        [r setObject: [SekhmetDICOMweb localStatusForStudyUID: [r objectForKey: @"uid"]] forKey: @"local"];
+        [r setObject: [SekhmetDICOMweb localStatusForStudies: [localByUID objectForKey: [r objectForKey: @"uid"]]] forKey: @"local"];
         [r setObject: [self localTextForStudy: r] forKey: @"Local"];
         [r setObject: [self localFractionForStudy: r] forKey: @"localFraction"];   // Paket AO
         int have, want;
@@ -742,10 +1475,14 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
         for( NSMutableDictionary *s in [r objectForKey: @"children"])
             [self annotateSeries: s inStudy: r];
         // SekhVet Paket BS: fast vollstaendig, Serienliste unbekannt -> still nachladen; vielleicht fehlen nur Berichte
-        if( have > 0 && have < want && [[r objectForKey: @"loaded"] boolValue] == NO && [[r objectForKey: @"loading"] boolValue] == NO && quiet < 10)
+        // SekhVet Paket CS: at most once per study and result list -- a failing series query is not repeated with every refresh
+        if( have > 0 && have < want && [[r objectForKey: @"loaded"] boolValue] == NO && [[r objectForKey: @"loading"] boolValue] == NO && quiet < 10
+           && [quietTried containsObject: [r objectForKey: @"uid"]] == NO)
         {
             if( quietLoads == nil) quietLoads = [[NSMutableSet alloc] init];
+            if( quietTried == nil) quietTried = [[NSMutableSet alloc] init];
             [quietLoads addObject: [r objectForKey: @"uid"]];
+            [quietTried addObject: [r objectForKey: @"uid"]];
             [self loadSeriesForStudy: r];
             quiet++;
         }
@@ -758,63 +1495,86 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     [resultTable reloadData];
 }
 
+// SekhVet Paket CS: a series list that could not be loaded must not leave its study marked "retrieve the
+// missing series once loaded" -- expanding that study later started a retrieve nobody asked for.
+- (void) seriesLoadFailedForStudy:(NSDictionary*) study status:(NSString*) status
+{
+    NSString *uid = [study objectForKey: @"uid"];
+    BOOL wanted = uid && [retrieveAfterLoad containsObject: uid];
+    if( uid) { [retrieveAfterLoad removeObject: uid]; [quietLoads removeObject: uid]; }
+    [self setStatus: wanted ? [status stringByAppendingString: NSLocalizedString( @" — nothing retrieved for this study", nil)] : status];
+}
+
 // Serien einer Studie beim Aufklappen vom Knoten holen (QIDO-RS /studies/<uid>/series)
 - (void) loadSeriesForStudy:(NSMutableDictionary*) study
 {
     if( study == nil || [[study objectForKey: @"loaded"] boolValue] || [[study objectForKey: @"loading"] boolValue]) return;
-    NSDictionary *node = [self currentNode];
-    if( node == nil) { [self setStatus: NSLocalizedString( @"No node", nil)]; return; }
+    // SekhVet Paket CS: the node the results came from, not whatever the popup shows at this moment
+    NSDictionary *node = resultsNode ? [[resultsNode retain] autorelease] : [[[self currentNode] copy] autorelease];
+    if( node == nil) { [self seriesLoadFailedForStudy: study status: NSLocalizedString( @"No node", nil)]; return; }
 
     [study setObject: [NSNumber numberWithBool: YES] forKey: @"loading"];
     NSString *url = [NSString stringWithFormat: @"%@/studies/%@/series?includefield=00200011,0008103E,00080060,00201209&limit=500",
-                     [node objectForKey: @"url"], [study objectForKey: @"uid"]];
+                     [node objectForKey: @"url"], sekhmetPathEscape( [study objectForKey: @"uid"])];
     NSMutableURLRequest *req = [self requestForURL: url accept: @"application/dicom+json" node: node];
     [self setStatus: NSLocalizedString( @"Loading series…", nil)];
 
     NSURLSessionDataTask *task = [[self session] dataTaskWithRequest: req completionHandler: ^(NSData *data, NSURLResponse *response, NSError *error) {
         [study setObject: [NSNumber numberWithBool: NO] forKey: @"loading"];   // nicht entfernen: aendert den hash
-        NSInteger code = [(NSHTTPURLResponse*) response statusCode];
-        if( error) { [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Series: %@", nil), error.localizedDescription]]; return; }
-        id json = (data.length && code == 200) ? [NSJSONSerialization JSONObjectWithData: data options: 0 error: NULL] : nil;
-        if( [json isKindOfClass: [NSArray class]] == NO)
+        @try   // SekhVet Paket CS
         {
-            [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Series: HTTP %d", nil), (int) code]];
-            return;
+            NSInteger code = [response isKindOfClass: [NSHTTPURLResponse class]] ? [(NSHTTPURLResponse*) response statusCode] : 0;
+            if( error) { [self seriesLoadFailedForStudy: study status: [NSString stringWithFormat: NSLocalizedString( @"Series: %@", nil), error.localizedDescription]]; return; }
+            id json = (data.length && code == 200) ? [NSJSONSerialization JSONObjectWithData: data options: 0 error: NULL] : nil;
+            if( code == 204 || (code == 200 && data.length == 0)) json = [NSArray array];   // Sekhmet (DD): 204 = keine Serien, kein Fehler
+            if( [json isKindOfClass: [NSArray class]] == NO)
+            {
+                [self seriesLoadFailedForStudy: study status: [NSString stringWithFormat: NSLocalizedString( @"Series: HTTP %d", nil), (int) code]];
+                return;
+            }
+            NSMutableArray *kids = [NSMutableArray array];
+            for( NSDictionary *item in json)
+            {
+                if( [item isKindOfClass: [NSDictionary class]] == NO) continue;
+                NSString *suid = [self value: item tag: @"0020000E"];
+                if( suid.length == 0) continue;
+                NSString *number = [self value: item tag: @"00200011"];
+                NSMutableDictionary *s = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                                          number.length ? [NSString stringWithFormat: NSLocalizedString( @"Series %@", nil), number] : NSLocalizedString( @"Series", nil), @"Name",
+                                          [self value: item tag: @"00080060"], @"Modality",
+                                          [self value: item tag: @"0008103E"], @"Description",
+                                          [self value: item tag: @"00201209"], @"Images",
+                                          number, @"SeriesNumber",
+                                          suid, @"seriesUID",
+                                          [study objectForKey: @"uid"], @"studyUID", nil];
+                [self annotateSeries: s inStudy: study];   // Paket AO: Text, Kugel und Tooltip
+                [kids addObject: s];
+            }
+            [kids sortUsingComparator: ^NSComparisonResult( id a, id b) {
+                return [[a objectForKey: @"SeriesNumber"] compare: [b objectForKey: @"SeriesNumber"] options: NSNumericSearch];
+            }];
+            [study setObject: kids forKey: @"children"];        // Schluessel besteht bereits, nur der Wert wechselt
+            [study setObject: [NSNumber numberWithBool: YES] forKey: @"loaded"];
+            // SekhVet Paket BS: mit der Serienliste aendert sich das Soll der Studienzeile (Berichte fallen heraus)
+            [study setObject: [self localTextForStudy: study] forKey: @"Local"];
+            [study setObject: [self localFractionForStudy: study] forKey: @"localFraction"];
+            int have, want; [self countsForStudy: study have: &have want: &want];
+            [study setObject: [self localTipWithHave: have want: want] forKey: @"localTip"];
+            BOOL wasQuiet = [quietLoads containsObject: [study objectForKey: @"uid"]];
+            [quietLoads removeObject: [study objectForKey: @"uid"]];
+            if( [results indexOfObjectIdenticalTo: study] != NSNotFound)   // SekhVet Paket CS: the list may have been replaced meanwhile
+            {
+                [resultTable reloadItem: study reloadChildren: YES];
+                if( wasQuiet == NO) [resultTable expandItem: study];
+            }
+            [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"%d series", nil), (int) kids.count]];
+            [self retrieveMissingAfterLoad: study node: node];   // SekhVet Paket BS
         }
-        NSMutableArray *kids = [NSMutableArray array];
-        for( NSDictionary *item in json)
+        @catch (NSException *e)
         {
-            if( [item isKindOfClass: [NSDictionary class]] == NO) continue;
-            NSString *suid = [self value: item tag: @"0020000E"];
-            if( suid.length == 0) continue;
-            NSString *number = [self value: item tag: @"00200011"];
-            NSMutableDictionary *s = [NSMutableDictionary dictionaryWithObjectsAndKeys:
-                                      number.length ? [NSString stringWithFormat: NSLocalizedString( @"Series %@", nil), number] : NSLocalizedString( @"Series", nil), @"Name",
-                                      [self value: item tag: @"00080060"], @"Modality",
-                                      [self value: item tag: @"0008103E"], @"Description",
-                                      [self value: item tag: @"00201209"], @"Images",
-                                      number, @"SeriesNumber",
-                                      suid, @"seriesUID",
-                                      [study objectForKey: @"uid"], @"studyUID", nil];
-            [self annotateSeries: s inStudy: study];   // Paket AO: Text, Kugel und Tooltip
-            [kids addObject: s];
+            NSLog( @"SekhVet DICOMweb: series answer raised %@", e.name);
+            [self seriesLoadFailedForStudy: study status: NSLocalizedString( @"Series: the answer of the node could not be read", nil)];
         }
-        [kids sortUsingComparator: ^NSComparisonResult( id a, id b) {
-            return [[a objectForKey: @"SeriesNumber"] compare: [b objectForKey: @"SeriesNumber"] options: NSNumericSearch];
-        }];
-        [study setObject: kids forKey: @"children"];        // Schluessel besteht bereits, nur der Wert wechselt
-        [study setObject: [NSNumber numberWithBool: YES] forKey: @"loaded"];
-        // SekhVet Paket BS: mit der Serienliste aendert sich das Soll der Studienzeile (Berichte fallen heraus)
-        [study setObject: [self localTextForStudy: study] forKey: @"Local"];
-        [study setObject: [self localFractionForStudy: study] forKey: @"localFraction"];
-        int have, want; [self countsForStudy: study have: &have want: &want];
-        [study setObject: [self localTipWithHave: have want: want] forKey: @"localTip"];
-        BOOL wasQuiet = [quietLoads containsObject: [study objectForKey: @"uid"]];
-        [quietLoads removeObject: [study objectForKey: @"uid"]];
-        [resultTable reloadItem: study reloadChildren: YES];
-        if( wasQuiet == NO) [resultTable expandItem: study];
-        [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"%d series", nil), (int) kids.count]];
-        [self retrieveMissingAfterLoad: study];   // SekhVet Paket BS
     }];
     [task resume];
 }
@@ -825,6 +1585,10 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 {
     NSIndexSet *sel = [resultTable selectedRowIndexes];
     if( sel.count == 0) { [self setStatus: NSLocalizedString( @"No study selected", nil)]; return; }
+    // SekhVet Paket CS: the rows come from resultsNode; every job is bound to that node
+    NSDictionary *node = resultsNode ? [[resultsNode retain] autorelease] : [[[self currentNode] copy] autorelease];
+    if( node == nil) { [self setStatus: NSLocalizedString( @"No node", nil)]; return; }
+    if( [self mayUseNode: node] == NO) return;
 
     // Paket AM: markiert sein koennen Studien- und Serienzeilen. Auftrag ist "<StudyUID>" oder "<StudyUID>|<SeriesUID>";
     // ist die ganze Studie markiert, fallen ihre einzeln markierten Serien weg.
@@ -899,23 +1663,34 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
         return;
     }
     // SekhVet Paket BU: laeuft schon ein Abruf, kommen die neuen Auftraege hinten an die Warteschlange (ohne Doppel, ohne den laufenden)
-    if( retrieveStudyUID)
+    // SekhVet Paket CS: the queue is an ivar of {job, node}; a non-empty queue means a retrieve is running or about to start
+    BOOL running = (retrieveStudyUID != nil || retrieveQueue.count > 0);
+    int added = [self enqueueJobs: queue node: node];
+    if( running)
     {
-        NSMutableArray *pending = [NSMutableArray arrayWithArray: [[NSUserDefaults standardUserDefaults] arrayForKey: @"SekhmetDICOMwebRetrieveQueue"]];
-        int added = 0;
-        for( NSString *job in queue)
-        {
-            if( [pending containsObject: job] || [job isEqualToString: retrieveJob]) continue;
-            [pending addObject: job]; added++;
-        }
-        [[NSUserDefaults standardUserDefaults] setObject: pending forKey: @"SekhmetDICOMwebRetrieveQueue"];
-        [self setStatus: added ? [NSString stringWithFormat: NSLocalizedString( @"Added to the queue: %d — %d waiting after the current retrieve", nil), added, (int) pending.count]
+        [self setStatus: added ? [NSString stringWithFormat: NSLocalizedString( @"Added to the queue: %d — %d waiting after the current retrieve", nil), added, (int) retrieveQueue.count]
                                : NSLocalizedString( @"Already in the queue", nil)];
         return;
     }
-    [[NSUserDefaults standardUserDefaults] setObject: queue forKey: @"SekhmetDICOMwebRetrieveQueue"];
     filesWritten = 0; failedJobs = 0;
     [self retrieveNextStudy];
+}
+
+// SekhVet Paket CS: append jobs for one node; skips what is already queued or running for that node. Returns the number added.
+- (int) enqueueJobs:(NSArray*) jobs node:(NSDictionary*) node
+{
+    int added = 0;
+    NSString *account = [SekhmetDICOMweb accountForNode: node];
+    for( NSString *job in jobs)
+    {
+        BOOL dup = retrieveStudyUID != nil && [job isEqualToString: retrieveJob] && retrieveNode && [account isEqualToString: [SekhmetDICOMweb accountForNode: retrieveNode]];
+        for( NSDictionary *q in retrieveQueue)
+            if( [[q objectForKey: @"job"] isEqualToString: job] && [[SekhmetDICOMweb accountForNode: [q objectForKey: @"node"]] isEqualToString: account]) { dup = YES; break; }
+        if( dup) continue;
+        [retrieveQueue addObject: [NSDictionary dictionaryWithObjectsAndKeys: job, @"job", node, @"node", nil]];
+        added++;
+    }
+    return added;
 }
 
 // SekhVet Paket BS: Auftraege "<StudyUID>|<SeriesUID>" fuer alle Serien einer aufgeklappten Studie, die hier nicht vollstaendig liegen
@@ -931,28 +1706,29 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     return jobs;
 }
 
-- (void) retrieveMissingAfterLoad:(NSDictionary*) study
+- (void) retrieveMissingAfterLoad:(NSDictionary*) study node:(NSDictionary*) node
 {
     NSString *uid = [study objectForKey: @"uid"];
     if( uid == nil || [retrieveAfterLoad containsObject: uid] == NO) return;
     [retrieveAfterLoad removeObject: uid];
     NSArray *jobs = [self missingSeriesJobsForStudy: study];
     if( jobs.count == 0) { [self setStatus: NSLocalizedString( @"Everything selected is already here — nothing to retrieve", nil)]; return; }
-    NSMutableArray *queue = [NSMutableArray arrayWithArray: [[NSUserDefaults standardUserDefaults] arrayForKey: @"SekhmetDICOMwebRetrieveQueue"]];
-    for( NSString *job in jobs) if( [queue containsObject: job] == NO && [job isEqualToString: retrieveJob] == NO) [queue addObject: job];
-    [[NSUserDefaults standardUserDefaults] setObject: queue forKey: @"SekhmetDICOMwebRetrieveQueue"];
-    if( retrieveStudyUID == nil) { filesWritten = 0; failedJobs = 0; [self retrieveNextStudy]; }   // laeuft schon ein Abruf, nimmt er die Auftraege am Ende mit
+    // SekhVet Paket CS: only these jobs, bound to the node the series list came from (no merge with a stored queue)
+    BOOL running = (retrieveStudyUID != nil || retrieveQueue.count > 0);
+    [self enqueueJobs: jobs node: node];
+    if( running == NO && retrieveQueue.count) { filesWritten = 0; failedJobs = 0; [self retrieveNextStudy]; }   // laeuft schon ein Abruf, nimmt er die Auftraege am Ende mit
 }
 
 - (void) retrieveNextStudy
 {
-    NSMutableArray *queue = [NSMutableArray arrayWithArray: [[NSUserDefaults standardUserDefaults] arrayForKey: @"SekhmetDICOMwebRetrieveQueue"]];
-    if( queue.count == 0)
+    if( retrieveQueue.count == 0)
     {
         [retrieveStudyUID release]; retrieveStudyUID = nil;
         [retrieveJob release]; retrieveJob = nil;
+        [retrieveNode release]; retrieveNode = nil;
         [progress stopAnimation: nil]; [progress setHidden: YES];
         [retrieveButton setEnabled: YES];
+        [stopButton setEnabled: NO];
         NSString *done = [NSString stringWithFormat: NSLocalizedString( @"Done: %d files written to INCOMING — importing now", nil), filesWritten];
         if( failedJobs) done = [done stringByAppendingFormat: NSLocalizedString( @" (%d retrieves failed: %@)", nil), failedJobs, lastRetrieveError ?: @"?"];
         [self setStatus: done];
@@ -961,26 +1737,42 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
         [self performSelector: @selector(refreshLocalStatus) withObject: nil afterDelay: 30];
         return;
     }
-    NSString *job = [queue objectAtIndex: 0];
+    NSDictionary *entry = [[[retrieveQueue objectAtIndex: 0] retain] autorelease];
+    [retrieveQueue removeObjectAtIndex: 0];
+    NSString *job = [entry objectForKey: @"job"];
+    NSDictionary *node = [entry objectForKey: @"node"];   // SekhVet Paket CS: the node the job was created for
     NSArray *parts = [job componentsSeparatedByString: @"|"];   // Paket AM: "<StudyUID>" oder "<StudyUID>|<SeriesUID>"
     NSString *uid = [parts objectAtIndex: 0];
     NSString *seriesUID = parts.count > 1 ? [parts objectAtIndex: 1] : nil;
-    [queue removeObjectAtIndex: 0];
-    [[NSUserDefaults standardUserDefaults] setObject: queue forKey: @"SekhmetDICOMwebRetrieveQueue"];
-
-    NSDictionary *node = [self currentNode];
-    if( node == nil) return;
 
     [retrieveJob release]; retrieveJob = [job retain];   // Paket BU
+    [retrieveNode release]; retrieveNode = [node retain];
+    [stopButton setEnabled: YES];
+
+    // SekhVet Paket CS: the node may have been removed or edited since the job was queued. The job then fails
+    // like any other (the queue moves on and ends cleanly) -- before, the method just returned and every later
+    // "Retrieve" only said "Added to the queue".
+    BOOL known = NO;
+    NSString *account = [SekhmetDICOMweb accountForNode: node];
+    for( NSDictionary *n in nodes)
+        if( [[SekhmetDICOMweb accountForNode: n] isEqualToString: account]) { known = YES; break; }
+    if( node == nil || known == NO)
+    {
+        [self retrieveFailed: NSLocalizedString( @"Retrieve skipped: the node of this job was removed or changed", nil)];
+        return;
+    }
+
     [retrieveStudyUID release]; retrieveStudyUID = [uid retain];
     [receivedData release]; receivedData = [[NSMutableData alloc] init];
     [retrieveBoundary release]; retrieveBoundary = nil;
     expectedLength = -1; receivedLength = 0;
     multipartStarted = NO; scanPos = 0;
-    [retrieveStamp release]; retrieveStamp = [[NSString stringWithFormat: @"%.0f", [NSDate timeIntervalSinceReferenceDate]] retain];
+    retrieveIncomplete = NO;
+    // SekhVet Paket CS: seconds alone collided when two jobs started within the same second
+    [retrieveStamp release]; retrieveStamp = [[NSString stringWithFormat: @"%.0f-%@", [NSDate timeIntervalSinceReferenceDate], [[[NSUUID UUID] UUIDString] substringToIndex: 8]] retain];
 
-    NSString *url = seriesUID.length ? [NSString stringWithFormat: @"%@/studies/%@/series/%@", [node objectForKey: @"url"], uid, seriesUID]
-                                     : [NSString stringWithFormat: @"%@/studies/%@", [node objectForKey: @"url"], uid];
+    NSString *url = seriesUID.length ? [NSString stringWithFormat: @"%@/studies/%@/series/%@", [node objectForKey: @"url"], sekhmetPathEscape( uid), sekhmetPathEscape( seriesUID)]
+                                     : [NSString stringWithFormat: @"%@/studies/%@", [node objectForKey: @"url"], sekhmetPathEscape( uid)];
     NSMutableURLRequest *req = [self requestForURL: url accept: @"multipart/related; type=\"application/dicom\"; transfer-syntax=*" node: node];
 
     [progress setIndeterminate: YES]; [progress setHidden: NO]; [progress startAnimation: nil];   // Paket BU: Retrieve bleibt bedienbar (haengt an)
@@ -989,6 +1781,27 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     NSURLSessionDataTask *task = [[self session] dataTaskWithRequest: req];
     [retrieveTask release]; retrieveTask = [task retain];
     [task resume];
+}
+
+// SekhVet Paket CS: stop the running retrieve and drop everything still queued. Files already written to
+// INCOMING are complete instances and stay; the instance in the buffer is discarded.
+- (IBAction) stopRetrieve:(id) sender
+{
+    if( retrieveStudyUID == nil && retrieveQueue.count == 0) return;
+    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(retrieveNextStudy) object: nil];
+    [retrieveQueue removeAllObjects];
+    [retrieveAfterLoad removeAllObjects];
+    NSURLSessionTask *t = [retrieveTask retain];
+    [retrieveTask release]; retrieveTask = nil;   // late callbacks of the cancelled task no longer count
+    [t cancel]; [t release];
+    [receivedData release]; receivedData = nil;
+    [retrieveStudyUID release]; retrieveStudyUID = nil;
+    [retrieveJob release]; retrieveJob = nil;
+    [retrieveNode release]; retrieveNode = nil;
+    [progress stopAnimation: nil]; [progress setHidden: YES];
+    [stopButton setEnabled: NO];
+    [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Retrieve stopped — %d files already written to INCOMING are being imported", nil), filesWritten]];
+    [self performSelector: @selector(refreshLocalStatus) withObject: nil afterDelay: 8];
 }
 
 // SekhVet Paket BU: ein fehlgeschlagener Auftrag haelt die Warteschlange nicht an; der naechste startet, die Fehler stehen am Ende im Status
@@ -1028,6 +1841,15 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     completionHandler( NSURLSessionResponseAllow);
 }
 
+// SekhVet Paket CS: PS3.10 file = 128 bytes preamble + "DICM"
++ (BOOL) dataLooksLikeDICOM:(NSData*) d
+{
+    if( d.length < 132) return NO;
+    char magic[ 4];
+    [d getBytes: magic range: NSMakeRange( 128, 4)];
+    return memcmp( magic, "DICM", 4) == 0;
+}
+
 - (void) URLSession:(NSURLSession*) s dataTask:(NSURLSessionDataTask*) task didReceiveData:(NSData*) data
 {
     if( task != retrieveTask) return;
@@ -1035,6 +1857,20 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     receivedLength += data.length;
     if( expectedLength > 0) [progress setDoubleValue: receivedLength];
     if( retrieveBoundary.length) filesWritten += [self drainMultipartFinal: NO];   // Stream: jede fertige Instanz sofort nach INCOMING
+
+    // SekhVet Paket CS: the buffer is bounded. A body that is neither multipart nor a DICOM file (HTML or
+    // JSON error page answered with 200) is refused after its first bytes instead of being collected in RAM.
+    NSString *problem = nil;
+    if( retrieveBoundary.length == 0 && receivedData.length >= 132 && [SekhmetDICOMweb dataLooksLikeDICOM: receivedData] == NO)
+        problem = NSLocalizedString( @"Retrieve: the node did not answer with DICOM (wrong URL or an error page?)", nil);
+    else if( receivedData.length > SekhmetWadoMaxBufferBytes)
+        problem = NSLocalizedString( @"Retrieve: one instance is larger than 2 GB or the stream is malformed — stopped", nil);
+    if( problem)
+    {
+        [task cancel];
+        [self retrieveFailed: problem];
+        return;
+    }
     [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Retrieving… %.0f MB, %d files written", nil), receivedLength / 1048576., filesWritten]];
 }
 
@@ -1053,11 +1889,19 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     else if( receivedData.length)
     {
         // Kein Multipart: eine Datei (application/dicom)
+        // SekhVet Paket CS: only if it IS a DICOM file; the name is unique per job and file
         NSString *incoming = [[DicomDatabase activeLocalDatabase] incomingDirPath];
-        if( incoming && [receivedData writeToFile: [incoming stringByAppendingPathComponent: [NSString stringWithFormat: @"SekhVetWADO-%@-0.dcm", retrieveStamp]] atomically: YES]) filesWritten++;
+        if( [SekhmetDICOMweb dataLooksLikeDICOM: receivedData] == NO) retrieveIncomplete = YES;
+        else if( incoming && [receivedData writeToFile: [incoming stringByAppendingPathComponent: [NSString stringWithFormat: @"SekhVetWADO-%@-s%d.dcm", retrieveStamp, filesWritten]] atomically: YES]) filesWritten++;
+        else retrieveIncomplete = YES;
     }
     [receivedData release]; receivedData = nil;
-    NSLog( @"SekhVet DICOMweb: WADO-RS study %@ done, %d files so far", retrieveStudyUID, filesWritten);
+    NSLog( @"SekhVet DICOMweb: WADO-RS study %@ done, %d files so far%@", retrieveStudyUID, filesWritten, retrieveIncomplete ? @" (incomplete)" : @"");
+    if( retrieveIncomplete)   // SekhVet Paket CS: counted as a failed job; what was complete is already in INCOMING
+    {
+        [self retrieveFailed: NSLocalizedString( @"Retrieve incomplete: the node sent data that is not DICOM, the stream ended early, or a file could not be written", nil)];
+        return;
+    }
     [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"%d files written…", nil), filesWritten]];
     [self retrieveNextStudy];
 }
@@ -1083,6 +1927,7 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
             if( first.location == NSNotFound)
             {
                 if( len > delim.length) [receivedData replaceBytesInRange: NSMakeRange( 0, len - delim.length) withBytes: NULL length: 0]; // Praeambel weg, Ueberlappung behalten
+                if( final && receivedLength > 0) retrieveIncomplete = YES;   // SekhVet Paket CS: a body without a single delimiter is not a multipart answer
                 return count;
             }
             [receivedData replaceBytesInRange: NSMakeRange( 0, first.location + first.length) withBytes: NULL length: 0];
@@ -1096,7 +1941,11 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
         if( c[0] == '-' && c[1] == '-') { [receivedData setLength: 0]; return count; }
 
         NSRange hdrEnd = [receivedData rangeOfData: crlf2 options: 0 range: NSMakeRange( 0, len)];
-        if( hdrEnd.location == NSNotFound) return count;
+        if( hdrEnd.location == NSNotFound)
+        {
+            if( final && len > 4) retrieveIncomplete = YES;   // SekhVet Paket CS: cut off inside a part header
+            return count;
+        }
         NSUInteger bodyStart = hdrEnd.location + hdrEnd.length;
 
         NSUInteger from = MAX( bodyStart, scanPos);
@@ -1108,7 +1957,16 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
             scanPos = (len > delim.length) ? len - delim.length : bodyStart;   // beim naechsten Datenblock nur den neuen Teil absuchen
             if( scanPos < bodyStart) scanPos = bodyStart;
             if( final == NO) return count;
-            next = NSMakeRange( len, 0); truncated = YES;   // Strom endete ohne schliessenden Delimiter: Rest als letzte Instanz
+            // Strom endete ohne schliessenden Delimiter.
+            // SekhVet Paket CS: the rest is a complete last instance only if the announced Content-Length has
+            // fully arrived; otherwise it was cut off and is NOT written as a (truncated) DICOM file.
+            if( expectedLength <= 0 || receivedLength < expectedLength)
+            {
+                retrieveIncomplete = YES;
+                [receivedData setLength: 0];
+                return count;
+            }
+            next = NSMakeRange( len, 0); truncated = YES;
         }
 
         NSUInteger bodyEnd = next.location;
@@ -1120,9 +1978,23 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
         if( bodyEnd > bodyStart)
         {
             NSData *part = [receivedData subdataWithRange: NSMakeRange( bodyStart, bodyEnd - bodyStart)];
-            NSString *path = [incoming stringByAppendingPathComponent: [NSString stringWithFormat: @"SekhVetWADO-%@-%d.dcm", retrieveStamp, filesWritten + count]];
-            if( [part writeToFile: path atomically: YES]) count++;
-            else NSLog( @"SekhVet DICOMweb: write failed %@", path);
+            // SekhVet Paket CS: only parts that are DICOM -- declared as application/dicom or carrying the DICM
+            // magic. An error text inside the multipart stream is not written into INCOMING as ".dcm".
+            BOOL declared = NO;
+            NSString *partHeader = [[[NSString alloc] initWithData: [receivedData subdataWithRange: NSMakeRange( 0, hdrEnd.location)] encoding: NSISOLatin1StringEncoding] autorelease];
+            for( NSString *line in [[partHeader lowercaseString] componentsSeparatedByString: @"\r\n"])
+            {
+                if( [line hasPrefix: @"content-type:"] == NO) continue;
+                NSString *type = [[line substringFromIndex: 13] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+                declared = [type isEqualToString: @"application/dicom"] || [type hasPrefix: @"application/dicom;"];
+            }
+            if( declared == NO && [SekhmetDICOMweb dataLooksLikeDICOM: part] == NO) retrieveIncomplete = YES;
+            else
+            {
+                NSString *path = [incoming stringByAppendingPathComponent: [NSString stringWithFormat: @"SekhVetWADO-%@-%d.dcm", retrieveStamp, filesWritten + count]];
+                if( [part writeToFile: path atomically: YES]) count++;
+                else { retrieveIncomplete = YES; NSLog( @"SekhVet DICOMweb: write failed %@", path); }
+            }
         }
         [receivedData replaceBytesInRange: NSMakeRange( 0, next.location + next.length) withBytes: NULL length: 0];
         scanPos = 0;
@@ -1168,96 +2040,347 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     [self stowPaths: paths];
 }
 
+// SekhVet Paket CH: Multipart-Koerper als Datei (grosse Studien nicht im RAM), Teile: Content-Type application/dicom.
+// Laeuft auch im Hintergrund-Thread (dann Fortschritt 0..0.3 und Abbruch ueber thread). nil = Datei nicht anlegbar.
++ (NSString*) newBoundary
+{
+    return [NSString stringWithFormat: @"SekhVet-%@", [[NSUUID UUID] UUIDString]];
+}
+
++ (NSString*) writeMultipartForPaths:(NSArray*) paths tempDir:(NSString*) tmpDir boundary:(NSString*) boundary count:(int*) countOut thread:(NSThread*) thread
+{
+    if( tmpDir.length == 0) tmpDir = NSTemporaryDirectory();
+    [[NSFileManager defaultManager] createDirectoryAtPath: tmpDir withIntermediateDirectories: YES attributes: nil error: NULL];
+    NSString *tmp = [tmpDir stringByAppendingPathComponent: [NSString stringWithFormat: @"SekhVet-STOW-%@.bin", [[NSUUID UUID] UUIDString]]];
+    [[NSFileManager defaultManager] createFileAtPath: tmp contents: [NSData data] attributes: nil];
+    NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath: tmp];
+    if( fh == nil) return nil;
+
+    int n = 0, i = 0;
+    // SekhVet Paket CS: NSFileHandle writeData: raises when the disk is full. This runs on a background
+    // thread, where an uncaught exception ends the app -- catch it, remove the partial file, report nil.
+    @try
+    {
+        for( NSString *p in paths)
+        {
+            if( thread.isCancelled) break;
+            NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+            NSData *d = [NSData dataWithContentsOfFile: p options: NSDataReadingMappedIfSafe error: NULL];
+            if( d.length)
+            {
+                [fh writeData: [[NSString stringWithFormat: @"--%@\r\nContent-Type: application/dicom\r\n\r\n", boundary] dataUsingEncoding: NSUTF8StringEncoding]];
+                [fh writeData: d];
+                [fh writeData: [@"\r\n" dataUsingEncoding: NSUTF8StringEncoding]];
+                n++;
+            }
+            [pool release];
+            if( thread && (++i % 20) == 0) thread.progress = 0.3 * i / paths.count;
+        }
+        [fh writeData: [[NSString stringWithFormat: @"--%@--\r\n", boundary] dataUsingEncoding: NSUTF8StringEncoding]];
+        [fh closeFile];
+    }
+    @catch (NSException *e)
+    {
+        NSLog( @"SekhVet DICOMweb: writing the upload file raised %@ after %d files", e.name, n);
+        @try { [fh closeFile]; } @catch (NSException *e2) {}
+        [[NSFileManager defaultManager] removeItemAtPath: tmp error: NULL];
+        if( countOut) *countOut = 0;
+        return nil;
+    }
+    if( countOut) *countOut = n;
+    return tmp;
+}
+
+- (NSMutableURLRequest*) stowRequestForNode:(NSDictionary*) node boundary:(NSString*) boundary
+{
+    NSMutableURLRequest *req = [self requestForURL: [NSString stringWithFormat: @"%@/studies", [node objectForKey: @"url"]] accept: @"application/dicom+json" node: node];
+    [req setHTTPMethod: @"POST"];
+    [req setValue: [NSString stringWithFormat: @"multipart/related; type=\"application/dicom\"; boundary=%@", boundary] forHTTPHeaderField: @"Content-Type"];
+    return req;
+}
+
+// SekhVet Paket CS: reads the Store Instances Response (PS3.18): ReferencedSOPSequence (0008,1199) = stored,
+// FailedSOPSequence (0008,1198) = rejected. YES only if the body IS such a response, as DICOM JSON or as
+// Native DICOM XML; every level is type-checked (this also runs on the background send thread).
++ (BOOL) stowCountsFromData:(NSData*) data stored:(int*) stored failed:(int*) failed
+{
+    *stored = 0; *failed = 0;
+    if( data.length == 0) return NO;
+    @try
+    {
+        NSDictionary *d = sekhmetTyped( [NSJSONSerialization JSONObjectWithData: data options: 0 error: NULL], [NSDictionary class]);
+        if( d)
+        {
+            NSDictionary *f = sekhmetTyped( [d objectForKey: @"00081198"], [NSDictionary class]);
+            NSDictionary *r = sekhmetTyped( [d objectForKey: @"00081199"], [NSDictionary class]);
+            if( f == nil && r == nil) return NO;
+            *failed = (int) [sekhmetTyped( [f objectForKey: @"Value"], [NSArray class]) count];
+            *stored = (int) [sekhmetTyped( [r objectForKey: @"Value"], [NSArray class]) count];
+            return YES;
+        }
+        NSXMLDocument *x = [[[NSXMLDocument alloc] initWithData: data options: NSXMLNodeLoadExternalEntitiesNever error: NULL] autorelease];
+        if( x == nil) return NO;
+        NSArray *any = [x nodesForXPath: @"//*[local-name()='DicomAttribute'][@tag='00081198' or @tag='00081199']" error: NULL];
+        if( any.count == 0) return NO;
+        *failed = (int) [[x nodesForXPath: @"//*[local-name()='DicomAttribute'][@tag='00081198']/*[local-name()='Item']" error: NULL] count];
+        *stored = (int) [[x nodesForXPath: @"//*[local-name()='DicomAttribute'][@tag='00081199']/*[local-name()='Item']" error: NULL] count];
+        return YES;
+    }
+    @catch (NSException *e) { *stored = 0; *failed = 0; }
+    return NO;
+}
+
+// SekhVet Paket CS: three outcomes instead of two.
+//   ok          the node confirmed every file that was sent
+//   unconfirmed HTTP 2xx, but no (or only a partial) store confirmation -- a wrong URL, a reverse proxy or
+//               a login page answers 200 to a POST as well; the message no longer claims "N files accepted"
+//   neither     rejected or failed
+// The standard defines 200 / 202 / 409 with a response body; any other 2xx (204, empty body) is unconfirmed.
++ (NSString*) messageForStowData:(NSData*) data response:(NSURLResponse*) response fileCount:(int) fileCount ok:(BOOL*) ok unconfirmed:(BOOL*) unconfirmed
+{
+    NSInteger code = [response isKindOfClass: [NSHTTPURLResponse class]] ? [(NSHTTPURLResponse*) response statusCode] : 0;
+    int failed = 0, stored = 0;
+    BOOL parsed = [self stowCountsFromData: data stored: &stored failed: &failed];
+    BOOL success = (code >= 200 && code < 300);
+    if( ok) *ok = NO;
+    if( unconfirmed) *unconfirmed = NO;
+
+    if( code == 401) return NSLocalizedString( @"STOW-RS 401: user/password rejected", nil);
+    if( success && parsed && failed == 0 && stored >= fileCount)
+    {
+        if( ok) *ok = YES;
+        return [NSString stringWithFormat: NSLocalizedString( @"STOW-RS: %d files accepted (HTTP %d)", nil), stored, (int) code];
+    }
+    if( success && parsed && failed == 0 && stored > 0)
+    {
+        if( unconfirmed) *unconfirmed = YES;
+        return [NSString stringWithFormat: NSLocalizedString( @"STOW-RS HTTP %d: the node confirmed only %d of %d files — check on the node that the study is complete", nil), (int) code, stored, fileCount];
+    }
+    if( (success || code == 409) && parsed && (failed > 0 || stored > 0))
+        return [NSString stringWithFormat: NSLocalizedString( @"STOW-RS HTTP %d: %d accepted, %d rejected", nil), (int) code, stored, failed];
+    if( success)
+    {
+        if( unconfirmed) *unconfirmed = YES;
+        return [NSString stringWithFormat: NSLocalizedString( @"STOW-RS HTTP %d: %d files were uploaded, but the answer is not a DICOM store confirmation — NOT confirmed. Check on the node that the study arrived (wrong URL, proxy or login page?)", nil), (int) code, fileCount];
+    }
+    return [NSString stringWithFormat: NSLocalizedString( @"STOW-RS: HTTP %d", nil), (int) code];
+}
+
+#pragma mark - Senden aus der Datenbank (SekhVet Paket CH)
+
++ (NSMenuItem*) sendMenuItemWithTitle:(NSString*) title
+{
+    NSMenuItem *item = [[[NSMenuItem alloc] initWithTitle: title action: nil keyEquivalent: @""] autorelease];
+    NSMenu *sub = [[[NSMenu alloc] initWithTitle: title] autorelease];
+    [sub setDelegate: [SekhmetDICOMweb shared]]; // Knotenliste wird beim Oeffnen frisch aus den Prefs gebaut
+    [item setSubmenu: sub];
+    return item;
+}
+
+- (void) menuNeedsUpdate:(NSMenu*) menu
+{
+    [menu removeAllItems];
+    NSArray *list = [[NSUserDefaults standardUserDefaults] arrayForKey: SekhmetDICOMwebNodesKey];
+    for( NSUInteger i = 0; i < list.count; i++)
+    {
+        NSDictionary *n = [list objectAtIndex: i];
+        NSString *name = [n objectForKey: @"name"];
+        NSMenuItem *mi = [menu addItemWithTitle: name.length ? name : [n objectForKey: @"url"] action: @selector(sendToNode:) keyEquivalent: @""];
+        [mi setTarget: self];
+        [mi setTag: i];
+        [mi setToolTip: [n objectForKey: @"url"]];
+    }
+    if( list.count == 0)
+        [[menu addItemWithTitle: NSLocalizedString( @"No DICOMweb node set up", nil) action: nil keyEquivalent: @""] setEnabled: NO];
+    [menu addItem: [NSMenuItem separatorItem]];
+    [[menu addItemWithTitle: NSLocalizedString( @"DICOMweb Nodes…", nil) action: @selector(showWindow:) keyEquivalent: @""] setTarget: self];
+}
+
+- (IBAction) sendToNode:(id) sender
+{
+    NSArray *list = [[NSUserDefaults standardUserDefaults] arrayForKey: SekhmetDICOMwebNodesKey];
+    NSInteger i = [sender tag];
+    if( i < 0 || i >= (NSInteger) list.count) return;
+    NSDictionary *node = sekhmetTyped( [list objectAtIndex: i], [NSDictionary class]);
+    if( node == nil) return;
+    NSArray *paths = [SekhmetDICOMweb selectedDICOMPaths];
+    if( paths.count == 0)
+    {
+        [[AppController sharedAppController] notificationTitle: NSLocalizedString( @"DICOMweb", nil) description: NSLocalizedString( @"No DICOM study/series selected in the database", nil) name: @"dicomweb-send"];
+        NSBeep();
+        return;
+    }
+    NSUInteger studies = 0;
+    @try { for( id item in [[BrowserController currentBrowser] databaseSelection]) if( [item isKindOfClass: [DicomStudy class]]) studies++; }
+    @catch (NSException *e) {}
+    [self sendPaths: paths toNode: node studies: studies fromWindow: NO];
+}
+
+// SekhVet Paket CS: the one way to send. The "Send" button of the DICOMweb window used to build the whole
+// multipart file on the main thread (frozen window for large studies) and had no cancel; it now takes the
+// same background path as "Send via DICOMweb" in the database window. Main thread.
+- (void) sendPaths:(NSArray*) paths toNode:(NSDictionary*) node studies:(NSUInteger) studies fromWindow:(BOOL) fromWindow
+{
+    node = [[node copy] autorelease];   // snapshot: the node list stays editable while the thread runs
+    if( [self mayUseNode: node] == NO) return;   // plain http with credentials to a public host, asked once per node
+    NSString *name = sekhmetTyped( [node objectForKey: @"name"], [NSString class]);
+    if( name.length == 0) name = sekhmetTyped( [node objectForKey: @"url"], [NSString class]) ?: @"?";
+
+    // Anfrage (Schluesselbund!) und TEMP-Pfad hier im Hauptthread, Koerper und Upload im Hintergrund
+    NSString *boundary = [SekhmetDICOMweb newBoundary];
+    [self session]; // einmal hier im Hauptthread anlegen
+    NSDictionary *job = [NSDictionary dictionaryWithObjectsAndKeys:
+                         paths, @"paths", node, @"node", boundary, @"boundary",
+                         [self stowRequestForNode: node boundary: boundary], @"request",
+                         [[DicomDatabase activeLocalDatabase] tempDirPath] ?: NSTemporaryDirectory(), @"tempDir",
+                         [NSNumber numberWithBool: fromWindow], @"window", nil];
+    NSThread *t = [[[NSThread alloc] initWithTarget: self selector: @selector(sendThread:) object: job] autorelease];
+    t.name = [NSString stringWithFormat: NSLocalizedString( @"DICOMweb send to %@", nil), name];
+    t.status = studies ? [NSString stringWithFormat: NSLocalizedString( @"%d studies, %d files", nil), (int) studies, (int) paths.count]
+                       : [NSString stringWithFormat: NSLocalizedString( @"%d files", nil), (int) paths.count];
+    t.supportsCancel = YES;
+    NSLog( @"SekhVet DICOMweb: send %d files to %@ (background)", (int) paths.count, [node objectForKey: @"url"]);
+    if( fromWindow) [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Sending %d files to %@ in the background — progress and cancel in the Activity list", nil), (int) paths.count, name]];
+    [[ThreadsManager defaultManager] addThreadAndStart: t];
+}
+
+- (void) sendThread:(NSDictionary*) job
+{
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSThread *thread = [NSThread currentThread];
+    NSDictionary *node = [job objectForKey: @"node"];
+    NSString *name = sekhmetTyped( [node objectForKey: @"name"], [NSString class]);
+    if( name.length == 0) name = sekhmetTyped( [node objectForKey: @"url"], [NSString class]) ?: @"?";
+    NSMutableURLRequest *req = [job objectForKey: @"request"];
+    NSString *msg = nil, *tmp = nil;
+    int n = 0;
+    BOOL ok = NO, unconfirmed = NO;
+
+    @try   // SekhVet Paket CS: nothing may escape from this thread -- an uncaught exception ends the app
+    {
+        NSArray *paths = [job objectForKey: @"paths"];
+        NSString *tempDir = [job objectForKey: @"tempDir"];
+
+        // Sekhmet (DD): in Portionen von hoechstens SekhmetStowBatchFiles Dateien bzw. SekhmetStowBatchBytes senden
+        // (eine Datei, die allein groesser ist, geht allein). Vorher ging die ganze Studie in EINEM POST - hinter einem
+        // Proxy oder bei einem Cloud-PACS endete eine grosse CT mit HTTP 413, alles oder nichts
+        // (nach ThalesMMS/horos e948e313: 50 Dateien / 64 MB je Anfrage)
+        NSMutableArray *batches = [NSMutableArray array];
+        NSMutableArray *batch = [NSMutableArray array];
+        unsigned long long batchBytes = 0, largestBatch = 0;
+        for( NSString *p in paths)
+        {
+            unsigned long long size = [[[NSFileManager defaultManager] attributesOfItemAtPath: p error: NULL] fileSize];
+            if( batch.count && (batch.count >= SekhmetStowBatchFiles || batchBytes + size > SekhmetStowBatchBytes))
+            {
+                [batches addObject: batch];
+                largestBatch = MAX( largestBatch, batchBytes);
+                batch = [NSMutableArray array];
+                batchBytes = 0;
+            }
+            [batch addObject: p];
+            batchBytes += size;
+        }
+        if( batch.count) { [batches addObject: batch]; largestBatch = MAX( largestBatch, batchBytes); }
+
+        // SekhVet Paket CS: the multipart body is a second copy of the files -- check the room before writing it
+        // Sekhmet (DD): nur noch fuer die groesste Portion, die Temp-Datei wird je Portion neu geschrieben
+        NSNumber *frei = [[[NSFileManager defaultManager] attributesOfFileSystemForPath: tempDir error: NULL] objectForKey: NSFileSystemFreeSize];
+        if( frei && [frei unsignedLongLongValue] < largestBatch + 64ULL * 1024 * 1024)
+            msg = [NSString stringWithFormat: NSLocalizedString( @"Not enough free disk space for the temporary upload file (%@ needed)", nil),
+                   [NSByteCountFormatter stringFromByteCount: (long long) largestBatch countStyle: NSByteCountFormatterCountStyleFile]];
+        else
+        {
+            int confirmed = 0, sentFiles = 0, batchIndex = 0;
+            BOOL anyUnconfirmed = NO;
+            NSString *lastMsg = nil;
+            ok = YES;
+            for( NSArray *part in batches)
+            {
+                batchIndex++;
+                BOOL partOk = NO, partUnconfirmed = NO;
+                int partN = 0;
+                NSString *partMsg = nil;
+                NSAutoreleasePool *partPool = [[NSAutoreleasePool alloc] init];
+
+                tmp = [SekhmetDICOMweb writeMultipartForPaths: part tempDir: tempDir boundary: [job objectForKey: @"boundary"] count: &partN thread: nil];
+                if( tmp == nil) partMsg = NSLocalizedString( @"Cannot write the temporary upload file (disk full?)", nil);
+                else if( thread.isCancelled) partMsg = NSLocalizedString( @"Send cancelled", nil);
+                else if( partN == 0) { partOk = YES; }   // nur unlesbare Dateien in dieser Portion: weiter mit der naechsten
+                else
+                {
+                    __block NSData *rData = nil; __block NSURLResponse *rResp = nil; __block NSError *rErr = nil;
+                    dispatch_semaphore_t done = dispatch_semaphore_create( 0);
+                    NSURLSessionUploadTask *task = [[self session] uploadTaskWithRequest: req fromFile: [NSURL fileURLWithPath: tmp] completionHandler: ^(NSData *data, NSURLResponse *response, NSError *error) {
+                        rData = [data retain]; rResp = [response retain]; rErr = [error retain];
+                        dispatch_semaphore_signal( done);
+                    }];
+                    [task resume];
+                    thread.status = batches.count > 1 ? [NSString stringWithFormat: NSLocalizedString( @"Sending part %d of %d (%d files)…", nil), batchIndex, (int) batches.count, partN]
+                                                      : [NSString stringWithFormat: NSLocalizedString( @"Sending %d files…", nil), partN];
+                    while( dispatch_semaphore_wait( done, dispatch_time( DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC)))
+                    {
+                        if( thread.isCancelled) [task cancel];
+                        int64_t sentBytes = task.countOfBytesSent, total = task.countOfBytesExpectedToSend;
+                        if( total > 0)
+                            thread.progress = ((batchIndex - 1) + sentBytes / (double) total) / (double) batches.count;
+                    }
+                    dispatch_release( done);
+                    if( rErr) partMsg = thread.isCancelled ? NSLocalizedString( @"Send cancelled", nil) : [NSString stringWithFormat: NSLocalizedString( @"STOW-RS error: %@", nil), rErr.localizedDescription];
+                    else partMsg = [SekhmetDICOMweb messageForStowData: rData response: rResp fileCount: partN ok: &partOk unconfirmed: &partUnconfirmed];
+                    [rData release]; [rResp release]; [rErr release];
+                }
+                if( tmp) { [[NSFileManager defaultManager] removeItemAtPath: tmp error: nil]; tmp = nil; }
+
+                n += partN;
+                if( partOk) { confirmed += partN; sentFiles += partN; }
+                else if( partUnconfirmed) { anyUnconfirmed = YES; sentFiles += partN; }
+                [lastMsg release]; lastMsg = [partMsg retain];
+                [partPool release];
+
+                if( partOk == NO && partUnconfirmed == NO)
+                {
+                    // harter Fehler (Login, HTTP-Fehler, Abbruch): nicht weiter senden, sagen, was schon angekommen ist
+                    ok = NO;
+                    msg = (batches.count > 1 && sentFiles > 0)
+                        ? [NSString stringWithFormat: NSLocalizedString( @"%@ — part %d of %d; %d files were sent before", nil), lastMsg, batchIndex, (int) batches.count, sentFiles]
+                        : [[lastMsg copy] autorelease];
+                    break;
+                }
+            }
+            if( msg == nil)
+            {
+                if( n == 0) { ok = NO; msg = NSLocalizedString( @"No readable DICOM file", nil); }
+                else if( anyUnconfirmed) { ok = NO; unconfirmed = YES; msg = batches.count > 1 ? [NSString stringWithFormat: NSLocalizedString( @"%@ (%d of %d files confirmed in %d parts)", nil), lastMsg, confirmed, n, (int) batches.count] : [[lastMsg copy] autorelease]; }
+                else msg = batches.count > 1 ? [NSString stringWithFormat: NSLocalizedString( @"STOW-RS: %d files accepted in %d parts", nil), confirmed, (int) batches.count] : [[lastMsg copy] autorelease];
+            }
+            [lastMsg release];
+        }
+    }
+    @catch (NSException *e)
+    {
+        NSLog( @"SekhVet DICOMweb: send raised %@", e.name);
+        ok = NO; unconfirmed = NO;
+        msg = NSLocalizedString( @"Send failed: internal error (see Console)", nil);
+    }
+    if( tmp) [[NSFileManager defaultManager] removeItemAtPath: tmp error: nil];
+
+    NSLog( @"SekhVet DICOMweb: send to %@: %@", [node objectForKey: @"url"], msg);
+    // SekhVet Paket CS: "Sent to …" only when the node confirmed every file
+    NSString *title = ok ? [NSString stringWithFormat: NSLocalizedString( @"Sent to %@", nil), name]
+                    : unconfirmed ? [NSString stringWithFormat: NSLocalizedString( @"Sent to %@ — NOT confirmed by the node", nil), name]
+                                  : [NSString stringWithFormat: NSLocalizedString( @"Sending to %@ failed", nil), name];
+    [[AppController sharedAppController] notificationTitle: title description: msg name: @"dicomweb-send"]; // wechselt selbst in den Hauptthread
+    if( [[job objectForKey: @"window"] boolValue]) [self performSelectorOnMainThread: @selector(setStatus:) withObject: msg waitUntilDone: NO];
+    [pool release];
+}
+
 - (void) stowPaths:(NSArray*) paths
 {
     NSDictionary *node = [self currentNode];
     if( node == nil) { [self setStatus: NSLocalizedString( @"No node", nil)]; return; }
-    if( stowTask) { [self setStatus: NSLocalizedString( @"Send already running", nil)]; return; }
     if( paths.count == 0) { [self setStatus: NSLocalizedString( @"Nothing to send", nil)]; return; }
-
-    // Multipart-Koerper als Datei (grosse Studien nicht im RAM), Teile: Content-Type application/dicom
-    NSString *boundary = [NSString stringWithFormat: @"SekhVet-%@", [[NSUUID UUID] UUIDString]];
-    NSString *tmpDir = [[DicomDatabase activeLocalDatabase] tempDirPath];
-    if( tmpDir.length == 0) tmpDir = NSTemporaryDirectory();
-    NSString *tmp = [tmpDir stringByAppendingPathComponent: [NSString stringWithFormat: @"SekhVet-STOW-%.0f.bin", [NSDate timeIntervalSinceReferenceDate]]];
-    [[NSFileManager defaultManager] createFileAtPath: tmp contents: [NSData data] attributes: nil];
-    NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath: tmp];
-    if( fh == nil) { [self setStatus: NSLocalizedString( @"Cannot create temporary file", nil)]; return; }
-
-    int n = 0;
-    for( NSString *p in paths)
-    {
-        NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-        NSData *d = [NSData dataWithContentsOfFile: p options: NSDataReadingMappedIfSafe error: NULL];
-        if( d.length)
-        {
-            [fh writeData: [[NSString stringWithFormat: @"--%@\r\nContent-Type: application/dicom\r\n\r\n", boundary] dataUsingEncoding: NSUTF8StringEncoding]];
-            [fh writeData: d];
-            [fh writeData: [@"\r\n" dataUsingEncoding: NSUTF8StringEncoding]];
-            n++;
-        }
-        [pool release];
-    }
-    [fh writeData: [[NSString stringWithFormat: @"--%@--\r\n", boundary] dataUsingEncoding: NSUTF8StringEncoding]];
-    [fh closeFile];
-    if( n == 0) { [[NSFileManager defaultManager] removeItemAtPath: tmp error: nil]; [self setStatus: NSLocalizedString( @"No readable DICOM file", nil)]; return; }
-
-    unsigned long long size = [[[NSFileManager defaultManager] attributesOfItemAtPath: tmp error: NULL] fileSize];
-    NSMutableURLRequest *req = [self requestForURL: [NSString stringWithFormat: @"%@/studies", [node objectForKey: @"url"]] accept: @"application/dicom+json" node: node];
-    [req setHTTPMethod: @"POST"];
-    [req setValue: [NSString stringWithFormat: @"multipart/related; type=\"application/dicom\"; boundary=%@", boundary] forHTTPHeaderField: @"Content-Type"];
-
-    [stowTempPath release]; stowTempPath = [tmp retain];
-    stowFileCount = n;
-    [stowButton setEnabled: NO];
-    [progress setIndeterminate: NO]; [progress setMinValue: 0]; [progress setMaxValue: (double) size]; [progress setDoubleValue: 0];
-    [progress setHidden: NO]; [progress startAnimation: nil];
-    [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Sending %d files (%.0f MB) to %@…", nil), n, size / 1048576., [node objectForKey: @"name"]]];
-    NSLog( @"SekhVet DICOMweb: STOW-RS %d files, %llu bytes to %@", n, size, [node objectForKey: @"url"]);
-
-    NSURLSessionUploadTask *task = [[self session] uploadTaskWithRequest: req fromFile: [NSURL fileURLWithPath: tmp] completionHandler: ^(NSData *data, NSURLResponse *response, NSError *error) {
-        [self stowFinishedWithData: data response: response error: error];
-    }];
-    [stowTask release]; stowTask = [task retain];
-    [task resume];
-}
-
-- (void) URLSession:(NSURLSession*) s task:(NSURLSessionTask*) task didSendBodyData:(int64_t) bytesSent totalBytesSent:(int64_t) totalBytesSent totalBytesExpectedToSend:(int64_t) totalBytesExpectedToSend
-{
-    if( task != stowTask) return;
-    if( totalBytesExpectedToSend > 0) { [progress setMaxValue: (double) totalBytesExpectedToSend]; [progress setDoubleValue: (double) totalBytesSent]; }
-    [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"Sending… %.0f of %.0f MB", nil), totalBytesSent / 1048576., totalBytesExpectedToSend / 1048576.]];
-}
-
-- (void) stowFinishedWithData:(NSData*) data response:(NSURLResponse*) response error:(NSError*) error
-{
-    if( stowTempPath) [[NSFileManager defaultManager] removeItemAtPath: stowTempPath error: nil];
-    [stowTempPath release]; stowTempPath = nil;
-    [stowTask release]; stowTask = nil;
-    [stowButton setEnabled: YES];
-    [progress stopAnimation: nil]; [progress setHidden: YES];
-
-    if( error)
-    {
-        [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"STOW-RS error: %@", nil), error.localizedDescription]];
-        NSLog( @"SekhVet DICOMweb: STOW-RS error %@", error);
-        return;
-    }
-    NSInteger code = [(NSHTTPURLResponse*) response statusCode];
-    int failed = 0, stored = 0;
-    id json = data.length ? [NSJSONSerialization JSONObjectWithData: data options: 0 error: NULL] : nil;
-    if( [json isKindOfClass: [NSDictionary class]])
-    {
-        failed = (int) [[[json objectForKey: @"00081198"] objectForKey: @"Value"] count];   // FailedSOPSequence
-        stored = (int) [[[json objectForKey: @"00081199"] objectForKey: @"Value"] count];   // ReferencedSOPSequence
-    }
-    NSString *msg;
-    if( code == 401) msg = NSLocalizedString( @"STOW-RS 401: user/password rejected", nil);
-    else if( (code == 200 || code == 202) && failed == 0) msg = [NSString stringWithFormat: NSLocalizedString( @"STOW-RS: %d files accepted (HTTP %d)", nil), stored > 0 ? stored : stowFileCount, (int) code];
-    else if( code == 200 || code == 202 || code == 409) msg = [NSString stringWithFormat: NSLocalizedString( @"STOW-RS HTTP %d: %d accepted, %d rejected", nil), (int) code, stored, failed];
-    else msg = [NSString stringWithFormat: NSLocalizedString( @"STOW-RS: HTTP %d", nil), (int) code];
-    [self setStatus: msg];
-    NSLog( @"SekhVet DICOMweb: %@", msg);
+    [self sendPaths: paths toNode: node studies: 0 fromWindow: YES];   // SekhVet Paket CS: in the background, see sendPaths:
 }
 
 #pragma mark - Headless-Tests (Umgebungsvariablen)
@@ -1291,8 +2414,10 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
     [self loadNodes];
     if( nodes.count == 0) { NSLog( @"SekhVet Testhaken: kein DICOMweb-Knoten in den Prefs -- im Fenster mit + anlegen"); return; } // seit defaultNodes leer ist (Paket AJ)
     [nodePopup selectItemAtIndex: 0];
-    [[NSUserDefaults standardUserDefaults] setObject: [NSArray arrayWithObject: [NSString stringWithUTF8String: env]] forKey: @"SekhmetDICOMwebRetrieveQueue"];
-    filesWritten = 0;
+    // SekhVet Paket CS: the queue is an ivar of {job, node}
+    [retrieveQueue removeAllObjects];
+    [retrieveQueue addObject: [NSDictionary dictionaryWithObjectsAndKeys: [NSString stringWithUTF8String: env], @"job", [[[nodes objectAtIndex: 0] copy] autorelease], @"node", nil]];
+    filesWritten = 0; failedJobs = 0;
     [self retrieveNextStudy];
 }
 
@@ -1378,15 +2503,22 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
 - (NSInteger) numberOfRowsInTableView:(NSTableView*) tv
 {
+    if( tv == pickerTable) return pickerItems.count;   // SekhVet Paket DN-2
     return nodes.count;   // Paket AM: die Ergebnisse haengen jetzt an der Outline (nur nodeTable ist eine Tabelle)
 }
 
 - (id) tableView:(NSTableView*) tv objectValueForTableColumn:(NSTableColumn*) col row:(NSInteger) row
 {
+    if( tv == pickerTable)   // SekhVet Paket DN-2
+    {
+        if( row < 0 || row >= (NSInteger) pickerItems.count) return nil;
+        return [[pickerItems objectAtIndex: row] objectForKey: [col identifier]];
+    }
     NSDictionary *n = [nodes objectAtIndex: row];
     NSString *ident = [col identifier];
     if( [ident isEqualToString: @"Node"]) return [n objectForKey: @"name"];
     if( [ident isEqualToString: @"URL"]) return [n objectForKey: @"url"];
+    if( [ident isEqualToString: @"Institutions filter"]) return [n objectForKey: @"institutions"] ?: @"";   // SekhVet Paket DN
     return [n objectForKey: @"user"];
 }
 
@@ -1483,14 +2615,38 @@ static NSMutableDictionary *sekhmetSessionPasswords = nil; // Fallback, wenn der
 
 - (void) tableView:(NSTableView*) tv setObjectValue:(id) value forTableColumn:(NSTableColumn*) col row:(NSInteger) row
 {
+    if( tv == pickerTable)   // SekhVet Paket DN-2: only the checkbox is editable
+    {
+        if( row >= 0 && row < (NSInteger) pickerItems.count && [[col identifier] isEqualToString: @"on"])
+            [[pickerItems objectAtIndex: row] setObject: [NSNumber numberWithBool: [value boolValue]] forKey: @"on"];
+        return;
+    }
     if( [[tv identifier] isEqualToString: @"nodes"] == NO) return;
+    if( row < 0 || row >= (NSInteger) nodes.count) return;
     NSMutableDictionary *n = [nodes objectAtIndex: row];
+    NSDictionary *before = [[n copy] autorelease];
     NSString *ident = [col identifier];
-    if( value == nil) value = @"";
+    if( [value isKindOfClass: [NSString class]] == NO) value = @"";
     if( [ident isEqualToString: @"Node"]) [n setObject: value forKey: @"name"];
     else if( [ident isEqualToString: @"URL"]) [n setObject: [value stringByTrimmingCharactersInSet: [NSCharacterSet characterSetWithCharactersInString: @"/ "]] forKey: @"url"];
+    else if( [ident isEqualToString: @"Institutions filter"])   // SekhVet Paket DN: stored as typed, split at ";" when used
+    {
+        [n setObject: [value stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]] forKey: @"institutions"];
+        [self saveNodes];
+        if( resultsNode && [[SekhmetDICOMweb accountForNode: resultsNode] isEqualToString: [SekhmetDICOMweb accountForNode: n]]) [self search: self];
+        return;
+    }
     else [n setObject: value forKey: @"user"];
+
+    // SekhVet Paket CS: the keychain account is "url|user". After a change of either, the old item would stay
+    // behind for ever. It is deleted, NOT carried over: a stored password is never sent to a new address
+    // without the user entering it again.
+    NSString *oldAccount = [SekhmetDICOMweb accountForNode: before];
+    BOOL moved = [[SekhmetDICOMweb accountForNode: n] isEqualToString: oldAccount] == NO;
+    BOOL hadPassword = moved && [[SekhmetDICOMweb passwordForNode: before] length] > 0;
+    if( moved) [SekhmetDICOMweb forgetAccount: oldAccount unlessUsedBy: nodes];
     [self saveNodes];
+    if( hadPassword) [self setStatus: NSLocalizedString( @"URL or user changed — save the password for this node again", nil)];
 }
 
 @end
