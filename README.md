@@ -233,6 +233,13 @@ comments at each place ("nach ThalesMMS/horos …", "nach ystarrev/horos …").
 
 ## Contributing
 
+**SekhVet is built by and for the community.** It is meant to give veterinary radiologists and
+colleagues in the field a viewer they can shape together, so that over time it becomes the best
+tool for our daily work. Your input is very welcome: tell us what is missing, what gets in your
+way or what should work differently — an [issue](https://github.com/3v3nFloW/sekhvet/issues) or
+**Vet Tools › Send Feedback…** is enough, and ideas are collected and implemented over time. If you
+can, improve the code yourself and send your changes back as a pull request.
+
 Bug reports and pull requests are welcome. Please keep in mind that this is a maintenance fork:
 changes to the viewer core (`DCMView`, `MPR*`, `ROI`) need a measurement check on a real image,
 not just "looks right".
