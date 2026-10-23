@@ -52,6 +52,8 @@
 #import "SekhmetUSKalibrierung.h" // SekhVet Paket BH
 #import "SekhmetDICOMweb.h" // Sekhmet
 #import "SekhmetImport.h" // SekhVet Paket G
+#import "SekhmetStudienDB.h" // SekhVet Paket DR
+#import "SekhmetEinstellungen.h" // SekhVet Paket DZ
 #import "SekhmetOrientationPanel.h"
 #import "SekhmetWindowing.h"
 #import "SekhmetOpening.h"
@@ -2215,6 +2217,11 @@ void exceptionHandler(NSException *exception)
 				[[NSUserDefaults standardUserDefaults] synchronize];
 				[[NSApplication sharedApplication] terminate: self];
 			}
+			// SekhVet Paket EF (Sicherheitspruefung 22.10.2026): ohne aktiviertes Schema nichts ausfuehren. Vorher lief der
+			// Befehl nach diesem Hinweis trotzdem -- ein Link aus dem Browser konnte so z.B. DownloadURL, OpenDB oder
+			// FindObject mit "Delete" ausloesen.
+			NSLog( @"SekhVet: sekhvet:// link ignored, the URL scheme is not activated");
+			return;
 		}
 		
 		NSString *content = [url resourceSpecifier];
@@ -2449,6 +2456,7 @@ static BOOL firstCall = YES;
     }
     
     [[BrowserController currentBrowser] syncReportsIfNecessary];
+    [SekhmetEinstellungen performSelector: @selector(wurdeAktiv) withObject: nil afterDelay: 1]; // SekhVet Paket DZ: neue Praxis-Einstellungen?
 	
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO) // Server mode
 	{
@@ -3386,6 +3394,11 @@ static const NSTimeInterval SekhmetNotificationInterval = 10, SekhmetNotificatio
     [[SekhmetImport shared] chooseFiles: sender];
 }
 
+- (IBAction) sekhmetNewStudyDatabase:(id) sender // SekhVet Paket DR
+{
+    [SekhmetStudienDB newStudyDatabaseFromFolder: sender];
+}
+
 - (IBAction) sekhmetShowDisplayPanel:(id) sender
 {
     [[SekhmetDisplayPanel shared] showWindow: sender];
@@ -3515,8 +3528,12 @@ static void sekhmetRotateFrames( NSArray *ordered)
     [[sek addItemWithTitle: NSLocalizedString( @"DICOMweb Query (QIDO-RS / WADO-RS)…", nil) action: @selector(sekhmetShowDICOMweb:) keyEquivalent: @""] setTarget: self];
     [[sek addItemWithTitle: NSLocalizedString( @"Import Image / PDF as DICOM…", nil) action: @selector(sekhmetShowImport:) keyEquivalent: @""] setTarget: self];
     [[sek addItemWithTitle: NSLocalizedString( @"Import from Other Databases (Horos, OsiriX …)…", nil) action: @selector(sekhmetShowOtherDatabases:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket BZ
+    [[sek addItemWithTitle: NSLocalizedString( @"New Study Database from Folder…", nil) action: @selector(sekhmetNewStudyDatabase:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket DR
     [sek addItem: [SekhmetDICOMweb sendMenuItemWithTitle: NSLocalizedString( @"Send Selected Studies via DICOMweb", nil)]]; // SekhVet Paket CH: je Knoten ein Eintrag
     [sek addItemWithTitle: NSLocalizedString( @"Rename Patient (DICOM)…", nil) action: @selector(sekhmetRenamePatient:) keyEquivalent: @""]; // SekhVet Paket BC: Ziel nil = Datenbankfenster ueber die Responder-Kette
+    [sek addItem: [NSMenuItem separatorItem]]; // SekhVet Paket DZ: Vet-Einstellungen sichern, exportieren, in der Praxis verteilen
+    NSMenuItem *vetSettings = [sek addItemWithTitle: NSLocalizedString( @"Vet Settings", nil) action: nil keyEquivalent: @""];
+    [vetSettings setSubmenu: [SekhmetEinstellungen menu]];
     [sek addItem: [NSMenuItem separatorItem]]; // SekhVet Paket F
     [[sek addItemWithTitle: NSLocalizedString( @"Send Feedback…", nil) action: @selector(feedback:) keyEquivalent: @""] setTarget: [SekhmetAbout shared]]; // SekhVet Paket AZ
     [[sek addItemWithTitle: NSLocalizedString( @"Contribute to SekhVet…", nil) action: @selector(donate:) keyEquivalent: @""] setTarget: [SekhmetAbout shared]];
@@ -3527,9 +3544,13 @@ static void sekhmetRotateFrames( NSArray *ordered)
     NSMenu *main = [NSApp mainMenu];
     [main insertItem: item atIndex: MAX( 0, [main numberOfItems] - 1)];
     [SekhmetDICOMweb performSelector: @selector(startAutoRefreshIfConfigured) withObject: nil afterDelay: 20]; // SekhVet Paket DN: Auto-Refresh lief beim Beenden
+    if( sekhvetTesthaken( "SEKHVET_SETTINGS_TEST") == NULL) [SekhmetEinstellungen performSelector: @selector(beimStart) withObject: nil afterDelay: 8]; // SekhVet Paket DZ: Sicherung, neue Vorgaben, Praxisordner
 #if SEKHVET_TESTHAKEN
     if( sekhvetTesthaken( "SEKHVET_IMPORT_TEST")) [SekhmetImport performSelector: @selector(debugImportFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test von Paket G
-    if( sekhvetTesthaken( "SEKHVET_DBIMPORT_TEST")) [SekhmetDatenbankImport performSelector: @selector(debugDatenbankImportFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket BZ
+    if( sekhvetTesthaken( "SEKHVET_STUDYDB_TEST")) [SekhmetStudienDB performSelector: @selector(debugFromEnvironment) withObject: nil afterDelay: 25]; // SekhVet Paket DR
+    if( sekhvetTesthaken( "SEKHVET_SETTINGS_TEST")) [SekhmetEinstellungen performSelector: @selector(debugFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket DZ
+    if( sekhvetTesthaken( "SEKHVET_EJECT_TEST")) [SekhmetStudienDB performSelector: @selector(debugEjectFromEnvironment) withObject: nil afterDelay: 25]; // SekhVet Paket DV
+    if( sekhvetTesthaken( "SEKHVET_DBIMPORT_TEST")) [SekhmetDatenbankImport performSelector: @selector(debugDatenbankImportFromEnvironment) withObject: nil afterDelay: sekhvetTesthaken( "SEKHVET_STUDYDB_TEST") ? 45 : 20]; // SekhVet Paket BZ
     if( sekhvetTesthaken( "SEKHVET_RENAME_TEST")) [SekhmetRename performSelector: @selector(debugRenameFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket BC
     if( sekhvetTesthaken( "SEKHVET_STOW_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugStowFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test STOW-RS
     if( sekhvetTesthaken( "SEKHVET_WADO_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugWadoFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test WADO-RS-Stream
@@ -3553,6 +3574,8 @@ static void sekhmetRotateFrames( NSArray *ordered)
     if( sekhvetTesthaken( "SEKHVET_POINT_TEST")) [SekhmetOrientation performSelector: @selector(debugPointTest) withObject: nil afterDelay: 60]; // SekhVet Build 67
     if( sekhvetTesthaken( "SEKHVET_POINT_LIFETIME_TEST")) [SekhmetOrientation performSelector: @selector(debugPointLifetimeTest) withObject: nil afterDelay: 60]; // SekhVet Paket AM
     if( sekhvetTesthaken( "SEKHVET_DICOMWEB_LIST_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugLocalListFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket AM
+    if( sekhvetTesthaken( "SEKHVET_DICOMWEB_AUTO_TEST")) [[SekhmetDICOMweb shared] performSelector: @selector(debugAutoFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket ED
+    if( sekhvetTesthaken( "SEKHVET_ARBEITSPLATZ_TEST")) [SekhmetDisplayPanel performSelector: @selector(debugWorkplaceFromEnvironment) withObject: nil afterDelay: 10]; // SekhVet Paket EE
 #endif // SEKHVET_TESTHAKEN
 }
 
@@ -3588,6 +3611,7 @@ static void sekhmetRotateFrames( NSArray *ordered)
     [SekhmetAbout showDisclaimerIfNeeded]; // SekhVet Paket AA: Hinweis beim ersten Start
     [self sekhvetAskUpdateConsentIfNeeded]; // SekhVet Paket CT: after the disclaimer, only on a fresh install
     [SekhmetContribute showReminderIfNeeded]; // SekhVet Paket AR: zurueckhaltende Beitrags-Erinnerung
+    [SekhmetDisplayPanel startWorkplaces]; // SekhVet Paket EE: Monitor-Kombination erkennen, Flaechen/Viewer-Bildschirme/DB-Fenster je Arbeitsplatz
 	
     [[[NSWorkspace sharedWorkspace] notificationCenter]
             addObserver:self
@@ -4059,6 +4083,33 @@ static void sekhmetRotateFrames( NSArray *ordered)
         [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"COPYSETTINGS"];
         [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"MagneticWindows"];
         [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SekhmetPropagateMigrated"];
+    }
+    if( ![[NSUserDefaults standardUserDefaults] boolForKey: @"SekhVetExampleServerMigrated"]) // SekhVet Paket EB: Beispielziel aus der Horos-Zeit heisst SEKHVET (19.10.)
+    {
+        // Installationen vor Paket CT haben das Horos-Beispielziel "Horos - This is an example" in den eigenen Prefs
+        // gespeichert, die neue Vorgabe (DefaultsOsiriX) kommt dort nie an. Umbenannt wird nur genau dieses Ziel.
+        NSArray *servers = [[NSUserDefaults standardUserDefaults] arrayForKey: @"SERVERS"];
+        NSMutableArray *migrated = [NSMutableArray arrayWithCapacity: servers.count];
+        BOOL changed = NO;
+        for( id s in servers)
+        {
+            if( [s isKindOfClass: [NSDictionary class]]
+               && [@"HOROS" isEqualToString: [[s objectForKey: @"AETitle"] uppercaseString]]
+               && [@"127.0.0.1" isEqualToString: [s objectForKey: @"Address"]]
+               && [[s objectForKey: @"Port"] intValue] == 4444
+               && [@"This is an example" isEqualToString: [s objectForKey: @"Description"]])
+            {
+                NSMutableDictionary *m = [NSMutableDictionary dictionaryWithDictionary: s];
+                [m setObject: @"SEKHVET" forKey: @"AETitle"];
+                [migrated addObject: m];
+                changed = YES;
+            }
+            else
+                [migrated addObject: s];
+        }
+        if( changed)
+            [[NSUserDefaults standardUserDefaults] setObject: migrated forKey: @"SERVERS"];
+        [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SekhVetExampleServerMigrated"];
     }
     // SekhVet Paket CT: the Horos crash reporter (FeedbackReporter) is no longer built in; macOS keeps the crash logs.
     

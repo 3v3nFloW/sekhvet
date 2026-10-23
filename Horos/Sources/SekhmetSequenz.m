@@ -94,7 +94,32 @@ static void regelnAnlegen( void)
     u = [NSString stringWithFormat: @" %@ ", u];
     if( trifft( reOhne, u)) return 1;   // "ohne KM" first, otherwise the KM inside it counts as contrast
     if( trifft( reCtKM, u)) return 2;
+    if( [self ctKMPhaseFuer: beschreibung] > 0) return 2;   // SekhVet Paket DW: "WT arteriell", "WT venoes" name no KM
     if( trifft( reNativ, u)) return 1;
+    return 0;
+}
+
+// SekhVet Paket DW (08.10.2026, Canon-Testfall: "Nativ und die beiden KM-Serien im Weichteilfenster"): the contrast phase
+// from the series name. Canon names the phases "WT arteriell" / "WT venoes" without "KM", so they counted as unknown
+// and got the chips "S8" / "S9". 0 = no phase word, 1 arterial, 2 venous / portal venous, 3 delayed.
++ (int) ctKMPhaseFuer:(NSString*) beschreibung
+{
+    static NSRegularExpression *reTrenner = nil, *reArt = nil, *reVen = nil, *reSpaet = nil, *reOhne = nil;
+    static dispatch_once_t einmal;
+    dispatch_once( &einmal, ^{
+        reTrenner = [[NSRegularExpression alloc] initWithPattern: @"[_,;()/+\\-]+" options: 0 error: nil];
+        reOhne = [[NSRegularExpression alloc] initWithPattern: @"\\s(OHNE|KEIN|KEINE|NO|NON|WITHOUT|WO|W\\s+O|SANS|PRE|PRAE|PRÄ|VOR)\\s+(I\\.?\\s?V\\.?\\s+)?(KM|KONTRASTMITTEL|KONTRAST|CONTRAST|CE|C|ENHANCED|ENHANCEMENT)\\s" options: 0 error: nil];
+        reArt = [[NSRegularExpression alloc] initWithPattern: @"\\s(ART|ARTERIELL|ARTERIELLE|ARTERIAL|ARTERIEN|ANGIO|CTA)\\s" options: 0 error: nil];
+        reVen = [[NSRegularExpression alloc] initWithPattern: @"\\s(VEN|VENOES|VENÖS|VENOS|VENOESE|VENÖSE|VENOUS|PORTAL|PORTALVENOES|PORTALVENÖS|PORTALVENOUS|PV|PVP)\\s" options: 0 error: nil];
+        reSpaet = [[NSRegularExpression alloc] initWithPattern: @"\\s(SPAET|SPÄT|SPAETPHASE|SPÄTPHASE|DELAYED|DELAY|LATE|EXKRETORISCH|EXCRETORY)\\s" options: 0 error: nil];
+    });
+    NSString *u = [(beschreibung ? beschreibung : @"") uppercaseString];
+    u = [reTrenner stringByReplacingMatchesInString: u options: 0 range: NSMakeRange( 0, u.length) withTemplate: @" "];
+    u = [NSString stringWithFormat: @" %@ ", u];
+    if( trifft( reOhne, u)) return 0;
+    if( trifft( reArt, u)) return 1;
+    if( trifft( reVen, u)) return 2;
+    if( trifft( reSpaet, u)) return 3;
     return 0;
 }
 

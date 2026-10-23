@@ -5,7 +5,7 @@ A veterinary DICOM viewer for macOS. SekhVet is a fork of [Horos](https://horosp
 
 Developed and maintained by Kappa1-VRS GmbH, Zurich, Switzerland.
 
-**Status: version 1.0** (first regular release, October 2026). See [Status](#status) below before you rely on a function.
+**Status: version 1.1** (October 2026; 1.0 was the first regular release). See [Status](#status) below before you rely on a function.
 
 ---
 
@@ -28,10 +28,10 @@ shortcoming.
 
 ## Status
 
-SekhVet 1.0 is the first regular release after a public beta (builds 45–149, August to October
-2026). The Horos core and the veterinary tools are in daily use in one practice. Functions that
-are new in 1.0 and have been tested on few devices so far are marked **new** here and in the
-manuals.
+SekhVet 1.1 follows 1.0, the first regular release after a public beta (builds 45–149, August
+to October 2026). The Horos core and the veterinary tools are in daily use in one practice.
+Functions that are new in 1.0 or 1.1 and have been tested on few devices so far are marked
+**new** here and in the manuals.
 
 | Function | Status |
 |---|---|
@@ -41,6 +41,11 @@ manuals.
 | DICOMweb query / retrieve (with queue) / send | in daily use |
 | Image and PDF import, rename patient, import from other databases, display settings | in daily use |
 | Overlay of native / contrast / bone series, in 2D and MPR | **new**, in use on CT and MR of one device since late September 2026 |
+| Overlay with several contrast phases (arterial / venous), one-click selection | **new in 1.1**, tested on CT studies from Siemens and Canon |
+| Study databases on external disks (from a folder in one step, eject from SekhVet) | **new in 1.1**, tested on one device with an external SSD, a USB stick and a USB hard disk |
+| Vet settings: backup on every update, export / import, practice settings folder | **new in 1.1**, tested on one computer |
+| DICOMweb compressed transfer (JPEG-LS, lossless) | **new in 1.1**, tested against Orthanc 1.13; other servers may refuse, SekhVet then retrieves uncompressed |
+| Workplaces: viewer area per monitor combination | **new in 1.1**, checked with simulated monitor combinations, not yet at two real monitors |
 | Subtraction by location (Horos fusion, repaired) | **new**, checked on CT and MR |
 | Measurement navigator; DICOMweb institution filter and automatic refresh | **new**, tested on one device since October 2026 |
 | Ultrasound calibration from a neighbouring image | **new**, one device tested (Mindray Vetus 9), enabled for Mindray only by default |
@@ -73,7 +78,7 @@ Everything below lives in the **Vet Tools** menu unless stated otherwise.
 |---|---|
 | **Orientation letters** | Cr/Cd and D/V instead of A/P and S/I, in 2D, MPR and on the 3D orientation cube |
 | **Hanging protocol** | Any number of protocols (add, rename, reorder); orientation rules per protocol; keyword rules per study description; rotation and flip rules per radiography device; works in the 3D MPR too |
-| **Opening protocols** | Which series open on double-click, in which layout and with which window; templates for MR head, spine and stifle; two-view radiographs hang VD left, lateral right |
+| **Opening protocols** | Which series open on double-click, in which layout and with which window; templates for MR head, spine, stifle and CT; contrast phases (arterial, venous, delayed) recognised; two-view radiographs hang VD left, lateral right |
 | **Window presets** | Modality and description rules for window level and width on opening; editable global WL/WW presets ("CT - Bone", "CT - Abdomen" …) |
 | **Spine labeling** | Click counter for dog/cat, rabbit and horse with an editable vertebral formula per study; direction from the first two clicks; disc labels by clicking between two vertebrae; rename with recount; the vertebral level (e.g. L3, L3-L4) is shown in every transverse series of the study and in the MPR |
 | **Norberg angle** | Hip dysplasia measurement on the VD pelvis: draggable femoral head circles, radius grip and mouse wheel, live angle, value stored with the study |
@@ -82,7 +87,9 @@ Everything below lives in the **Vet Tools** menu unless stated otherwise.
 | **Double MPR** | Two MPR windows of one study stay in sync: crosshair, planes, thickness, rotation, zoom per view |
 | **Swap / rotate windows** | ⌘H or the Swap button: two MPR windows change sides together with their 2D series; without MPR the 2D series swap; with three or more windows each moves one place on |
 | **MPR extras** | Convolution filters on all three planes, larger crosshair hit zones, quiet cursor, no high-dynamic-range dialog |
-| **Overlay** | Native, contrast and bone kernel of one examination stacked in one window, in 2D and in the MPR; slice, zoom and pan stay; shared measurements with a native / contrast Δ line |
+| **Overlay** | Native, contrast phases (arterial, venous …) and bone kernel of one examination stacked in one window, in 2D and in the MPR; slice, zoom and pan stay; shared measurements with a Δ per phase against native |
+| **Vet settings** | Backup on every update, export / import by group, a practice settings folder (e.g. on the NAS) that the other computers offer with a preview; passwords and network services never travel |
+| **Study databases** | A separate database per study or case collection, e.g. on an external SSD; built from a folder in one step with an image-by-image check; eject the disk from within SekhVet |
 | **Magnifier** | Corner magnifier while measuring a length, free magnifier with Shift |
 | **Ultrasound** | Length measurements on frames without calibration data borrow the calibration of a neighbouring frame with the same depth scale |
 | **Rename patient** | Writes name, ID, birth date and sex into the DICOM files of one or more studies, or takes the identity from an existing patient |
@@ -111,7 +118,7 @@ the plugin update check.
 
 Download the **DMG** from the [releases page](https://github.com/3v3nFloW/sekhvet/releases),
 open it and drag SekhVet onto the Applications folder in the window. The zip on the same page
-contains the same app. The beta builds (up to build 149) were pre-releases; 1.0 is a regular release. The SHA-256 of
+contains the same app. The beta builds (up to build 149) were pre-releases; 1.0 and later are regular releases. The SHA-256 of
 each file is in the release notes.
 
 SekhVet is ad-hoc signed and **not notarised**, so macOS blocks the first launch. Afterwards go
@@ -191,7 +198,8 @@ rebuild without it before installing or shipping. The hooks are declared in
 
 Builds are numbered consecutively (`CFBundleVersion`, shown in the About window and in the
 feedback template). The public beta (builds 45–149) was tagged `v1.0-beta.<build>` and published as
-pre-releases; 1.0 is tagged `v1.0` and its DMG is named `SekhVet-1.0-build<N>-macOS.dmg`. The
+pre-releases; regular releases are tagged `v1.0`, `v1.1` … and their DMG is named
+`SekhVet-<version>-build<N>-macOS.dmg`. The
 update check reads the build number from that file name. The public repository receives one commit per release on
 top of the Horos history, authored by Kappa1-VRS GmbH; the day-to-day history stays in the
 private working repository.

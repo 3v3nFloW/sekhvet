@@ -27,6 +27,7 @@
 @end
 
 NSString* const SekhmetMPRDidChangeNotification = @"SekhmetMPRDidChangeNotification";
+NSString* const SekhmetMPRWLWWDidChangeNotification = @"SekhmetMPRWLWWDidChangeNotification"; // SekhVet Paket EC
 BOOL SekhmetMPRSyncing = NO;
 
 @implementation MPRController (SekhVet)
@@ -108,6 +109,17 @@ BOOL SekhmetMPRSyncing = NO;
             }
         }
     }
+    // SekhVet Paket EC: WL/WW-Gleichlauf an: ein offenes MPR derselben Modalitaet gibt das Fenster vor
+    sekhmetLastWL = [mprView1 curWL]; sekhmetLastWW = [mprView1 curWW];   // eigener Stand gilt als bekannt: erstes Messen/Scrollen sendet nichts
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncWLWWKey])
+    {
+        for( NSWindow *w in [NSApp orderedWindows])
+        {
+            id wc = [w windowController];
+            if( wc != self && [wc isKindOfClass: [MPRController class]] && [(MPRController*) wc windowWillClose] == NO && [(MPRController*) wc sekhmetHPApplied]
+               && [self sekhmetTakeWLWWFrom: (MPRController*) wc]) break;
+        }
+    }
 }
 
 // SekhVet Paket CS (review finding 4): the protocol was applied while a view was zoomed by double-click, so the two
@@ -180,6 +192,79 @@ BOOL SekhmetMPRSyncing = NO;
     if( windowWillClose) return;
     if( sekhmetLastSyncFingerprint && [[self sekhmetCameraFingerprint] isEqualToString: sekhmetLastSyncFingerprint]) return; // SekhVet Paket R: unveraendert seit dem Empfang = Echo, nicht senden
     [[NSNotificationCenter defaultCenter] postNotificationName: SekhmetMPRDidChangeNotification object: self];
+}
+
+#pragma mark - SekhVet Paket EC: WL/WW zwischen MPR-Fenstern
+
+// 20.10.2026: Schalter fuer WL/WW im Double MPR. Eigener Schalter neben MPR-Sync, weil Praemisse 23
+// ("WL eigen") fuer Knochen-/Weichteilkern derselben Studie weiter gilt. Gekoppelt wird ueber die Modalitaet,
+// nicht den FoR: Voruntersuchung und Kontrolle derselben Modalitaet sollen dasselbe Fenster zeigen.
+static NSString* sekhmetModality( DCMPix *pix)
+{
+    NSString *m = nil;
+    @try { m = [pix.imageObj valueForKeyPath: @"series.modality"]; } @catch (NSException *e) { m = nil; }
+    return [m isKindOfClass: [NSString class]] && m.length ? m : nil;
+}
+
+- (IBAction) sekhmetToggleWLWWSync:(id) sender
+{
+    // the binding has already written the default; switched on here = this window gives the window level
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncWLWWKey] == NO) return;
+    sekhmetLastWW = -1;   // kein echtes Fenster hat WW < 0: der naechste Stand geht sicher raus (NAN ist unter -ffast-math undefiniert)
+    [self sekhmetScheduleWLWWBroadcast];
+}
+
+- (void) sekhmetScheduleWLWWBroadcast
+{
+    if( SekhmetMPRSyncing || windowWillClose || sekhmetHPApplied == NO) return; // Ladephase und Empfang senden nicht
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncWLWWKey] == NO) return;
+    if( sekhmetWLWWPending) return;   // Drossel wie beim Kamerastand: waehrend des Ziehens alle 30 ms
+    sekhmetWLWWPending = YES;
+    [self performSelector: @selector(sekhmetBroadcastWLWW) withObject: nil afterDelay: 0.03 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
+
+- (void) sekhmetBroadcastWLWW
+{
+    sekhmetWLWWPending = NO;
+    if( windowWillClose) return;
+    float wl = [mprView1 curWL], ww = [mprView1 curWW];
+    if( wl == sekhmetLastWL && ww == sekhmetLastWW) return; // unveraendert: Echo oder ein anderes 2D-Werkzeug (propagateWLWW: kommt bei jedem Ziehen)
+    sekhmetLastWL = wl; sekhmetLastWW = ww;
+    [[NSNotificationCenter defaultCenter] postNotificationName: SekhmetMPRWLWWDidChangeNotification object: self];
+}
+
+- (void) sekhmetWLWWFromNotification:(NSNotification*) n
+{
+    MPRController *src = [n object];
+    if( src == self || src == nil || windowWillClose) return;
+    [self sekhmetTakeWLWWFrom: src];
+}
+
+- (BOOL) sekhmetTakeWLWWFrom:(MPRController*) src
+{
+    if( windowWillClose || [src sekhmetHPApplied] == NO) return NO;
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncWLWWKey] == NO) return NO;
+    NSString *sm = sekhmetModality( [src sekhmetFirstPix]), *mm = sekhmetModality( [self sekhmetFirstPix]);
+    if( sm == nil || [sm isEqualToString: mm] == NO) return NO;   // CT-Fenster nie auf ein MR (Hounsfield vs. beliebige Skala)
+    MPRDCMView *sv = [src sekhmetView: 0];
+    float wl = [sv curWL], ww = [sv curWW];
+    if( !(ww > 0)) return NO;
+    BOOL was = SekhmetMPRSyncing;
+    SekhmetMPRSyncing = YES;
+    @try
+    {
+        // wie Horos' propagateWLWW: innerhalb eines Fensters: Ansicht und Kamera (die Kamera gibt das WL beim naechsten restoreCamera zurueck)
+        for( int i = 0; i < 3; i++)
+        {
+            MPRDCMView *v = [self sekhmetView: i];
+            [v setWLWW: wl :ww];
+            v.camera.wl = wl; v.camera.ww = ww;
+        }
+    }
+    @catch (NSException *e) { NSLog( @"SekhVet MPR WL/WW sync: %@", e); }
+    SekhmetMPRSyncing = was;
+    sekhmetLastWL = wl; sekhmetLastWW = ww;   // Echo: der eigene Haken in propagateWLWW: sendet diesen Stand nicht zurueck
+    return YES;
 }
 
 #pragma mark - SekhVet Paket AH: MPR-Lage je Serie merken
@@ -532,6 +617,7 @@ static NSString* sekhmetToolTitle( long tag)
         case tZoom:      return NSLocalizedString( @"Magnify", nil);
         case tRotate:    return NSLocalizedString( @"Rotate", nil);
         case tNext:      return NSLocalizedString( @"Scroll", nil);
+        case tCamera3D:  return NSLocalizedString( @"3D Rotate", nil); // SekhVet Paket DQ: was missing, the way back to it led only through the palette
         default:         return nil;
     }
 }

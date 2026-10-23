@@ -14,12 +14,16 @@
 #import "ROI.h"              // SekhVet Paket CD: Liniendicke
 #import "ViewerController.h" // SekhVet Paket CD
 #import "DCMView.h"          // SekhVet Paket CD
+#import "ThumbnailsListPanel.h"     // SekhVet Paket EE: Breite der Miniaturen-Leiste
+#import "NSUserDefaults+OsiriX.h"  // SekhVet Paket EE: Bildschirme fuer Viewer
 #include <sys/sysctl.h> // SekhVet Paket AZ: Mac-Modell fuer die Feedback-Mail
 
 NSString* const SekhmetScreenAreasKey = @"SekhmetScreenAreas";
 NSString* const SekhmetScreenAreaRectsKey = @"SekhmetScreenAreaRects";
+NSString* const SekhmetWorkplacesKey = @"SekhmetWorkplaces"; // SekhVet Paket EE
 NSString* const SekhmetAnnotationBackgroundKey = @"SekhmetAnnotationBackground";
 NSString* const SekhmetMPRSyncKey = @"SekhmetMPRSync";
+NSString* const SekhmetMPRSyncWLWWKey = @"SekhmetMPRSyncWLWW"; // SekhVet Paket EC
 NSString* const SekhmetMPRSyncSettingDidChangeNotification = @"SekhmetMPRSyncSettingDidChangeNotification"; // SekhVet Paket CS
 NSString* const SekhmetTile3DWindowsKey = @"SekhmetTile3DWindows";
 NSString* const SekhmetAppearanceKey = @"SekhmetAppearance"; // SekhVet Paket N
@@ -77,66 +81,190 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     return (m == SekhmetAreaPixelRect) ? 6 : m;
 }
 
-// SekhVet Paket CS (review finding 16): the areas were keyed by the position of the screen in [NSScreen screens] only.
-// That order changes when a display is connected or the arrangement is edited, and the area then applied to the wrong
-// monitor. Each value is now stored under the display number ("id<NSScreenNumber>") AND, as before, under the index.
-// Reading prefers the display number; the index is the fallback for settings stored before this package and for a
-// display whose number changed.
-+ (NSString*) stableKeyForScreen:(NSScreen*) screen
+// SekhVet Paket EE: the areas are kept per workplace (the combination of connected monitors) and per monitor, the
+// monitor known by vendor/model/serial instead of the display number macOS hands out (see SekhmetArbeitsplatz.h).
+// Paket CS stored them under "id<NSScreenNumber>" and the index; those two keys are read once more, for the first
+// workplace after the update, and then left alone.
+
+static BOOL sekhmetWorkplacePending = YES;   // until the workplace is recognised (start, screen change): moves of the DB window are macOS rearranging, not the user
+static NSString *sekhmetMonitorSignature = nil;
+static NSArray *sekhmetMonitorCache = nil;
+
++ (NSDictionary*) monitorForScreen:(NSScreen*) s
 {
-    NSNumber *n = [[screen deviceDescription] objectForKey: @"NSScreenNumber"];
-    return [n isKindOfClass: [NSNumber class]] ? [NSString stringWithFormat: @"id%u", [n unsignedIntValue]] : nil;
+    NSNumber *n = [[s deviceDescription] objectForKey: @"NSScreenNumber"];
+    CGDirectDisplayID d = [n isKindOfClass: [NSNumber class]] ? [n unsignedIntValue] : 0;
+    NSString *name = [s respondsToSelector: @selector(localizedName)] ? [s localizedName] : nil;
+    NSRect f = [s frame];
+    return [NSDictionary dictionaryWithObjectsAndKeys:
+            [NSNumber numberWithUnsignedInt: d ? CGDisplayVendorNumber( d) : 0], @"vendor",
+            [NSNumber numberWithUnsignedInt: d ? CGDisplayModelNumber( d) : 0], @"model",
+            [NSNumber numberWithUnsignedInt: d ? CGDisplaySerialNumber( d) : 0], @"serial",
+            name.length ? name : NSLocalizedString( @"Display", nil), @"name",
+            [NSNumber numberWithDouble: f.origin.x], @"x", [NSNumber numberWithDouble: f.origin.y], @"y",
+            [NSNumber numberWithDouble: f.size.width], @"w", [NSNumber numberWithDouble: f.size.height], @"h", nil];
 }
 
-+ (NSString*) indexKeyForScreen:(NSScreen*) screen
+// descriptions of [NSScreen screens], same order; kept until the screens (numbers or frames) change
++ (NSArray*) monitors
 {
-    NSUInteger idx = screen ? [[NSScreen screens] indexOfObject: screen] : NSNotFound;
-    return idx == NSNotFound ? nil : [NSString stringWithFormat: @"%d", (int) idx];
-}
+    NSArray *screens = [NSScreen screens];
+    NSMutableString *sig = [NSMutableString string];
+    for( NSScreen *s in screens) [sig appendFormat: @"%@ %@;", [[s deviceDescription] objectForKey: @"NSScreenNumber"], NSStringFromRect( [s frame])];
+    if( sekhmetMonitorCache && [sig isEqualToString: sekhmetMonitorSignature]) return sekhmetMonitorCache;
 
-// Once per start: settings stored by index only (before this package) are copied to the display number of the screen
-// that has that index NOW, so that a later change of the screen order no longer moves them to another monitor.
-+ (void) adoptIndexKeysOnce
-{
-    static BOOL done = NO;
-    if( done) return;
-    done = YES;
-    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    for( NSString *defaultsKey in [NSArray arrayWithObjects: SekhmetScreenAreasKey, SekhmetScreenAreaRectsKey, nil])
+    NSMutableArray *a = [NSMutableArray array];
+    for( NSScreen *s in screens) [a addObject: [self monitorForScreen: s]];
+#if SEKHVET_TESTHAKEN
+    // "vendor:model:serial:name;..." (hex, hex, decimal) replaces the EDID of screen 1, 2, ... -- other monitors without a second screen
+    const char *t = sekhvetTesthaken( "SEKHVET_MONITORE_TEST");
+    if( t)
     {
-        NSMutableDictionary *d = [NSMutableDictionary dictionaryWithDictionary: [ud dictionaryForKey: defaultsKey]];
-        BOOL changed = NO;
-        for( NSScreen *s in [NSScreen screens])
+        NSArray *eintraege = [[NSString stringWithUTF8String: t] componentsSeparatedByString: @";"];
+        for( NSUInteger i = 0; i < a.count && i < eintraege.count; i++)
         {
-            NSString *stable = [self stableKeyForScreen: s], *index = [self indexKeyForScreen: s];
-            if( stable && index && [d objectForKey: stable] == nil && [d objectForKey: index])
-            {
-                [d setObject: [d objectForKey: index] forKey: stable];
-                changed = YES;
-            }
+            NSArray *p = [[eintraege objectAtIndex: i] componentsSeparatedByString: @":"];
+            if( p.count < 4) continue;
+            unsigned v = 0, m = 0;
+            [[NSScanner scannerWithString: [p objectAtIndex: 0]] scanHexInt: &v];
+            [[NSScanner scannerWithString: [p objectAtIndex: 1]] scanHexInt: &m];
+            NSMutableDictionary *d = [NSMutableDictionary dictionaryWithDictionary: [a objectAtIndex: i]];
+            [d setObject: [NSNumber numberWithUnsignedInt: v] forKey: @"vendor"];
+            [d setObject: [NSNumber numberWithUnsignedInt: m] forKey: @"model"];
+            [d setObject: [NSNumber numberWithUnsignedInt: (unsigned) [[p objectAtIndex: 2] longLongValue]] forKey: @"serial"];
+            [d setObject: [p objectAtIndex: 3] forKey: @"name"];
+            [a replaceObjectAtIndex: i withObject: d];
         }
-        if( changed) [ud setObject: d forKey: defaultsKey];
     }
+#endif
+    [sekhmetMonitorSignature release]; sekhmetMonitorSignature = [sig copy];
+    [sekhmetMonitorCache release]; sekhmetMonitorCache = [a copy];
+    return sekhmetMonitorCache;
+}
+
++ (NSString*) monitorKeyForScreen:(NSScreen*) screen
+{
+    NSUInteger i = screen ? [[NSScreen screens] indexOfObject: screen] : NSNotFound;
+    if( i == NSNotFound) return nil;
+    NSArray *k = sekhmetMonitorKennungen( [self monitors]);
+    return i < k.count ? [k objectAtIndex: i] : nil;
+}
+
++ (NSString*) workplaceKey
+{
+    return sekhmetArbeitsplatzKennung( sekhmetMonitorKennungen( [self monitors]));
+}
+
++ (NSString*) workplaceName
+{
+    NSArray *sortiert = [[self monitors] sortedArrayUsingComparator: ^NSComparisonResult( id a, id b) { return sekhmetMonitorLinksVorRechts( a, b); }];
+    return [[sortiert valueForKey: @"name"] componentsJoinedByString: @" + "];
+}
+
+// "Screen 1 · DELL U2723QE (left)"
++ (NSString*) labelForScreenAtIndex:(NSUInteger) i
+{
+    NSArray *m = [self monitors];
+    if( i >= m.count) return @"";
+    NSString *lage = sekhmetMonitorLage( m, i);
+    NSString *name = [[m objectAtIndex: i] objectForKey: @"name"];
+    return lage ? [NSString stringWithFormat: @"%d · %@ (%@)", (int) i + 1, name, NSLocalizedString( lage, nil)] : [NSString stringWithFormat: @"%d · %@", (int) i + 1, name];
+}
+
+// before Paket EE: display number first, index as fallback -- only read for the first workplace
++ (id) legacyValueForScreen:(NSScreen*) screen defaultsKey:(NSString*) defaultsKey
+{
+    NSDictionary *d = [[NSUserDefaults standardUserDefaults] dictionaryForKey: defaultsKey];
+    NSNumber *n = [[screen deviceDescription] objectForKey: @"NSScreenNumber"];
+    id v = [n isKindOfClass: [NSNumber class]] ? [d objectForKey: [NSString stringWithFormat: @"id%u", [n unsignedIntValue]]] : nil;
+    NSUInteger idx = [[NSScreen screens] indexOfObject: screen];
+    if( v == nil && idx != NSNotFound) v = [d objectForKey: [NSString stringWithFormat: @"%d", (int) idx]];
+    return v;
+}
+
++ (NSArray*) monitorKeysOfScreenNumbers:(NSArray*) nummern
+{
+    NSMutableArray *k = [NSMutableArray array];
+    NSArray *screens = [NSScreen screens], *keys = sekhmetMonitorKennungen( [self monitors]);
+    for( NSUInteger i = 0; i < screens.count && i < keys.count; i++)
+    {
+        NSNumber *n = [[[screens objectAtIndex: i] deviceDescription] objectForKey: @"NSScreenNumber"];
+        if( n && [nummern containsObject: [NSNumber numberWithUnsignedInteger: [n unsignedIntegerValue]]]) [k addObject: [keys objectAtIndex: i]];
+    }
+    return k;
+}
+
+// the entry of the workplace connected now, created on first sight. The first entry ever (no SekhmetWorkplaces yet:
+// first start after the update) takes over the areas and viewer screens set before; a later new workplace starts
+// with the whole of every screen and all screens for viewers, and SekhVet offers once to set it up.
++ (NSDictionary*) workplaceEntry
+{
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    NSString *key = [self workplaceKey];
+    NSDictionary *alle = [ud dictionaryForKey: SekhmetWorkplacesKey];
+    NSDictionary *e = [alle objectForKey: key];
+    if( [e isKindOfClass: [NSDictionary class]]) return e;
+
+    NSMutableDictionary *areas = [NSMutableDictionary dictionary], *rects = [NSMutableDictionary dictionary];
+    NSArray *nonViewer = [NSArray array];
+    BOOL uebernahme = (alle == nil);
+    if( uebernahme)
+    {
+        NSArray *screens = [NSScreen screens], *keys = sekhmetMonitorKennungen( [self monitors]);
+        for( NSUInteger i = 0; i < screens.count && i < keys.count; i++)
+        {
+            id a = [self legacyValueForScreen: [screens objectAtIndex: i] defaultsKey: SekhmetScreenAreasKey];
+            id r = [self legacyValueForScreen: [screens objectAtIndex: i] defaultsKey: SekhmetScreenAreaRectsKey];
+            if( [a isKindOfClass: [NSNumber class]]) [areas setObject: a forKey: [keys objectAtIndex: i]];
+            if( [r isKindOfClass: [NSString class]]) [rects setObject: r forKey: [keys objectAtIndex: i]];
+        }
+        nonViewer = [self monitorKeysOfScreenNumbers: [ud arrayForKey: @"NonViewerScreens"]];
+    }
+    NSMutableDictionary *n = [NSMutableDictionary dictionaryWithObjectsAndKeys: [self workplaceName], @"name", areas, @"areas", rects, @"rects",
+                              nonViewer, @"nonViewer", [NSNumber numberWithBool: uebernahme || [[NSScreen screens] count] < 2], @"hinted", [NSDate date], @"used", nil];
+    NSMutableDictionary *neu = [NSMutableDictionary dictionaryWithDictionary: alle];
+    [neu setObject: n forKey: key];
+    [ud setObject: neu forKey: SekhmetWorkplacesKey];
+    NSLog( @"SekhVet workplace %@: %@ (%@), areas %@", uebernahme ? @"taken over" : @"new", key, [n objectForKey: @"name"], areas);
+    return n;
+}
+
++ (void) setWorkplaceField:(NSString*) field monitor:(NSString*) monitor value:(id) value   // monitor nil: value is the whole field
+{
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    NSString *key = [self workplaceKey];
+    NSMutableDictionary *e = [NSMutableDictionary dictionaryWithDictionary: [self workplaceEntry]];
+    if( monitor)
+    {
+        NSMutableDictionary *f = [NSMutableDictionary dictionaryWithDictionary: [e objectForKey: field]];
+        if( value) [f setObject: value forKey: monitor]; else [f removeObjectForKey: monitor];
+        [e setObject: f forKey: field];
+    }
+    else if( value) [e setObject: value forKey: field];
+    else [e removeObjectForKey: field];
+    [e setObject: [NSDate date] forKey: @"used"];
+    NSMutableDictionary *alle = [NSMutableDictionary dictionaryWithDictionary: [ud dictionaryForKey: SekhmetWorkplacesKey]];
+    [alle setObject: e forKey: key];
+    [ud setObject: alle forKey: SekhmetWorkplacesKey];
+}
+
++ (NSString*) fieldForDefaultsKey:(NSString*) defaultsKey
+{
+    return [defaultsKey isEqualToString: SekhmetScreenAreaRectsKey] ? @"rects" : @"areas";
 }
 
 + (id) storedValueForScreen:(NSScreen*) screen defaultsKey:(NSString*) defaultsKey
 {
-    [self adoptIndexKeysOnce];
-    NSDictionary *d = [[NSUserDefaults standardUserDefaults] dictionaryForKey: defaultsKey];
-    NSString *stable = [self stableKeyForScreen: screen], *index = [self indexKeyForScreen: screen];
-    id v = stable ? [d objectForKey: stable] : nil;
-    if( v == nil && index) v = [d objectForKey: index];
-    return v;
+    NSString *m = [self monitorKeyForScreen: screen];
+    if( m == nil) return nil;
+    return [[[self workplaceEntry] objectForKey: [self fieldForDefaultsKey: defaultsKey]] objectForKey: m];
 }
 
 + (void) storeValue:(id) value forScreen:(NSScreen*) screen defaultsKey:(NSString*) defaultsKey
 {
-    NSString *stable = [self stableKeyForScreen: screen], *index = [self indexKeyForScreen: screen];
-    if( value == nil || (stable == nil && index == nil)) return;
-    NSMutableDictionary *d = [NSMutableDictionary dictionaryWithDictionary: [[NSUserDefaults standardUserDefaults] dictionaryForKey: defaultsKey]];
-    if( stable) [d setObject: value forKey: stable];
-    if( index) [d setObject: value forKey: index];
-    [[NSUserDefaults standardUserDefaults] setObject: d forKey: defaultsKey];
+    NSString *m = [self monitorKeyForScreen: screen];
+    if( value == nil || m == nil) return;
+    [self setWorkplaceField: [self fieldForDefaultsKey: defaultsKey] monitor: m value: value];
 }
 
 + (NSInteger) modeForScreen:(NSScreen*) screen
@@ -146,10 +274,275 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
 
 + (void) setMode:(NSInteger) mode forScreen:(NSScreen*) screen
 {
-    if( [self indexKeyForScreen: screen] == nil) return;
+    if( [self monitorKeyForScreen: screen] == nil) return;
     [self storeValue: [NSNumber numberWithInteger: mode] forScreen: screen defaultsKey: SekhmetScreenAreasKey];
     if( sekhmetDisplayPanel) [sekhmetDisplayPanel loadFromDefaults];
 }
+
+// Horos keeps "Screens used for viewers" as display numbers (NonViewerScreens); they follow the workplace
++ (void) applyViewerScreens:(NSDictionary*) e
+{
+    NSArray *non = [e objectForKey: @"nonViewer"];
+    if( ![non isKindOfClass: [NSArray class]]) return;
+    NSMutableArray *nummern = [NSMutableArray array];
+    NSArray *screens = [NSScreen screens], *keys = sekhmetMonitorKennungen( [self monitors]);
+    for( NSUInteger i = 0; i < screens.count && i < keys.count; i++)
+        if( [non containsObject: [keys objectAtIndex: i]])
+            [nummern addObject: [NSNumber numberWithUnsignedInteger: [[[[screens objectAtIndex: i] deviceDescription] objectForKey: @"NSScreenNumber"] unsignedIntegerValue]]];
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    if( ![nummern isEqualToArray: [ud arrayForKey: @"NonViewerScreens"]]) [ud setObject: nummern forKey: @"NonViewerScreens"];
+}
+
++ (void) rememberViewerScreens
+{
+    [self setWorkplaceField: @"nonViewer" monitor: nil value: [self monitorKeysOfScreenNumbers: [[NSUserDefaults standardUserDefaults] arrayForKey: @"NonViewerScreens"]]];
+}
+
++ (NSWindow*) databaseWindow
+{
+    NSWindow *w = [[BrowserController currentBrowser] window];
+    return ([w isVisible] && ![w isMiniaturized] && ([w styleMask] & NSWindowStyleMaskFullScreen) == 0) ? w : nil;
+}
+
++ (void) storeDatabaseFrame
+{
+    NSWindow *w = [self databaseWindow];
+    if( sekhmetWorkplacePending || w == nil) return;
+    NSString *f = NSStringFromRect( [w frame]);
+    if( ![f isEqualToString: [[self workplaceEntry] objectForKey: @"db"]]) [self setWorkplaceField: @"db" monitor: nil value: f];
+}
+
++ (void) windowMovedForWorkplace:(NSNotification*) n
+{
+    if( sekhmetWorkplacePending || [n object] != [self databaseWindow]) return;
+    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(storeDatabaseFrame) object: nil];
+    [self performSelector: @selector(storeDatabaseFrame) withObject: nil afterDelay: 1];
+}
+
++ (void) screensChangedForWorkplace:(NSNotification*) n
+{
+    sekhmetWorkplacePending = YES;
+    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(storeDatabaseFrame) object: nil];
+    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(recognizeWorkplace) object: nil];
+    [self performSelector: @selector(recognizeWorkplace) withObject: nil afterDelay: 2];   // macOS moves the windows first
+}
+
++ (void) startWorkplaces
+{
+    static BOOL gestartet = NO;
+    if( gestartet) return;
+    gestartet = YES;
+    NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+    [nc addObserver: self selector: @selector(screensChangedForWorkplace:) name: NSApplicationDidChangeScreenParametersNotification object: nil];
+    [nc addObserver: self selector: @selector(windowMovedForWorkplace:) name: NSWindowDidMoveNotification object: nil];
+    [nc addObserver: self selector: @selector(windowMovedForWorkplace:) name: NSWindowDidResizeNotification object: nil];
+    [self performSelector: @selector(recognizeWorkplace) withObject: nil afterDelay: 3];   // the database window is up by then
+}
+
++ (void) recognizeWorkplace
+{
+    static NSString *letzter = nil;
+    NSString *key = [self workplaceKey];
+    NSDictionary *e = [self workplaceEntry];
+    BOOL gewechselt = letzter && ![letzter isEqualToString: key];
+    [letzter release]; letzter = [key retain];
+
+    [self applyViewerScreens: e];
+    NSWindow *w = [self databaseWindow];
+    NSString *db = [e objectForKey: @"db"];
+    if( w && [db isKindOfClass: [NSString class]])
+    {
+        NSRect r = NSRectFromString( db);
+        CGFloat sichtbar = 0;
+        for( NSScreen *s in [NSScreen screens])
+        {
+            NSRect i = NSIntersectionRect( r, [s visibleFrame]);
+            sichtbar += i.size.width * i.size.height;
+        }
+        if( r.size.width > 100 && r.size.height > 100 && sichtbar >= 0.5 * r.size.width * r.size.height && !NSEqualRects( r, [w frame]))
+            [w setFrame: r display: YES];
+    }
+    sekhmetWorkplacePending = NO;
+    if( db == nil) [self storeDatabaseFrame];
+    NSLog( @"SekhVet workplace recognised: %@ (%@)%@", key, [e objectForKey: @"name"], gewechselt ? @", changed -> re-tile" : @"");
+
+    if( gewechselt && [[ViewerController getDisplayed2DViewers] count]) [[AppController sharedAppController] tileWindows: nil];
+    if( sekhmetDisplayPanel && [[sekhmetDisplayPanel window] isVisible]) [sekhmetDisplayPanel loadFromDefaults];
+    if( ![[e objectForKey: @"hinted"] boolValue]) [self offerSetupForNewWorkplace];
+}
+
++ (void) offerSetupForNewWorkplace
+{
+#if SEKHVET_TESTHAKEN                               // test build only: never block a headless test run
+    for( NSString *k in [[NSProcessInfo processInfo] environment])
+        if( [k hasPrefix: @"SEKHVET_"]) return;
+#endif
+    NSWindow *w = [self databaseWindow];
+    if( w == nil || [w attachedSheet]) return;   // asked the next time this workplace is recognised
+    [self setWorkplaceField: @"hinted" monitor: nil value: [NSNumber numberWithBool: YES]];
+
+    NSAlert *a = [[[NSAlert alloc] init] autorelease];
+    [a setAlertStyle: NSAlertStyleInformational];
+    [a setMessageText: NSLocalizedString( @"New monitor arrangement", nil)];
+    [a setInformativeText: [NSString stringWithFormat: NSLocalizedString( @"SekhVet sees these monitors together for the first time: %@.\n\nViewers use the whole of every screen for now. To keep part of a screen free, for example half of the second monitor for the report, choose the viewer area per screen. SekhVet remembers it for this combination of monitors and uses it again whenever they are connected.", nil), [self workplaceName]]];
+    [a addButtonWithTitle: NSLocalizedString( @"Set Up Screens…", nil)];
+    [a addButtonWithTitle: NSLocalizedString( @"Keep Whole Screens", nil)];
+    [a beginSheetModalForWindow: w completionHandler: ^( NSModalResponse r) {
+        if( r != NSAlertFirstButtonReturn) return;
+        [[SekhmetDisplayPanel shared] showWindow: nil];
+        [[[SekhmetDisplayPanel shared] window] makeKeyAndOrderFront: nil];
+        [SekhmetDisplayPanel identifyScreens];
+    }];
+}
+
+// the area a viewer window stands for: the floating toolbar above it and the thumbnails list beside it belong to it
++ (NSRect) areaFrameOfWindow:(NSWindow*) w
+{
+    NSRect f = [w frame];
+    if( [[w windowController] isKindOfClass: [ViewerController class]])
+    {
+        NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+        if( [AppController USETOOLBARPANEL] || [d boolForKey: @"USEALWAYSTOOLBARPANEL2"]) f.size.height += 78;   // as usefullRectForScreen:
+        if( [d boolForKey: @"UseFloatingThumbnailsList"] && [d boolForKey: @"SeriesListVisible"])
+        {
+            f.origin.x -= [ThumbnailsListPanel fixedWidth];
+            f.size.width += [ThumbnailsListPanel fixedWidth];
+        }
+    }
+    return f;
+}
+
++ (BOOL) takeAreaFromWindow:(NSWindow*) w
+{
+    NSScreen *s = [w screen];
+    CGFloat best = 0;
+    if( s == nil)   // a window that is not on screen (yet): the screen it overlaps most
+        for( NSScreen *c in [NSScreen screens])
+        {
+            NSRect i = NSIntersectionRect( [w frame], [c frame]);
+            if( i.size.width * i.size.height > best) { best = i.size.width * i.size.height; s = c; }
+        }
+    if( s == nil) return NO;
+    NSString *r = nil;
+    NSInteger m = sekhmetFlaecheEinrasten( [self areaFrameOfWindow: w], [s visibleFrame], &r);
+    if( m < 0) return NO;
+    if( m == SekhmetAreaPixelRect) [self storeValue: r forScreen: s defaultsKey: SekhmetScreenAreaRectsKey];
+    [self setMode: m forScreen: s];
+    NSLog( @"SekhVet workplace: area of screen %@ taken from a window: mode %d %@", [self monitorKeyForScreen: s], (int) m, r ?: @"");
+    return YES;
+}
+
++ (void) identifyScreens
+{
+    NSArray *screens = [NSScreen screens], *namen = [self areaModeNames];
+    NSMutableArray *fenster = [NSMutableArray array];
+    for( NSUInteger i = 0; i < screens.count; i++)
+    {
+        NSScreen *s = [screens objectAtIndex: i];
+        NSRect area = [self areaForScreen: s frame: [s visibleFrame]];
+        NSInteger idx = [self indexForMode: [self modeForScreen: s]];
+        NSString *flaeche = (idx >= 0 && idx < (NSInteger) namen.count) ? [namen objectAtIndex: idx] : @"";
+
+        // the viewer area, tinted
+        NSWindow *aw = [[NSWindow alloc] initWithContentRect: area styleMask: NSWindowStyleMaskBorderless backing: NSBackingStoreBuffered defer: NO];
+        [aw setOpaque: NO]; [aw setHasShadow: NO]; [aw setIgnoresMouseEvents: YES]; [aw setReleasedWhenClosed: NO];
+        [aw setLevel: NSStatusWindowLevel];
+        [aw setCollectionBehavior: NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorTransient];
+        [aw setBackgroundColor: [[NSColor systemBlueColor] colorWithAlphaComponent: 0.16]];
+        [[aw contentView] setWantsLayer: YES];
+        [[[aw contentView] layer] setBorderWidth: 6];
+        [[[aw contentView] layer] setBorderColor: [[NSColor systemBlueColor] CGColor]];
+        [fenster addObject: aw]; [aw release];
+
+        // name, place and area in the middle of it
+        NSRect lr = NSMakeRect( NSMidX( area) - 300, NSMidY( area) - 80, 600, 160);
+        NSWindow *lw = [[NSWindow alloc] initWithContentRect: lr styleMask: NSWindowStyleMaskBorderless backing: NSBackingStoreBuffered defer: NO];
+        [lw setOpaque: NO]; [lw setHasShadow: YES]; [lw setIgnoresMouseEvents: YES]; [lw setReleasedWhenClosed: NO];
+        [lw setLevel: NSStatusWindowLevel + 1];
+        [lw setCollectionBehavior: NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorTransient];
+        [lw setBackgroundColor: [NSColor clearColor]];
+        NSView *cv = [lw contentView];
+        [cv setWantsLayer: YES];
+        [[cv layer] setBackgroundColor: [[NSColor colorWithCalibratedWhite: 0 alpha: 0.82] CGColor]];
+        [[cv layer] setCornerRadius: 18];
+        NSTextField *t = [NSTextField labelWithString: [NSString stringWithFormat: @"%@\n%@: %@", [self labelForScreenAtIndex: i], NSLocalizedString( @"Viewer area", nil), flaeche]];
+        [t setFrame: NSInsetRect( [cv bounds], 20, 24)];
+        [t setFont: [NSFont boldSystemFontOfSize: 28]];
+        [t setTextColor: [NSColor whiteColor]];
+        [t setAlignment: NSTextAlignmentCenter];
+        [t setMaximumNumberOfLines: 2];
+        [[t cell] setLineBreakMode: NSLineBreakByTruncatingTail];
+        [cv addSubview: t];
+        [fenster addObject: lw]; [lw release];
+    }
+    for( NSWindow *w in fenster) [w orderFrontRegardless];
+    dispatch_after( dispatch_time( DISPATCH_TIME_NOW, (int64_t) (3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        for( NSWindow *w in fenster) [w orderOut: nil];
+    });
+}
+
+#if SEKHVET_TESTHAKEN
+// SEKHVET_ARBEITSPLATZ_TEST="<step>|<step>..." with the steps
+//   show                 key, name, per screen key/mode/area, NonViewerScreens, DB frame
+//   set:<mode>           area mode of screen 1
+//   window:<x y w h>     "Use this window's position" with a window at that place (relative to the visible frame of screen 1)
+//   viewer:<0|1>         screen 1 used for viewers (Horos setting)
+//   db:<x y w h>         move the database window (absolute)
+//   identify             show the screen labels
++ (void) debugWorkplaceFromEnvironment
+{
+    NSArray *schritte = [[NSString stringWithUTF8String: sekhvetTesthaken( "SEKHVET_ARBEITSPLATZ_TEST")] componentsSeparatedByString: @"|"];
+    [self debugWorkplaceSteps: schritte];
+}
+
++ (void) debugWorkplaceSteps:(NSArray*) schritte
+{
+    if( schritte.count == 0)
+    {
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        NSLog( @"Arbeitsplatz-Test: fertig");
+        return;
+    }
+    NSString *schritt = [schritte objectAtIndex: 0], *arg = @"";
+    NSRange dp = [schritt rangeOfString: @":"];
+    if( dp.location != NSNotFound) { arg = [schritt substringFromIndex: dp.location + 1]; schritt = [schritt substringToIndex: dp.location]; }
+    NSScreen *s0 = [[NSScreen screens] firstObject];
+    NSArray *zahlen = [arg componentsSeparatedByString: @" "];
+    NSRect r = zahlen.count == 4 ? NSMakeRect( [[zahlen objectAtIndex: 0] doubleValue], [[zahlen objectAtIndex: 1] doubleValue], [[zahlen objectAtIndex: 2] doubleValue], [[zahlen objectAtIndex: 3] doubleValue]) : NSZeroRect;
+
+    if( [schritt isEqualToString: @"show"])
+    {
+        NSLog( @"Arbeitsplatz-Test: workplace '%@' name '%@' known %lu", [self workplaceKey], [self workplaceName], (unsigned long) [[[NSUserDefaults standardUserDefaults] dictionaryForKey: SekhmetWorkplacesKey] count]);
+        NSArray *screens = [NSScreen screens];
+        for( NSUInteger i = 0; i < screens.count; i++)
+        {
+            NSScreen *s = [screens objectAtIndex: i];
+            NSLog( @"Arbeitsplatz-Test: screen %d '%@' label '%@' mode %d area %@ visible %@", (int) i + 1, [self monitorKeyForScreen: s], [self labelForScreenAtIndex: i],
+                  (int) [self modeForScreen: s], NSStringFromRect( [self areaForScreen: s frame: [s visibleFrame]]), NSStringFromRect( [s visibleFrame]));
+        }
+        NSLog( @"Arbeitsplatz-Test: NonViewerScreens %@ usedForViewers %d db %@", [[[NSUserDefaults standardUserDefaults] arrayForKey: @"NonViewerScreens"] componentsJoinedByString: @","],
+              (int) [[[NSUserDefaults standardUserDefaults] screensUsedForViewers] count], [self databaseWindow] ? NSStringFromRect( [[self databaseWindow] frame]) : @"-");
+    }
+    else if( [schritt isEqualToString: @"set"]) [self setMode: [arg integerValue] forScreen: s0];
+    else if( [schritt isEqualToString: @"window"])
+    {
+        NSRect v = [s0 visibleFrame];
+        NSWindow *w = [[[NSWindow alloc] initWithContentRect: NSOffsetRect( r, v.origin.x, v.origin.y) styleMask: NSWindowStyleMaskBorderless backing: NSBackingStoreBuffered defer: NO] autorelease];
+        [w setReleasedWhenClosed: NO];
+        [w setFrame: NSOffsetRect( r, v.origin.x, v.origin.y) display: NO];
+        NSLog( @"Arbeitsplatz-Test: take from window %@ -> %d", NSStringFromRect( [w frame]), (int) [self takeAreaFromWindow: w]);
+    }
+    else if( [schritt isEqualToString: @"viewer"])
+    {
+        [[NSUserDefaults standardUserDefaults] screen: s0 setIsUsedForViewers: [arg boolValue]];   // the setter hands it to rememberViewerScreens (NSUserDefaults+OsiriX.mm)
+    }
+    else if( [schritt isEqualToString: @"db"]) [[self databaseWindow] setFrame: r display: YES];
+    else if( [schritt isEqualToString: @"identify"]) [self identifyScreens];
+
+    NSArray *rest = [schritte subarrayWithRange: NSMakeRange( 1, schritte.count - 1)];
+    [self performSelector: @selector(debugWorkplaceSteps:) withObject: rest afterDelay: 2.5];   // DB frame is stored 1 s after the move
+}
+#endif
 
 // SekhVet Paket N: Erscheinungsbild der ganzen App (nil = System)
 + (void) applyAppearance
@@ -199,17 +592,15 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
 
 + (NSRect) areaForScreen:(NSScreen*) screen frame:(NSRect) f
 {
-    if( [self indexKeyForScreen: screen] == nil) return f;
+    if( [self monitorKeyForScreen: screen] == nil) return f;
 
-    NSInteger mode = [self modeForScreen: screen];   // SekhVet Paket CS: by display number, index as fallback
+    NSInteger mode = [self modeForScreen: screen];   // SekhVet Paket EE: per workplace and monitor
 
     switch( mode)
     {
-        case SekhmetAreaLeftHalf:      f.size.width = f.size.width / 2.; break;
-        case SekhmetAreaRightHalf:     f.origin.x += f.size.width / 2.; f.size.width = f.size.width / 2.; break;
-        case SekhmetAreaLeftTwoThirds: f.size.width = f.size.width * 2. / 3.; break;
-        case SekhmetAreaRightTwoThirds: f.origin.x += f.size.width / 3.; f.size.width = f.size.width * 2. / 3.; break;
-        case SekhmetAreaCenterHalf:    f.origin.x += f.size.width / 4.; f.size.width = f.size.width / 2.; break;
+        case SekhmetAreaLeftHalf: case SekhmetAreaRightHalf: case SekhmetAreaLeftTwoThirds: case SekhmetAreaRightTwoThirds: case SekhmetAreaCenterHalf:
+            f = sekhmetFlaecheRechteck( mode, f);   // SekhVet Paket EE: same rectangles as "Use this window's position" snaps to
+            break;
         case SekhmetAreaPixelRect:
         {
             NSString *r = [self storedValueForScreen: screen defaultsKey: SekhmetScreenAreaRectsKey];
@@ -239,7 +630,7 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
 + (float) contentHeight   // one row per screen on top of the fixed part
 {
     NSUInteger n = [[NSScreen screens] count];
-    return 484 + 66 + 30 + 30 + 22 + 32 * n; // SekhVet Paket N: zwei Abschnitte mehr; Paket P: Zoom-Zeile; Paket AH: Magnetic-Zeile; Paket CD: Messungen (+66); Paket CF: Lupengroesse (+30); Paket CJ: Overlay-Tasten (+30); Paket DO: Navigator (+22)
+    return 484 + 66 + 30 + 30 + 22 + 22 + 22 + 32 * n; // SekhVet Paket EE: Arbeitsplatz-Zeile (+22); Paket EC: WL/WW-Zeile (+22); Paket N: zwei Abschnitte mehr; Paket P: Zoom-Zeile; Paket AH: Magnetic-Zeile; Paket CD: Messungen (+66); Paket CF: Lupengroesse (+30); Paket CJ: Overlay-Tasten (+30); Paket DO: Navigator (+22)
 }
 
 - (id) init
@@ -321,14 +712,24 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     float y = [cv frame].size.height - 36;
 
     [cv addSubview: [self label: NSLocalizedString( @"Viewer area per screen (tiling and toolbar respect it):", nil) frame: NSMakeRect( 20, y, 590, 20) bold: YES]];
+    // SekhVet Paket EE: the areas belong to this combination of monitors and come back whenever it is connected
+    y -= 22;
+    NSTextField *wp = [self label: [NSString stringWithFormat: NSLocalizedString( @"Remembered for this workplace: %@", nil), [SekhmetDisplayPanel workplaceName]] frame: NSMakeRect( 20, y, 590, 18) bold: NO];
+    [wp setFont: [NSFont systemFontOfSize: 11]];
+    [wp setTextColor: [NSColor secondaryLabelColor]];
+    [[wp cell] setLineBreakMode: NSLineBreakByTruncatingTail];
+    [wp setToolTip: NSLocalizedString( @"Each combination of monitors keeps its own viewer areas, viewer screens and database window place. Monitors are recognised by model and serial number, not by the order macOS lists them in.", nil)];
+    [cv addSubview: wp];
     y -= 30;
 
     NSArray *screens = [NSScreen screens];
     for( NSUInteger i = 0; i < screens.count; i++)
     {
         NSScreen *s = [screens objectAtIndex: i];
-        NSString *name = [NSString stringWithFormat: NSLocalizedString( @"Screen %d (%.0f × %.0f)", nil), (int) i + 1, s.frame.size.width, s.frame.size.height];
-        [cv addSubview: [self label: name frame: NSMakeRect( 20, y + 2, 200, 20) bold: NO]];
+        NSTextField *nl = [self label: [SekhmetDisplayPanel labelForScreenAtIndex: i] frame: NSMakeRect( 20, y + 2, 200, 20) bold: NO]; // SekhVet Paket EE: name and place instead of "Screen 2 (2560 x 1440)"
+        [[nl cell] setLineBreakMode: NSLineBreakByTruncatingTail];
+        [nl setToolTip: [NSString stringWithFormat: @"%@ — %.0f × %.0f pt — %@", [SekhmetDisplayPanel labelForScreenAtIndex: i], s.frame.size.width, s.frame.size.height, [SekhmetDisplayPanel monitorKeyForScreen: s]]];
+        [cv addSubview: nl];
 
         NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 225, y - 2, 220, 26) pullsDown: NO] autorelease];
         [pb addItemsWithTitles: [SekhmetDisplayPanel areaModeNames]];
@@ -470,7 +871,7 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     y -= 24;
     syncButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 36, y, 560, 18)] autorelease];
     [syncButton setButtonType: NSButtonTypeSwitch];
-    [syncButton setTitle: NSLocalizedString( @"Sync MPR windows of the same study (point, planes, thickness; window level separate)", nil)];
+    [syncButton setTitle: NSLocalizedString( @"Sync MPR windows of the same study (point, planes, thickness; window level only with WL/WW below)", nil)];
     [syncButton setFont: [NSFont systemFontOfSize: 12]];
     [syncButton setTarget: self]; [syncButton setAction: @selector(syncChanged:)];
     [cv addSubview: syncButton];
@@ -488,6 +889,13 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     [zoomSyncButton setFont: [NSFont systemFontOfSize: 12]];
     [zoomSyncButton setTarget: self]; [zoomSyncButton setAction: @selector(zoomSyncChanged:)];
     [cv addSubview: zoomSyncButton];
+    y -= 22;
+    wlwwSyncButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 36, y, 560, 18)] autorelease]; // SekhVet Paket EC
+    [wlwwSyncButton setButtonType: NSButtonTypeSwitch];
+    [wlwwSyncButton setTitle: NSLocalizedString( @"WL/WW: window level follows between MPR windows of the same modality", nil)];
+    [wlwwSyncButton setFont: [NSFont systemFontOfSize: 12]];
+    [wlwwSyncButton setTarget: self]; [wlwwSyncButton setAction: @selector(wlwwSyncChanged:)];
+    [cv addSubview: wlwwSyncButton];
     y -= 22;
     staticCursorButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 36, y, 560, 18)] autorelease];
     [staticCursorButton setButtonType: NSButtonTypeSwitch];
@@ -520,6 +928,19 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     [b setBezelStyle: NSBezelStyleRounded];
     [b setTarget: self]; [b setAction: @selector(retile:)];
     [cv addSubview: b];
+    // SekhVet Paket EE
+    NSButton *ident = [[[NSButton alloc] initWithFrame: NSMakeRect( 245, y, 160, 30)] autorelease];
+    [ident setTitle: NSLocalizedString( @"Identify Screens", nil)];
+    [ident setToolTip: NSLocalizedString( @"Shows the name, place and viewer area on every screen for a few seconds", nil)];
+    [ident setBezelStyle: NSBezelStyleRounded];
+    [ident setTarget: self]; [ident setAction: @selector(identify:)];
+    [cv addSubview: ident];
+    NSButton *take = [[[NSButton alloc] initWithFrame: NSMakeRect( 410, y, 200, 30)] autorelease];
+    [take setTitle: NSLocalizedString( @"Use Front Viewer's Place", nil)];
+    [take setToolTip: NSLocalizedString( @"Place a viewer window where viewers should go (for example the right half of the second monitor), then click: its screen gets that area. Close to a half or third, it snaps to it.", nil)];
+    [take setBezelStyle: NSBezelStyleRounded];
+    [take setTarget: self]; [take setAction: @selector(takeFromFrontViewer:)];
+    [cv addSubview: take];
 }
 
 - (void) loadFromDefaults
@@ -539,6 +960,7 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
     [syncButton setState: [d boolForKey: SekhmetMPRSyncKey] ? NSControlStateValueOn : NSControlStateValueOff];
     [tileButton setState: [d boolForKey: SekhmetTile3DWindowsKey] ? NSControlStateValueOn : NSControlStateValueOff];
     [zoomSyncButton setState: [d boolForKey: @"syncZoomLevelMPR"] ? NSControlStateValueOn : NSControlStateValueOff]; // SekhVet Paket P
+    [wlwwSyncButton setState: [d boolForKey: SekhmetMPRSyncWLWWKey] ? NSControlStateValueOn : NSControlStateValueOff]; // SekhVet Paket EC
     [staticCursorButton setState: [d boolForKey: @"SekhmetMPRStaticCursor"] ? NSControlStateValueOn : NSControlStateValueOff];
     [magneticButton setState: [d boolForKey: @"MagneticWindows"] ? NSControlStateValueOn : NSControlStateValueOff]; // SekhVet Paket AH
     [centerZoneField setIntegerValue: (NSInteger) [d floatForKey: @"SekhmetMPRCenterZone"]];
@@ -808,6 +1230,24 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
                           forScreen: [self screenForRow: [sender tag]] defaultsKey: SekhmetScreenAreasKey];
 }
 
+- (IBAction) identify:(id) sender // SekhVet Paket EE
+{
+    [SekhmetDisplayPanel identifyScreens];
+}
+
+- (IBAction) takeFromFrontViewer:(id) sender // SekhVet Paket EE
+{
+    NSWindow *w = [[ViewerController frontMostDisplayed2DViewer] window];
+    if( w == nil || [SekhmetDisplayPanel takeAreaFromWindow: w] == NO)
+    {
+        NSBeep();
+        return;
+    }
+    [self loadFromDefaults];
+    [[AppController sharedAppController] tileWindows: nil];
+    [SekhmetDisplayPanel identifyScreens];
+}
+
 - (IBAction) rectChanged:(id) sender
 {
     [SekhmetDisplayPanel storeValue: [sender stringValue] forScreen: [self screenForRow: [sender tag]] defaultsKey: SekhmetScreenAreaRectsKey];
@@ -827,6 +1267,11 @@ static SekhmetDisplayPanel *sekhmetDisplayPanel = nil;
 - (IBAction) zoomSyncChanged:(id) sender // SekhVet Paket P
 {
     [[NSUserDefaults standardUserDefaults] setBool: ([zoomSyncButton state] == NSControlStateValueOn) forKey: @"syncZoomLevelMPR"]; // Paket Q: nur Horos-Zoomsync
+}
+
+- (IBAction) wlwwSyncChanged:(id) sender // SekhVet Paket EC: the toolbar switches of the open MPR windows follow by their binding
+{
+    [[NSUserDefaults standardUserDefaults] setBool: ([wlwwSyncButton state] == NSControlStateValueOn) forKey: SekhmetMPRSyncWLWWKey];
 }
 
 - (IBAction) tileChanged:(id) sender

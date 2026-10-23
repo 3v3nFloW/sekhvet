@@ -39,6 +39,7 @@
 #import "DicomImage.h"
 #import "DicomFile.h"
 #import "DicomDatabase.h"
+#import "SekhmetStudienDB.h" // SekhVet Paket DT
 #import "DataNodeIdentifier.h"
 #import "DCMNetServiceDelegate.h"
 #import "MutableArrayCategory.h"
@@ -59,6 +60,8 @@
             NSLog( @"******* copyImagesToLocalBrowserSourceThread : io.count < 4");
             return;
         }
+        // SekhVet Paket DR: no idle sleep while studies are copied into another database
+        id sekhmetWach = [[[NSProcessInfo processInfo] beginActivityWithOptions: NSActivityUserInitiated reason: @"SekhVet: copying images to another database"] retain];
         
         @try
         {
@@ -101,7 +104,7 @@
                             NSTask *t = [NSTask launchedTaskWithLaunchPath: @"/bin/cp" arguments: @[srcPath, dstPath]];
                             while( [t isRunning]){};
                         }
-                        else if( [[NSFileManager defaultManager] copyItemAtPath: srcPath toPath: dstPath error: nil] == NO)
+                        else if( SekhmetCopyDataOnly( srcPath, dstPath) == NO) // SekhVet Paket DT: no ._ files on exFAT
                             NSLog( @"**** copyItemAtPath failed: %@", dstPath);
 
                         if( [[NSFileManager defaultManager] fileExistsAtPath: dstPath])
@@ -140,6 +143,8 @@
         @catch (NSException *exception) {
             N2LogException( exception);
         }
+        [[NSProcessInfo processInfo] endActivity: sekhmetWach]; // SekhVet Paket DR
+        [sekhmetWach release];
 	}
 }
 

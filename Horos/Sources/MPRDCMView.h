@@ -78,6 +78,7 @@
 	BOOL sekhmetGLDetached; // SekhVet Paket BK: GL-Zeichenflaeche geloest, solange die Ansicht 0 Pixel hat (macOS 27)
 	BOOL sekhmetUniformLogged; // SekhVet Paket CS: "uniform slice image" already logged for the current incident
 	NSPoint sekhmetRightDownPoint; // SekhVet Paket CV: right click without drag = tools menu, as in the 2D viewer
+	BOOL sekhmetAfterMenu; // SekhVet Paket DQ: the tools menu just closed; the next left drag may come without its mouseDown
 	BOOL sekhmetRightDragged;
 	NSPoint sekhmetRotatePrev; // SekhVet Paket CY: last mouse point (view coordinates) of a free-rotate drag
 }

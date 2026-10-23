@@ -21,7 +21,11 @@ static NSInteger sekhmetContrastForName( NSString *name)
     static NSSet *agent = nil, *native = nil, *negation = nil, *notAPhase = nil;
     if( agent == nil)
     {
-        agent = [[NSSet alloc] initWithObjects: @"KM", @"CE", @"CONTRAST", @"KONTRAST", @"KONTRASTMITTEL", nil];
+        // SekhVet Paket DW: the contrast phases count as contrast — Canon names them "WT arteriell" / "WT venoes" without "KM"
+        agent = [[NSSet alloc] initWithObjects: @"KM", @"CE", @"CONTRAST", @"KONTRAST", @"KONTRASTMITTEL",
+                 @"ARTERIELL", @"ARTERIELLE", @"ARTERIAL", @"VENOES", @"VENÖS", @"VENOS", @"VENOESE", @"VENÖSE", @"VENOUS",
+                 @"PORTAL", @"PORTALVENOES", @"PORTALVENÖS", @"PORTALVENOUS", @"PVP",
+                 @"SPAET", @"SPÄT", @"SPAETPHASE", @"SPÄTPHASE", @"DELAYED", nil];
         native = [[NSSet alloc] initWithObjects: @"NATIV", @"NATIVE", @"PLAIN", nil];
         negation = [[NSSet alloc] initWithObjects: @"OHNE", @"WITHOUT", @"NON", @"NO", @"PRE", @"PRAE", @"PRÄ", @"VOR", nil];
         notAPhase = [[NSSet alloc] initWithObjects: @"OP", @"OPERATIV", @"OPERATIVE", @"OPERATION", @"MORTEM", nil];   // "post OP" is not "post contrast"
@@ -118,6 +122,19 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
             positions, @"positions", nil];
 }
 
+// SekhVet Paket DY: CT-Protokoll einer Region, 1x3 — links "erstes" Fenster nativ (Knochen bzw. beim Thorax Lunge in jeder
+// Phase), Mitte Weichteil KM, rechts Weichteil nativ; jede Position nur mit Serien, deren Text ein Regionswort enthaelt.
+static NSDictionary* sekhmetCTRegion( NSString *name, NSString *region, NSString *ersteFenster)
+{
+    BOOL lunge = [ersteFenster isEqualToString: @"Lung"];
+    return sekhmetProtocol( name, @"CT", region, 1, 3, NO,
+        [NSArray arrayWithObjects:
+            sekhmetPosition( region, nil, ersteFenster, lunge ? SekhmetContrastAny : SekhmetContrastNative),
+            sekhmetPosition( region, nil, @"Soft tissue", SekhmetContrastAgent),
+            sekhmetPosition( region, nil, @"Soft tissue", SekhmetContrastNative),
+            nil]);
+}
+
 @implementation SekhmetOpening
 
 + (NSArray*) defaultProtocols
@@ -129,7 +146,7 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
     // 146 MR-Serien des Esaote (Region nur in ProtocolName/BodyPartExamined, nie in der Studie).
     return [NSArray arrayWithObjects:
 
-        sekhmetProtocol( @"MR head", @"MR", @"NEUROCRANIUM|Brain|Kopf|Head", 2, 2, NO,
+        sekhmetProtocol( @"MR head", @"MR", @"NEUROCRANIUM|Brain|Kopf|Head|Gehirn|Hirn|Schädel|Skull", 2, 2, NO,
             [NSArray arrayWithObjects:
                 sekhmetPosition( @"T2 sag", nil, nil, SekhmetContrastAny),
                 sekhmetPosition( @"T2 tra", nil, nil, SekhmetContrastAny),
@@ -137,13 +154,13 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
                 sekhmetPosition( @"T1 tra", nil, nil, SekhmetContrastAgent),
                 nil]),
 
-        sekhmetProtocol( @"MR spine", @"MR", @"CERVICAL|THORACO_LUMBAR|LUMBO_SACRAL|HWS|BWS|LWS|Spine", 1, 2, NO,
+        sekhmetProtocol( @"MR spine", @"MR", @"CERVICAL|THORACO_LUMBAR|LUMBO_SACRAL|HWS|BWS|LWS|Spine|Wirbelsäule|Wirbelsaeule|Lumbar", 1, 2, NO,
             [NSArray arrayWithObjects:
                 sekhmetPosition( @"T2 sag", nil, nil, SekhmetContrastAny),
                 sekhmetPosition( @"T2 tra", nil, nil, SekhmetContrastAny),
                 nil]),
 
-        sekhmetProtocol( @"MR stifle", @"MR", @"STIFLE|Knee|Knie", 1, 4, NO,
+        sekhmetProtocol( @"MR stifle", @"MR", @"STIFLE|Knee|Knie|Kniegelenk", 1, 4, NO,
             [NSArray arrayWithObjects:
                 sekhmetPosition( @"STIR", nil, nil, SekhmetContrastAny),
                 sekhmetPosition( @"GE T2|Gradient Echo T2", nil, nil, SekhmetContrastAny),   // sagittal zuerst, siehe "without" unten
@@ -151,14 +168,31 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
                 sekhmetPosition( @"SST1|3D SST1", nil, nil, SekhmetContrastAgent),
                 nil]),
 
-        // CT: eine Belegung fuer alle Regionen — Weichteil nativ, Weichteil KM, Knochen nativ
-        // (links nach rechts). Knochen/Weichteil kommt aus der WL/WW-Regel von Paket AE/AH,
-        // damit Siemens-, Canon- und GE-Kernel ohne eigene Stichwortpflege stimmen.
-        sekhmetProtocol( @"CT", @"CT", @"", 1, 3, NO,
+        // SekhVet Paket DY (08.10.2026): CT nach Region, Woerter DE/EN (+ einige IT) aus den Studien- und Protokollnamen
+        // der Praxis-DB (53 CT-Studien: Siemens "Wirbelsaeule 15 bis 30kg", "Kopf-Nase", "Becken Huefte", "Obere/Untere
+        // Extremitaet"; Canon/Toshiba "Gehirn klein +KM", "Dental", "Hals", "Gelenke", "WS gross"; "torace addome") und den
+        // Regionen der Herstellerleitfaeden (Kopf, Thorax inkl. Metastasensuche, Abdomen inkl. Urographie, Wirbelsaeule,
+        // Gliedmassen). Belegung wie die eigenen Protokolle des Eigentuemers: Knochen nativ | Weichteil KM | Weichteil nativ, beim Thorax
+        // Lunge statt Knochen; jede Position nimmt nur Serien ihrer Region (Mehrregionen-Studien mischen nicht).
+        // Die Woerter sind Teilzeichenketten ohne Gross/klein: kurze, mehrdeutige ("Ear", "Arm", "Hip", "WS") fehlen bewusst,
+        // und die Reihenfolge faengt Ueberschneidungen ab — Wirbelsaeule vor Kopf ("Hals" steckt in "Halswirbelsaeule",
+        // Siemens schreibt ABDOMEN auch an Wirbelsaeulen), Becken vor Gliedmassen ("Hip joint"), Abdomen vor Thorax.
+        // Was keiner Region zugeordnet ist, faellt auf das letzte Protokoll ohne Region.
+        sekhmetCTRegion( @"CT spine", @"Wirbelsäule|Wirbelsaeule|Spine|HWS|BWS|LWS|Cervical|Thoracolumbar|THORACO_LUMBAR|Lumbar|LUMBO_SACRAL|Lumbosacral|Sacrum|Myelo|Rachide|Colonna", @"Bone (vet)"),
+        sekhmetCTRegion( @"CT head", @"CCT|HEAD|Kopf|Schädel|Schaedel|Skull|Cranium|Gehirn|Hirn|Brain|Nase|Nasal|Bulla|Mittelohr|Middle ear|Dental|Zahn|Zähne|Kiefer|Mandib|Maxill|Orbita|TMJ|Hals|Larynx|Pharynx", @"Bone (vet)"),
+        sekhmetCTRegion( @"CT pelvis / hip", @"Becken|Hüfte|Huefte|PELVIS|Coxofemoral|Hip joint|Hips|Iliosakral|Sacroiliac|Bacino", @"Bone (vet)"),
+        sekhmetCTRegion( @"CT forelimb", @"Schulter|Ellbogen|Ellenbogen|SHOULDER|Elbow|Karpus|Carpus|Vordergliedma|Vorderbein|Forelimb|Thoracic limb|Obere Extremit|Humerus", @"Bone (vet)"),
+        sekhmetCTRegion( @"CT hindlimb", @"Knie|Stifle|Knee|Tarsus|Sprunggelenk|Hock|Hintergliedma|Hinterbein|Hindlimb|Pelvic limb|Untere Extremit|Femur|Tibia", @"Bone (vet)"),
+        sekhmetCTRegion( @"CT limbs / joints", @"Extremit|EXTREMITY|Gliedma|Limb|Gelenk|Joint|Pfote|Paw|Zehe|Arto", @"Bone (vet)"),
+        sekhmetCTRegion( @"CT abdomen", @"Abdom|Bauch|Addome|Leber|Liver|Hepat|Niere|Kidney|Renal|Pankreas|Pancrea|Insulinom|Shunt|Portosystem|Urogra|Urogenital|Harn|Urinary|Nebenniere|Adrenal|Milz|Splen|Darm|Intestin|Magen|Gastr|Ganzkörper|Ganzkoerper|Whole body", @"Bone (vet)"),
+        sekhmetCTRegion( @"CT thorax", @"Thorax|CHEST|Lunge|Lung|Brustkorb|Mediastin|Torace|Metastas", @"Lung"),
+
+        // alle uebrigen CT: dieselbe Belegung ohne Region (Canon-/Toshiba-Studien ohne Regionswort)
+        sekhmetProtocol( @"CT (all other)", @"CT", @"", 1, 3, NO,
             [NSArray arrayWithObjects:
-                sekhmetPosition( nil, nil, @"Soft tissue", SekhmetContrastNative),
-                sekhmetPosition( nil, nil, @"Soft tissue", SekhmetContrastAgent),
                 sekhmetPosition( nil, nil, @"Bone (vet)", SekhmetContrastNative),
+                sekhmetPosition( nil, nil, @"Soft tissue", SekhmetContrastAgent),
+                sekhmetPosition( nil, nil, @"Soft tissue", SekhmetContrastNative),
                 nil]),
         nil];
 }
@@ -256,7 +290,26 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
 
 + (NSInteger) contrastForSeries:(DicomSeries*) series
 {
-    return [self contrastForName: [self nameForSeries: series]];
+    NSInteger c = [self contrastForName: [self nameForSeries: series]];
+    if( c != SekhmetContrastAny) return c;
+    // SekhVet Paket DW: Toshiba names native and contrast series alike (" 1.0 FC23 Vol.") — only Contrast/Bolus Agent
+    // (0018,0010) tells the contrast series apart ("CE"). Read once per series; no tag = still "any", not native
+    // (localizers and dose pages carry no agent either).
+    static NSMutableDictionary *agentCache = nil;
+    if( agentCache == nil) agentCache = [[NSMutableDictionary alloc] init];
+    NSString *uid = nil;
+    @try { uid = [series valueForKey: @"seriesInstanceUID"]; } @catch (NSException *e) { uid = nil; }
+    NSNumber *hat = uid.length ? [agentCache objectForKey: uid] : nil;
+    if( hat == nil)
+    {
+        hat = [NSNumber numberWithBool: [[[self tag: @"Contrast/BolusAgent" forSeries: series] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]] length] > 0];   // Framework-Name mit Schraegstrich
+        if( uid.length)
+        {
+            if( agentCache.count > 2000) [agentCache removeAllObjects];
+            [agentCache setObject: hat forKey: uid];
+        }
+    }
+    return [hat boolValue] ? SekhmetContrastAgent : SekhmetContrastAny;
 }
 
 + (BOOL) text:(NSString*) text containsAnyOf:(NSString*) list
@@ -444,7 +497,23 @@ static NSDictionary* sekhmetProtocol( NSString *name, NSString *modality, NSStri
     NSDictionary *tile = [NSDictionary dictionaryWithObjectsAndKeys:
                           [NSNumber numberWithInt: rows], @"rows",
                           [NSNumber numberWithInt: columns], @"columns", nil];
-    [[BrowserController currentBrowser] viewerDICOMInt: NO dcmFile: open viewer: nil tileWindows: YES protocol: tile];
+    BrowserController *browser = [BrowserController currentBrowser];
+    if( open.count == 1)
+    {
+        // SekhVet Paket DW: with ONE line Horos' viewerDICOMInt: ignores the series it is given and opens the thumbnail
+        // selected in the database window (or the first one) - a protocol that filled one position opened e.g. the
+        // localizer, or a series of the study selected before. One series is therefore opened directly.
+        [browser.database lock];
+        @try
+        {
+            NSArray *bilder = [browser childrenArray: [open objectAtIndex: 0] onlyImages: YES];
+            if( bilder.count) [browser processOpenViewerDICOMFromArray: [NSArray arrayWithObject: bilder] movie: NO viewer: nil];
+        }
+        @catch (NSException *e) { NSLog( @"SekhVet opening protocol: opening one series failed: %@", e); }
+        [browser.database unlock];
+        if( [d boolForKey: @"AUTOTILING"]) [[AppController sharedAppController] tileWindows: tile];
+    }
+    else [browser viewerDICOMInt: NO dcmFile: open viewer: nil tileWindows: YES protocol: tile];
 
     if( restoreNoAutotiling)
     {

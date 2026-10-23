@@ -40,9 +40,11 @@ static NSDictionary* sekhmetRule( NSString *modality, NSString *keywords, float 
     // Vokabular aus 359 CT-Serien auf dem Orthanc: Siemens Br40/Hr40 weich, Br64/Hr64 Knochen, Bl64 Lunge;
     // GE STANDARD weich, BONE/BONEPLUS/EDGE Knochen, LUNG Lunge; Canon FC08/FC14/FC26 weich, FC30/BONE/BODY_SHARP Knochen,
     // LUNG/FC81/FC85/FC86 Lunge; Planmed ohne Kernel ("stitch") Knochen. Kopf/Spine/Abdomen mit weichem Kernel -> Weichteil.
+    // SekhVet Paket DW (08.10.2026): BODY_SHARP raus aus Knochen — in allen sechs Canon-Studien der Praxis-DB ist es der
+    // WEICHTEIL-Kern ("WT nativ/KM/arteriell/venoes … BODY_SHARP", Knochen heisst dort "KF … BONE").
     return [NSArray arrayWithObjects:
             sekhmetRule( @"CT", @"LUNG|Lunge|Bl64|Bl57|FC81|FC85|FC86", -500, 1400, @"Lung"),
-            sekhmetRule( @"CT", @"Bone|Knochen|Osso|KF |Br64|Br69|Hr64|Hr68|BONEPLUS|EDGE|BODY_SHARP|FC30|FC31|FC35|stitch", 700, 5000, @"Bone (vet)"),
+            sekhmetRule( @"CT", @"Bone|Knochen|Osso|KF |Br64|Br69|Hr64|Hr68|BONEPLUS|EDGE|FC30|FC31|FC35|stitch", 700, 5000, @"Bone (vet)"),
             sekhmetRule( @"CT", @"", 40, 400, @"Soft tissue"),
             sekhmetRule( @"MR", @"", 400, 800, @"MR (as ImagoPilot)"),
             nil];

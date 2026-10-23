@@ -49,6 +49,8 @@ extern NSString* const SekhmetOverlayKeyPrevKey;             // Taste "vorige Se
 // jetzt auch "pre KM", "vor KM", "without contrast" ... als nativ)
 + (int) phaseFuer:(NSString*) beschreibung;                                   // 0 unbekannt, 1 nativ, 2 KM
 + (BOOL) istKnochenkern:(NSString*) kernel beschreibung:(NSString*) beschreibung;
++ (int) kernklasseFuer:(NSString*) kernel beschreibung:(NSString*) beschreibung;   // SekhVet Paket DW: 0 soft tissue, 1 bone, 2 lung
++ (int) phaseFuerInfo:(NSDictionary*) info;                                      // SekhVet Paket DW: name, then ContrastBolusAgent
 + (NSArray*) vorschlagAus:(NSArray*) alle aktuell:(NSDictionary*) aktuell;   // Eintraege als Dictionary (uid, desc, kernel, modality, study, count, number, normal)
 
 // Viewer
@@ -66,6 +68,7 @@ extern NSString* const SekhmetOverlayKeyPrevKey;             // Taste "vorige Se
 // ROI-Beschriftung (Haken in -[ROI prepareTextualData:])
 + (void) ergaenzeTextboxVonROI:(ROI*) r;
 + (NSString*) enhancementZeileFuerROI:(ROI*) r;
++ (NSString*) hinweisFuerView:(DCMView*) view;   // SekhVet Paket DW: "Venous: no images at this level", nil = nothing to say
 
 // Werkzeugleiste
 + (void) konfiguriereToolbarItem:(NSToolbarItem*) item viewer:(ViewerController*) v;

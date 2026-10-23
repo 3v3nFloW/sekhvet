@@ -27,6 +27,9 @@
 
 // SekhVet Paket CS: CT phase from the series name: 0 unknown, 1 native (also "pre KM", "without contrast"), 2 contrast.
 + (int) ctPhaseFuer:(NSString*) beschreibung;
+// SekhVet Paket DW: contrast phase from the name: 0 none, 1 arterial, 2 venous / portal, 3 delayed. "arteriell",
+// "venoes" ... also make ctPhaseFuer: return 2 (contrast).
++ (int) ctKMPhaseFuer:(NSString*) beschreibung;
 
 // Farbe je Gewichtung als "#rrggbb" — T1 hell, T2 blau (Wasser hell), Rest gedaempft.
 + (NSString*) farbeFuerKontrast:(NSString*) kontrast;

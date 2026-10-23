@@ -69,7 +69,7 @@ extern NSString* const SekhmetDICOMwebNodesKey;   // Array von {name, url, user}
     NSPopUpButton *autoPopup;          // Off / every 1 ... 30 minutes (tag = minutes)
     NSButton *autoRetrieveButton;      // retrieve new results of an automatic refresh
     NSTimer *autoTimer;
-    NSMutableDictionary *autoRetrieved; // StudyInstanceUID -> image count of the node when it was retrieved automatically (this session)
+    NSMutableDictionary *autoRetrieved; // StudyInstanceUID -> NSMutableDictionary state of the automatic retrieve (SekhmetAutoRegel.h; Paket ED)
     int hiddenByInstitution;           // results of the last search hidden by the institution filters
     // SekhVet Paket DN-2: choose the institution list from what the node really has
     NSButton *chooseInstitutionsButton;
@@ -81,6 +81,9 @@ extern NSString* const SekhmetDICOMwebNodesKey;   // Array von {name, url, user}
     NSMutableDictionary *pickerCounts; // name -> NSNumber studies, while the pages come in
     NSDictionary *pickerNode;          // node the list is read from and saved to
     int pickerGeneration;              // a closed / reopened sheet ignores answers of the earlier one
+    // SekhVet Paket EA: compressed transfer (JPEG-LS lossless) for WADO-RS
+    NSButton *compressedButton;        // "Compressed transfer (JPEG-LS, lossless)"; stored in the prefs, missing = on
+    BOOL retrieveCompressed;           // running job asked the node for JPEG-LS; a failure retries it once uncompressed
 }
 
 + (SekhmetDICOMweb*) shared;
@@ -98,8 +101,9 @@ extern NSString* const SekhmetDICOMwebNodesKey;   // Array von {name, url, user}
 + (void) startAutoRefreshIfConfigured;
 #if SEKHVET_TESTHAKEN
 - (void) debugStowFromEnvironment;              // SEKHVET_STOW_TEST="a.dcm:b.dcm" [+ SEKHVET_DICOMWEB_PW], Knoten 0 (muss im Fenster angelegt sein)
-- (void) debugWadoFromEnvironment;              // SEKHVET_WADO_TEST="<StudyInstanceUID>" [+ SEKHVET_DICOMWEB_PW], Knoten 0
+- (void) debugWadoFromEnvironment;              // SEKHVET_WADO_TEST="<StudyInstanceUID>" [+ SEKHVET_DICOMWEB_PW, SEKHVET_WADO_TEST_MOD="CT"], Knoten 0
 - (void) debugLocalListFromEnvironment;         // SekhVet Paket AM: SEKHVET_DICOMWEB_LIST_TEST="<Namensteil>" — Bestandsanzeige + Serien-Aufklappen
+- (void) debugAutoFromEnvironment;              // SekhVet Paket ED: SEKHVET_DICOMWEB_AUTO_TEST="<url>" [+ SEKHVET_DICOMWEB_AUTO_TEST_NAME] — Auto-Refresh 1 min + Auto-Retrieve gegen einen Testknoten
 #endif // SEKHVET_TESTHAKEN
 
 @end

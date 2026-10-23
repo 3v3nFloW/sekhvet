@@ -1028,6 +1028,8 @@
 		5EC0000000000000000002B2 /* SekhmetUpdate.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002B1 /* SekhmetUpdate.m */; };
 		5EC0000000000000000002C2 /* SekhmetLupe.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002C1 /* SekhmetLupe.m */; };
 		5EC0000000000000000002D8 /* SekhmetMessNavigator.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002D7 /* SekhmetMessNavigator.m */; };
+		5EC0000000000000000002DB /* SekhmetStudienDB.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002DA /* SekhmetStudienDB.m */; };
+		5EC0000000000000000002DE /* SekhmetEinstellungen.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002DD /* SekhmetEinstellungen.m */; };
 		5EC0000000000000000001C2 /* SekhmetMPRKategorie.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000001C1 /* SekhmetMPRKategorie.m */; };
 		5EC0000000000000000001D2 /* SekhmetViewerKategorie.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000001D1 /* SekhmetViewerKategorie.m */; };
 		5EC0000000000000000001E2 /* SekhmetDCMViewKategorie.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000001E1 /* SekhmetDCMViewKategorie.m */; };
@@ -4381,6 +4383,10 @@
 		5EC0000000000000000002C3 /* SekhmetLupe.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SekhmetLupe.h; sourceTree = "<group>"; };
 		5EC0000000000000000002D7 /* SekhmetMessNavigator.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SekhmetMessNavigator.m; sourceTree = "<group>"; };
 		5EC0000000000000000002D9 /* SekhmetMessNavigator.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SekhmetMessNavigator.h; sourceTree = "<group>"; };
+		5EC0000000000000000002DA /* SekhmetStudienDB.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SekhmetStudienDB.m; sourceTree = "<group>"; };
+		5EC0000000000000000002DC /* SekhmetStudienDB.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SekhmetStudienDB.h; sourceTree = "<group>"; };
+		5EC0000000000000000002DD /* SekhmetEinstellungen.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SekhmetEinstellungen.m; sourceTree = "<group>"; };
+		5EC0000000000000000002DF /* SekhmetEinstellungen.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SekhmetEinstellungen.h; sourceTree = "<group>"; };
 		5EC0000000000000000001C1 /* SekhmetMPRKategorie.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SekhmetMPRKategorie.m; sourceTree = "<group>"; };
 		5EC0000000000000000001C3 /* SekhmetMPRKategorie.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SekhmetMPRKategorie.h; sourceTree = "<group>"; };
 		5EC0000000000000000001D1 /* SekhmetViewerKategorie.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SekhmetViewerKategorie.m; sourceTree = "<group>"; };
@@ -7631,6 +7637,10 @@
 				5EC0000000000000000002C1 /* SekhmetLupe.m */,
 				5EC0000000000000000002D9 /* SekhmetMessNavigator.h */,
 				5EC0000000000000000002D7 /* SekhmetMessNavigator.m */,
+				5EC0000000000000000002DC /* SekhmetStudienDB.h */,
+				5EC0000000000000000002DA /* SekhmetStudienDB.m */,
+				5EC0000000000000000002DF /* SekhmetEinstellungen.h */,
+				5EC0000000000000000002DD /* SekhmetEinstellungen.m */,
 				716DBDBC173920AF00BDB1E4 /* ViewerController.mm */,
 				7147C1861644160800A9D095 /* O2ViewerThumbnailsMatrix.h */,
 				7147C1871644160800A9D095 /* O2ViewerThumbnailsMatrix.mm */,
@@ -11175,6 +11185,8 @@
 				5EC0000000000000000002B2 /* SekhmetUpdate.m in Sources */,
 				5EC0000000000000000002C2 /* SekhmetLupe.m in Sources */,
 				5EC0000000000000000002D8 /* SekhmetMessNavigator.m in Sources */,
+				5EC0000000000000000002DB /* SekhmetStudienDB.m in Sources */,
+				5EC0000000000000000002DE /* SekhmetEinstellungen.m in Sources */,
 				5EC0000000000000000001C2 /* SekhmetMPRKategorie.m in Sources */,
 				5EC0000000000000000001D2 /* SekhmetViewerKategorie.m in Sources */,
 				5EC0000000000000000001E2 /* SekhmetDCMViewKategorie.m in Sources */,

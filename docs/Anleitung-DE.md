@@ -1,6 +1,6 @@
 # SekhVet — Anleitung (Deutsch)
 
-Version 1.0, Build 174 · Stand 04.10.2026
+Version 1.1, Build 190 · Stand 22.10.2026
 
 > **SekhVet ist ein veterinärmedizinischer DICOM-Viewer und kein zertifiziertes Medizinprodukt.**
 > Es ist weder FDA-cleared noch CE-gekennzeichnet und hat keine formale Validierung durchlaufen.
@@ -10,10 +10,12 @@ Version 1.0, Build 174 · Stand 04.10.2026
 > Verantwortung der Tierärztin oder des Tierarztes. SekhVet wird ohne Gewährleistung
 > bereitgestellt (GNU LGPL v3).
 
-> **Version 1.0.** SekhVet 1.0 ist die erste reguläre Version nach der öffentlichen Beta
-> (Builds 45–149, August bis Oktober 2026). Der Horos-Kern und die Vet-Werkzeuge sind in einer
-> Praxis täglich im Einsatz; einige Funktionen sind als *neu in 1.0* markiert, weil sie erst an
-> wenigen Geräten geprüft sind. Abschnitt 7 zählt sie auf. Bitte melden Sie, was Ihnen auffällt
+> **Version 1.1.** Seit 1.0 (Build 174) neu: eigene **Studien-Datenbanken** auf externen Platten
+> samt Auswerfen aus SekhVet (5.25), **Overlay mit mehreren Kontrastphasen** und einfacherer
+> Auswahl (5.20) und **Öffnungsprotokolle**, die arterielle, venöse und späte Phasen erkennen
+> (5.3) sowie das **Sichern, Exportieren und Verteilen der Vet-Einstellungen** (5.26). SekhVet 1.0 war die erste reguläre Version nach der öffentlichen Beta (Builds 45–149).
+> Der Horos-Kern und die Vet-Werkzeuge sind in einer Praxis täglich im Einsatz; was erst an
+> wenigen Geräten geprüft ist, zählt Abschnitt 7 auf. Bitte melden Sie, was Ihnen auffällt
 > (Abschnitt 5.15).
 
 ## 1. Was SekhVet ist
@@ -41,7 +43,7 @@ kein Upstream-Beitrag.
 
 ## 3. Installation
 
-1. `SekhVet-1.0-build174-macOS.dmg` von der Releases-Seite
+1. `SekhVet-1.1-build190-macOS.dmg` von der Releases-Seite
    https://github.com/3v3nFloW/sekhvet/releases laden und öffnen. Die Zip-Datei auf derselben
    Seite enthält dieselbe App, für alle, die das lieber mögen.
 2. Im geöffneten Fenster SekhVet auf den Ordner „Programme“ ziehen, danach das Laufwerk
@@ -61,7 +63,7 @@ kein Upstream-Beitrag.
    kommt erst wieder, wenn sich sein Wortlaut ändert. Direkt danach fragt SekhVet einmal, ob es
    täglich auf GitHub nach Updates sehen darf („SekhVet can check GitHub once a day …“):
    **Check for Updates** oder **Don't Check**; umschaltbar später unter Preferences › General.
-6. Prüfsumme (optional): `shasum -a 256 SekhVet-1.0-build174-macOS.dmg` (oder die Zip)
+6. Prüfsumme (optional): `shasum -a 256 SekhVet-1.1-build190-macOS.dmg` (oder die Zip)
    muss mit dem Wert auf der Releases-Seite übereinstimmen.
 
 **SekhVet neben Horos oder OsiriX:** SekhVet hat eine eigene Datenbank
@@ -69,7 +71,10 @@ kein Upstream-Beitrag.
 (`~/Library/Application Support/SekhVet/Plugins`); Web-Portal-Benutzer und Vorlagen liegen
 ebenfalls unter `~/Library/Application Support/SekhVet/` und starten leer. Horos und OsiriX
 bleiben unberührt und können parallel installiert bleiben. Alles, was eine URL mit `sekhvet://`
-öffnet, landet in SekhVet; `horos://` bleibt bei Horos.
+öffnet, landet in SekhVet; `horos://` bleibt bei Horos. Den Befehl eines solchen Links führt
+SekhVet nur aus, wenn **Activate the URL support and HTTP XML-RPC Server** eingeschaltet ist
+(Preferences › Listener, ab Werk aus); sonst erscheint ein Hinweis, und es geschieht nichts
+*(seit Build 189; vorher lief der Befehl trotzdem)*.
 
 **Netz: der DICOM-Listener ist ab Werk aus.** Eine frische Installation empfängt nichts, meldet
 sich nicht per Bonjour und beantwortet weder C-FIND noch C-GET; ihre Kennung im Netz ist eine
@@ -211,9 +216,24 @@ Horos wie gewohnt.
 
 - **Erkennung** aus der ersten Datei jeder Serie: Region aus Serienname, Protokollname und
   Körperregion; bei CT die Fensterregel (z. B. Soft tissue, Bone) aus dem Faltungskern und die
-  Kontrastphase (nativ / KM als ganzes Wort); bei MR der Sequenzname.
+  Kontrastphase (nativ / KM als ganzes Wort; *seit 1.1* auch „arteriell“, „venös“, „portalvenös“,
+  „Spätphase“ und ihre englischen Formen). Nennt der Serienname keine Phase, entscheidet das
+  DICOM-Feld *Contrast/Bolus Agent*: ist es gefüllt, gilt die Serie als KM — so werden auch
+  Geräte erkannt, die nativ und KM gleich benennen. Bei MR der Sequenzname.
 - **Vorlagen** für MR Kopf (2×2: T2 sag · T2 tra · T1 tra · T1 tra post KM), Wirbelsäule (1×2)
-  und Knie (1×4); alles editierbar. Leere Kacheln wahlweise schwarz füllen.
+  und Knie (1×4). Für CT *seit 1.1* je ein Protokoll für **Wirbelsäule, Kopf, Becken/Hüfte,
+  Vorder- und Hintergliedmasse, Gliedmassen/Gelenke, Abdomen und Thorax** sowie eines für alle
+  übrigen CT, jeweils 1×3: **Knochen nativ · Weichteil KM · Weichteil nativ**, beim Thorax **Lunge**
+  statt Knochen. Die Region erkennt SekhVet an deutschen und englischen Wörtern in Studien-,
+  Serien- und Protokollname sowie der Körperregion (z. B. „Wirbelsäule“, „HWS“, „Spine“, „Kopf“,
+  „Gehirn“, „Nase“, „Bulla“, „Dental“, „Becken“, „Hüfte“, „Schulter“, „Ellbogen“, „Knie“, „Tarsus“,
+  „Abdomen“, „Leber“, „Niere“, „Shunt“, „Thorax“, „Lunge“, „Metastasen“ …). Alles editierbar.
+  Leere Kacheln wahlweise schwarz füllen.
+- **Reihenfolge zählt:** Das erste passende Protokoll von oben gewinnt. Ein Protokoll ohne
+  Region greift für jede Studie seiner Modalität — gehört also ans Ende der Liste, sonst kommen
+  die Protokolle darunter nie zum Zug. Für Untersuchungen mit mehreren Regionen (z. B. Thorax und
+  Abdomen) die Region auch als Stichwort in die Positionen schreiben, damit jede Position nur
+  Serien dieser Region nimmt.
 - **Take from screen:** Studie so öffnen, wie sie sein soll, dann den Knopf drücken; die
   Positionen des gewählten Protokolls füllen sich aus den offenen Fenstern.
 - **Röntgen-Zweiebenen:** hat eine Studie genau zwei Röntgenaufnahmen derselben Körperregion,
@@ -227,7 +247,10 @@ Das Panel hat zwei Teile.
 **Regeln beim Öffnen.** Regeln „Modalität + Beschreibung enthält … → Fensterwerte" (z. B.
 Bone (vet), Soft tissue), die beim Öffnen einer Serie greifen. Die erste passende Regel von oben
 gewinnt. Bei einem CT mit Faltungskern im Header entscheidet **nur der Kern** (Knochenkern →
-Knochenfenster), nicht der Serienname. Ein Fenster, das Sie selbst verstellt und mit der Serie
+Knochenfenster), nicht der Serienname. *Seit 1.1* gilt der Canon-Kern `BODY_SHARP` als
+Weichteilkern (in den Canon-Studien der Praxis heissen damit die Weichteilserien „WT …“).
+Wer die Regeln schon einmal gespeichert hat, behält seine Liste; dann `BODY_SHARP` von Hand aus
+der Regel „Bone (vet)“ nehmen. Ein Fenster, das Sie selbst verstellt und mit der Serie
 gespeichert haben, bleibt beim Wiederöffnen erhalten; die Regeln greifen nur beim ersten
 Öffnen. Die Öffnungsprotokolle (5.3) verwenden dieselben Regelnamen.
 
@@ -392,10 +415,15 @@ warum). Ein PACS, das die Studie schon hat, behält den alten Namen.
 
 Zwei MPR-Fenster derselben Studie (z. B. nativ und Kontrastmittel) laufen synchron:
 Fadenkreuzpunkt, Ebenenlage, Schichtdicke, Rotation/Spiegelung und der Zoom je Ansicht
-(sagittal ↔ sagittal usw.). Fensterung bleibt je Fenster eigen. Bedingung: gleiche Studie und
-gleicher Frame of Reference.
+(sagittal ↔ sagittal usw.). Bedingung: gleiche Studie und gleicher Frame of Reference.
 
 - Schalter **MPR-Sync** in der MPR-Toolbar (Vorgabe an).
+- Schalter **WL/WW** in der MPR-Toolbar (hinter Zoom, Vorgabe aus): an = Fensterung (WL/WW) läuft
+  zwischen allen MPR-Fenstern derselben Modalität mit — mit der Maus, per Taste oder über das
+  WL/WW-Menü; auch zwischen zwei Untersuchungen (Vor-/Kontrollstudie). Beim Einschalten gibt das
+  Fenster, in dem man klickt, die Fensterung vor; ein neu geöffnetes MPR übernimmt sie. Aus = jedes
+  Fenster behält seine eigene Fensterung (z. B. Knochen- neben Weichteilkern). Derselbe Schalter
+  steht unter **Vet Tools › Display** (5.14).
 - Neue MPR-Fenster öffnen über ihrer 2D-Serie und werden in der Viewer-Fläche gekachelt; sie
   bleiben frei verschiebbar.
 - Ein zweites MPR übernimmt beim Öffnen die Lage des ersten.
@@ -416,8 +444,10 @@ gleicher Frame of Reference.
 - **Zoom** (Checkbox in der MPR-Toolbar): koppelt den Zoom der drei Ansichten eines Fensters.
   Vorgabe aus; zwischen Fenstern folgt der Zoom je Ansicht immer. Der Knopf lässt sich über
   Customize Toolbar entfernen.
-- **Rechtsklick ohne Ziehen** öffnet in jeder MPR-Ansicht das Werkzeugmenü wie im 2D-Viewer;
-  mit gedrückter rechter Taste ziehen zoomt wie in Horos.
+- **Rechtsklick ohne Ziehen** öffnet in jeder MPR-Ansicht das Werkzeugmenü wie im 2D-Viewer
+  (seit Build 175 mit **3D Rotate**); mit gedrückter rechter Taste ziehen zoomt wie in Horos.
+  Ein Linksklick neben das Menü schliesst es und greift gleich das Fadenkreuz bzw. startet das
+  gewählte Werkzeug — vor Build 175 sprang dabei die Fensterung (sehr dunkel/sehr grau).
 - **Icons:** die Orientierungsknöpfe (Axial, Coronal, Sagittal und ihre Gegenseite) zeigen ein
   Wirbel-CT im Knochenfenster, „3D MPR“ einen dorsalen MRT-Schnitt mit Fadenkreuz, „2D Orthogonal
   MPR“ drei Streifen eines Knie-CT; die Funktionen sind die von Horos.
@@ -444,6 +474,9 @@ DICOMweb, das gegen Orthanc, dcm4chee und andere Server läuft.
    month) oder ein eigener Bereich in den Feldern „from YYYYMMDD“ / „to YYYYMMDD“. Ergebnis mit
    Serien, Bildzahl, Uhrzeit und Institution. Eine Kugel vor dem Namen zeigt, ob die Studie schon
    ganz (grün) oder teilweise (orange) in der lokalen Datenbank liegt, wie beim Horos-Q/R.
+   Gezählt werden Bilder (Instanzen) wie auf dem Server: ein US-Cine-Loop zählt als ein Bild,
+   nicht als seine Frames *(korrigiert in Build 187 — vorher konnte ein einziger Loop eine
+   unvollständige US-Studie grün machen)*.
 3. **Retrieve:** markierte Studien oder einzelne Serien per WADO-RS laden; die Bilder gehen in
    die Datenbank. Grosse Studien werden gestreamt, nicht ganz im Speicher gehalten. Liegt von
    der Auswahl schon etwas hier (grüne oder orange Kugel), fragt SekhVet: **Only missing parts**
@@ -485,8 +518,25 @@ DICOMweb, das gegen Orthanc, dcm4chee und andere Server läuft.
    zuletzt, Name/ID/Modalität leer). Aufgeklappte Studien und die Markierung bleiben stehen; die
    Statuszeile zeigt Uhrzeit und neue Treffer („Auto-refresh 14:05, 2 new: …“). Häkchen
    **Retrieve new studies automatically** holt danach jede gezeigte Studie, die noch nicht (ganz)
-   hier ist, per WADO-RS — nur mit gesetztem Zeitraum, je Studie einmal pro Sitzung und erneut,
-   sobald der Server mehr Bilder davon hat (dann nur die fehlenden Serien).
+   hier ist, per WADO-RS — nur mit gesetztem Zeitraum. *Ab Build 187:* SekhVet wartet, bis die
+   Bildzahl auf dem Server eine Dreiviertelminute lang gleich bleibt (Statuszeile „N still
+   arriving“), und holt dann; liegt danach noch nicht alles hier — Abbruch, Netzfehler, Bilder
+   nachgereicht —, versucht es SekhVet nach 3 und nach 10 Minuten noch einmal (nur die fehlenden
+   Serien), höchstens dreimal je Bildzahl. Kommen auf dem Server Bilder dazu, beginnt die Zählung
+   neu. Was gerade ansteht, zeigt der Tooltip der Kugel („Auto-retrieve failed (try 1 of 3) —
+   next try at 09:06“, „… gave up after 3 tries — use Retrieve“). **Stop** nimmt die gestoppten
+   Studien aus dem automatischen Abruf, bis der Server mehr Bilder davon hat; Auto-Retrieve aus-
+   und wieder einschalten setzt alle Versuche zurück.
+7. **Komprimiert laden** *(neu in Build 184)*: Häkchen **Compressed transfer (JPEG-LS,
+   lossless)** direkt über **Retrieve** (Vorgabe an, bleibt gemerkt). SekhVet bittet den Server,
+   die Bilder vor dem Senden verlustfrei als JPEG-LS zu packen: eine CT braucht rund ein Drittel
+   der Datenmenge (gemessen an Orthanc 1.13: 72 → 27 MB je Serie), spürbar schneller in langsamen
+   oder mobilen Netzen. Die Pixelwerte bleiben bitgleich. Gilt nur für Studien bzw. Serien aus
+   CT, MR, DX, CR, MG, PX, IO (plus SR/KO/PR); **Ultraschall**, Angiographie oder eine unbekannte
+   Modalität kommen immer unkomprimiert — Cine-Schleifen müsste der Server dafür ganz in seinen
+   Arbeitsspeicher entpacken, was ihn zum Absturz bringen kann. Kann der Server nicht
+   komprimieren (Fehlerantwort oder abgebrochener Strom), holt SekhVet denselben Auftrag einmal
+   unkomprimiert; die Statuszeile sagt es. Auch der automatische Abruf (6) folgt dem Häkchen.
 
 Toolbar-Knöpfe **DICOMweb** (Abfrage) und **Send DICOMweb** in der Datenbank neben „Query".
 Die klassischen Horos-Locations (DIMSE) bleiben unverändert nutzbar.
@@ -509,6 +559,26 @@ Fotos, Screenshots, Laborbefunde und Überweisungen in die Studie legen.
 - **Screen Area:** je Bildschirm festlegen, welchen Teil die Viewer-Fenster belegen
   (Brüche wie „rechte 2/3" oder ein Pixelrechteck). Popup **Screen** in der Viewer-Toolbar
   kachelt sofort. Ersetzt Magnet & Co. am breiten Monitor.
+- **Arbeitsplätze — mehrere Monitore** *(neu in Build 188)*: Die Viewer-Fläche gilt je
+  **Kombination angeschlossener Monitore**. Beispiel 2 × 27": Monitor 1 ganz, auf Monitor 2 nur
+  die linke Hälfte, die rechte bleibt frei für den Befund (ReportPilot, Pages). Am Laptop allein
+  oder am 49-Zöller gelten wieder die dort gewählten Flächen. SekhVet erkennt die Monitore an
+  Hersteller, Modell und Seriennummer, nicht an der Reihenfolge, in der macOS sie aufzählt; zwei
+  baugleiche Monitore ohne Seriennummer unterscheidet es nach ihrer Lage (links/rechts). Je
+  Arbeitsplatz merkt sich SekhVet auch die Auswahl **Screens used for viewers** (Einstellungen ›
+  Viewers) und die Lage des Datenbankfensters. Beim An- oder Abstecken stellt SekhVet alles von
+  selbst um und kachelt offene Viewer neu.
+  - Neue Monitor-Kombination: Zuerst gilt auf jedem Monitor die ganze Fläche. Einmal fragt
+    SekhVet, ob man sie einrichten will (**Set Up Screens…** öffnet dieses Fenster).
+  - Im Fenster stehen die Monitore mit Namen und Lage („2 · DELL U2723QE (right)“), darüber der
+    erkannte Arbeitsplatz.
+  - **Identify Screens** blendet auf jedem Monitor für ein paar Sekunden Nummer, Name und
+    Viewer-Fläche ein; die Fläche ist blau getönt.
+  - **Use Front Viewer's Place** (auch im Popup **Screen** als **Use This Window's Place**):
+    ein Viewer-Fenster dorthin ziehen und auf die Grösse bringen, wo die Viewer hin sollen,
+    dann klicken. Liegt es nahe an einer Hälfte oder einem Drittel, rastet SekhVet darauf ein,
+    sonst gilt das genaue Rechteck.
+  - Nach dem Update übernimmt der erste Arbeitsplatz die bisher gewählten Flächen.
 - **Annotations:** Schrift, Grösse (Vorgabe Helvetica Bold 14; „Classic (1 px shadow)“ und
   „classic: Geneva 12“ stellen das Horos-Aussehen her), Textfarbe (Vorgabe weiss, „ROI color
   (classic)“ = je Messung ihre Farbe), Kontur/Kasten für Messtexte, Ecken-Text und die Werte der
@@ -532,8 +602,9 @@ Fotos, Screenshots, Laborbefunde und Überweisungen in die Studie legen.
 - **Modality colours:** Studien- und Serienzeilen in der Datenbank nach Modalität getönt
   (CT blau, MR violett, Röntgen grün, US orange …). Abschaltbar.
 - **Magnetic windows:** ab Werk aus, Fenster bleiben frei verschiebbar.
-- **MPR:** Trefferzonen, statischer Cursor, MPR-Sync, Kachelung, Zoom-Sync.
-- Die Bildschirm-Zeilen (Screen Area) folgen neu angeschlossenen Bildschirmen von selbst.
+- **MPR:** Trefferzonen, statischer Cursor, MPR-Sync, Kachelung, Zoom-Sync, WL/WW-Sync.
+- Die Bildschirm-Zeilen (Screen Area) folgen neu angeschlossenen Bildschirmen von selbst; die
+  Werte gehören zum jeweiligen Arbeitsplatz (siehe oben).
 
 ### 5.15 Rückmeldung und Beitrag
 
@@ -570,7 +641,7 @@ Sie das Gerätemodell.
 
 ### 5.17 Fenster tauschen / rotieren (⌘H)
 
-**⌘H**, der Toolbar-Knopf **Swap** (im 2D-Viewer neben Point, im MPR-Fenster neben Zoom-Sync)
+**⌘H**, der Toolbar-Knopf **Swap** (im 2D-Viewer neben Point, im MPR-Fenster hinter Zoom-Sync und WL/WW)
 oder **Vet Tools › Swap / Rotate Windows** ordnet die offenen Fenster um:
 
 | Offen | Ergebnis |
@@ -627,8 +698,12 @@ der Serie im Fenster umgerechnet (trilinear geglättet, etwa 0,4 GB Speicher je 
 
 - **Knopf „Overlay“** in der Viewer-Symbolleiste (neben „Swap“) sucht die passenden Serien
   von selbst: gleiche Modalität, mindestens zehn Bilder, kein Topogramm, gleiche Region, bei MRT
-  dieselbe Ebene; Reihenfolge Native · Contrast · Native bone · Contrast bone. Als Kontrast
-  gelten Serien mit „KM“, „contrast“, „post“, „T1+C“ …; „pre KM“, „vor KM“, „ohne KM“, „without /
+  dieselbe Ebene. Vorgeschlagen werden nur Serien, die mindestens die Hälfte der Schichten der
+  Serie im Fenster abdecken. Reihenfolge je Kern (Weichteil, Knochen, Lunge): Native · Arterial ·
+  Venous · Contrast · Delayed, z. B. „Native · Arterial · Venous“ oder „Native · Contrast ·
+  Native bone · Contrast bone“. Als Kontrast gelten Serien mit „KM“, „contrast“, „post“, „T1+C“ …
+  und *seit 1.1* auch „arteriell“, „venös“, „portal“, „spät“ / „delayed“; ohne solches Wort
+  entscheidet das DICOM-Feld *Contrast/Bolus Agent*. „pre KM“, „vor KM“, „ohne KM“, „without /
   non contrast“, „plain“ gelten als nativ. Danach stehen in der Symbolleiste **Chips** je Serie,
   **▾** (Auswahl) und **✕** (beenden).
 - **Findet der Knopf nichts**, bleibt er gedrückt und wartet: die nächste Serie, die Sie aus der
@@ -637,10 +712,18 @@ der Serie im Fenster umgerechnet (trilinear geglättet, etwa 0,4 GB Speicher je 
 - **Serie aufs Bild ziehen** fragt nicht mehr nach: Overlay aus → die Serie wird gezeigt wie in
   Horos; Overlay an → die Serie kommt dazu; liegt sie schon im Overlay → es wird nur
   umgeschaltet. Ein Klick auf eine Miniatur zeigt die Serie immer normal und beendet das Overlay.
-- **▾ Auswahl:** Menü mit einem Haken je Serie der Untersuchung. Abgewählte Serien bekommen
-  keinen Chip und werden übersprungen (bleiben geladen); die Serie, von der aus Sie gestartet
-  haben, lässt sich nicht abwählen. Bei CT merkt sich SekhVet die abgewählte **Art** (z. B.
-  „Contrast bone“) und lädt sie beim nächsten Overlay gar nicht erst; im Menü wieder anhakbar.
+- **▾ Auswahl** *(neu gestaltet in 1.1)*: Oben steht je Kern eine **Ein-Klick-Zeile**, z. B.
+  „Soft tissue: Native · Arterial · Venous“ — sie zeigt genau diese Serien. Darunter alle Serien
+  der Untersuchung, gruppiert nach **Soft tissue / Bone / Lung**, mit einem Haken je Serie. Die
+  Serie, von der aus Sie gestartet haben, trägt „(base series)“ und lässt sich nicht abwählen.
+  Deckt eine Serie nur einen Teil davon ab, steht dahinter „· covers 37 %“. Abgewählte Serien
+  bekommen keinen Chip und werden übersprungen (bleiben geladen). Sind schon vier Serien geladen,
+  baut SekhVet das Overlay beim Anhaken neu auf, ohne die abgewählten. Bei CT merkt sich SekhVet die
+  abgewählte **Art** (z. B. „Contrast bone“) und lädt sie beim nächsten Overlay gar nicht erst;
+  im Menü wieder anhakbar. Das Abwählen einer Serie, die nur einen Teil abdeckt, wird nicht gemerkt.
+- **Serie ohne Bilder an dieser Stelle** *(neu in 1.1)*: Reicht die sichtbare Serie nicht bis zur
+  aktuellen Schicht (z. B. ein KM-Thorax zu einem nativen Ganzkörper-CT), steht oben im Bild
+  „Contrast: no images at this level“ statt einer leeren grauen Fläche.
 - **Tasten:** `<` nächste Serie, `y` vorige (umstellbar in Vet Tools › Display, Zeile „Overlay“).
   Sie wirken nur, solange ein Overlay läuft und das Bild den Fokus hat. `y` ist in Horos das
   Fadenkreuz-Werkzeug des Orthogonal-MPR; während eines Overlays schaltet es die Serie.
@@ -652,7 +735,8 @@ der Serie im Fenster umgerechnet (trilinear geglättet, etwa 0,4 GB Speicher je 
   „(n hidden)“) und bleiben gespeichert.
 - **Flächen-ROI (Oval, Rechteck, Polygon, Stift):** Mean und SD gelten für die gerade sichtbare
   Serie. Dazu kommt die Zeile **„Native 42 · Contrast 168 · Δ +126 HU“** (nur zwischen Serien
-  desselben Kerns; bei MRT das Enhancement in Prozent). Im MPR rechnet das Oval ebenfalls je
+  desselben Kerns; bei MRT das Enhancement in Prozent). Mit mehreren Phasen bekommt jede Phase ihr
+  eigenes Δ gegenüber nativ: **„Native 42 · Arterial 180 (+138) · Venous 150 (+108) HU“**. Im MPR rechnet das Oval ebenfalls je
   Serie neu, die Δ-Zeile gibt es dort nicht.
 - **Overlay im MPR:** Die MPR-Symbolleiste hat denselben Knopf **Overlay** mit Chips, **▾** und
   **✕**. Ein MPR aus dem Overlay-Fenster enthält alle Serien; `<`, `y` und die Chips schalten MPR
@@ -665,7 +749,8 @@ der Serie im Fenster umgerechnet (trilinear geglättet, etwa 0,4 GB Speicher je 
 - Während eines Overlays sind Revert, LUT, SUV und DICOM-Overlays nicht verfügbar („post
   processed“), der 4D-Regler und Play sind grau. Eine Bezugsserie mit gemischten Bildgrössen
   oder nicht parallelen Schichten wird abgelehnt.
-- Grenzen: eine Kontrastserie je Overlay, keine Phasenerkennung (arteriell/venös/spät).
+- Grenzen: höchstens vier Serien gleichzeitig; die Phase kommt nur aus dem Seriennamen bzw. dem
+  Feld *Contrast/Bolus Agent*, nicht aus Bolus-Tracking oder Zeitstempeln.
 
 ### 5.21 Lupe (Messlupe und freie Lupe)
 
@@ -719,6 +804,99 @@ Messungen auch deren Zahl; der Tooltip nennt die Namen. Die angezeigte Schicht i
 Die Leiste liegt über dem Bild, das Bild verschiebt sich nicht. Gezeigt werden bis zu 400
 Schichten mit Messung; bei mehr als in die Breite passen, lässt sich die Leiste seitlich rollen.
 
+### 5.25 Studien-Datenbanken (File › New Database Folder…) *(neu in Build 175)*
+
+Für eine Studie oder Fallsammlung lässt sich eine eigene Datenbank anlegen, z. B. auf einer
+externen SSD — die Arbeitsdatenbank bleibt frei davon.
+
+- **Anlegen:** File › **New Database Folder…**, Ordner wählen (z. B. `/Volumes/SSD/Studie-CT`).
+  SekhVet legt darin `SekhVet Data` an; die Datenbank erscheint links unter **Sources**.
+- **Wechseln:** Klick auf den Eintrag unter Sources; der Fenstertitel nennt die gezeigte Datenbank.
+- **Füllen:** bei gezeigter Studien-Datenbank Dateien/Ordner ins Fenster ziehen oder File › Import.
+  Damit die Bilder wirklich auf der SSD liegen, in den Einstellungen › Database das Kopieren in den
+  Datenbankordner eingeschaltet lassen. Auch Vet Tools › Import Image / PDF as DICOM schreibt in die
+  gezeigte Datenbank.
+- **Auswerfen** *(neu in Build 179)*: Studien-Datenbanken auf einer externen Platte haben unter Sources
+  rechts ein ⏏. Ein Klick zeigt wieder die Haupt-Datenbank, schliesst deren Viewer, gibt die
+  Studien-Datenbank frei und wirft die Platte aus — SekhVet muss dafür nicht beendet werden. Läuft
+  noch ein Import auf die Platte, sagt SekhVet das und wirft nicht aus. Ist die Platte nicht
+  angeschlossen, meldet ein Klick auf den Eintrag genau das.
+- **Wieder öffnen:** File › **Open Database Folder…**; eine SSD mit `SekhVet Data` direkt im obersten
+  Ordner erscheint beim Einstecken von selbst unter Sources.
+- **Eingänge bleiben in der Haupt-Datenbank:** Was vom PACS kommt (DICOM-Listener, Query/Retrieve,
+  DICOMweb samt Auto-Retrieve), landet immer in der Haupt-Datenbank, auch während eine
+  Studien-Datenbank gezeigt wird. Schalter: Einstellungen › Listener, **Incoming and shared files are
+  always linked to the default database** (Vorgabe an seit Build 175).
+
+- **Roter Eintrag unter Sources:** der Datenträger ist nicht angeschlossen — nicht kaputt. Nach dem
+  Einstecken ist der Eintrag wieder normal.
+- **Eintrag entfernen:** Einstellungen › Locations, Kasten „Local – SekhVet Databases files /
+  folder“, Zeile wählen, **⌫**. Das entfernt nur den Verweis; die Daten bleiben auf der Platte und
+  lassen sich über „Add a local path“ wieder einbinden.
+- **Eintrag umbenennen:** in derselben Liste die Spalte **Description** doppelklicken — **nicht
+  „Local Path“**. Wer den Pfad überschreibt, findet die Datenbank nicht mehr; dann den Pfad auf den
+  echten Ordner zurückstellen.
+- **Wo Messungen landen:** Messungen (ROIs), Berichte und 3D-Zustände werden in der Datenbank
+  gespeichert, aus der die Studie geöffnet wurde. Wer an Studien auf der externen Platte misst,
+  schreibt auf diese Platte — sie gehört also mit in die Sicherung.
+- **Welche Platte:** In einem Test mit rund 31 600 Bildern dauerte der Import auf eine externe SSD
+  (APFS) 3 Minuten, auf einen USB-Stick (APFS) 16 Minuten und auf eine USB-Festplatte (exFAT)
+  rund 2 Stunden. Für Arbeitsdatenbanken eine SSD mit APFS; kein Netzlaufwerk, kein Sync-Ordner.
+
+Keine Datenbank in einen Dropbox-/iCloud-Ordner legen: die Synchronisation verträgt sich nicht mit
+der laufenden Datenbank.
+
+**In einem Schritt aus einem Ordner** *(neu in Build 176)*: Vet Tools › **New Study Database from
+Folder…** — zuerst den Ordner mit den Studien wählen (er wird nur gelesen), dann Ort und Namen der
+Studien-Datenbank (z. B. auf der externen Platte). SekhVet legt die Datenbank an, zeigt sie unter
+Sources, kopiert jedes Bild einmal hinein (doppelte Bilder in der Quelle nur einmal) und prüft am
+Ende jedes Bild der Quelle anhand seiner SOPInstanceUID. Das Ergebnis („COMPLETE“ oder die Liste
+der fehlenden Bilder) steht in einer Meldung und im Bericht `Import report <Datum>.txt` neben der
+Datenbank. Nochmals in denselben Ordner ausgeführt, ergänzt es nur, was fehlt.
+Auf externen Platten läuft die Datenbank im WAL-Modus (Build 177, viel schnelleres Indexieren). Bilder
+werden ohne Zusatzattribute (z. B. von Dropbox) kopiert (Build 178). Seit Build 178 zeigt die
+Aktivitätsliste die Restzeit, am Ende kommt eine Mitteilung und das Ergebnis erscheint am
+Datenbankfenster, ohne SekhVet anzuhalten; der Bericht fasst doppelte Bilder je Ordnerpaar zusammen.
+Hinweis: auf exFAT legt macOS neben jeder neuen Datei eine versteckte `._`-Datei an — für
+Studien-Datenbanken ist eine APFS-formatierte Platte schneller und dank Journal robuster.
+
+**Mac bleibt wach:** Während SekhVet Dateien importiert oder Studien in eine andere Datenbank kopiert,
+schläft der Mac nicht ein (der Bildschirm darf dunkel werden). Zugeklappt schläft ein Mac-Laptop nur
+mit externem Bildschirm und Netzteil nicht.
+
+### 5.26 Vet-Einstellungen sichern, exportieren, in der Praxis verteilen (Vet Tools › Vet Settings) *(neu in 1.1)*
+
+Damit eine Einrichtung bei einem Update nicht verloren geht und mehrere Rechner einer Praxis gleich
+eingestellt sind. Die Einstellungen sind in Gruppen geteilt, die man einzeln anhakt: **Opening
+protocols**, **Hanging protocols & orientation**, **Window rules & WL/WW presets**, **Display &
+annotations**, **Overlay & keys**, **Measurement tools** und **Network targets** (DICOM- und
+DICOMweb-Knoten). Netzwerkziele muss man beim Übernehmen eigens anhaken.
+
+**Nie enthalten:** Passwörter (sie bleiben im Schlüsselbund), Routing-Regeln, DICOM-Listener,
+Bonjour, Datenbankfreigabe, Web-Portal, Plugins, Datenbankorte, Bildschirmbereiche und
+Fensterpositionen. Unbekannte Einträge in einer Datei werden verworfen.
+
+- **Sicherung:** Beim ersten Start jeder neuen SekhVet-Version und vor jeder Übernahme legt SekhVet
+  eine Sicherung aller Gruppen an (`~/Library/Application Support/SekhVet/Settings Backups`, die
+  letzten 20 bleiben). **Restore Settings Backup…** holt einen früheren Stand zurück.
+- **Export / Import:** **Export Vet Settings…** schreibt die angehakten Gruppen in eine Datei
+  (`.sekhvet-settings`), etwa für einen neuen Mac. **Import Vet Settings…** zeigt je Gruppe, was sich
+  ändern würde („3 → 9 entries, new: CT spine …“). Jede angehakte Gruppe ersetzt die eigene als
+  Ganzes.
+- **Praxis-Einstellungsordner:** Unter **Practice Settings Folder…** wählt jeder Rechner einmal
+  einen gemeinsamen Ordner, z. B. auf dem NAS der Praxis. Wer die Praxis-Einstellungen ändern darf,
+  braucht dort Schreibrecht — das regelt der Ordner, nicht SekhVet. **Publish Practice Settings…**
+  legt die angehakten Gruppen dieses Rechners dort ab (die vorige Fassung bleibt daneben). Die
+  anderen Rechner sehen beim Start und immer, wenn SekhVet in den Vordergrund kommt, nach, zeigen
+  die Änderungen und fragen **Apply / Later / Reject**. Ab Werk wird immer gefragt; je Rechner lässt
+  sich „ohne Rückfrage übernehmen“ einschalten (Netzwerkziele nie automatisch). Es wird kein
+  Netzwerkport geöffnet und kein Dienst angekündigt.
+- **Neue Vorgaben bei Updates:** Bringt eine neue Version neue eingebaute Einstellungen für eine
+  Gruppe, die Sie selbst geändert haben, fragt SekhVet einmal: **Replace / Not Now / View…**.
+  Ersetzen sichert vorher.
+- Einige Änderungen (Hanging-Protokolle, Tasten, Symbolleisten) wirken vollständig erst nach einem
+  Neustart von SekhVet.
+
 ## 6. Bedienung, die anders ist als in Horos
 
 | Thema | Horos | SekhVet |
@@ -749,7 +927,20 @@ Alle SekhVet-Fenster öffnen sich innerhalb der Viewer-Fläche. Alle Toolbar-Kn�
 lassen sich über **Customize Toolbar** verschieben oder entfernen; neue Knöpfe erscheinen einmal
 automatisch, entfernt man sie, bleiben sie weg.
 
-## 7. Stand 1.0, Grenzen und bekannte Einschränkungen (Build 174)
+## 7. Stand 1.1, Grenzen und bekannte Einschränkungen (Build 190)
+
+**Neu in 1.1, erst an wenigen Geräten geprüft:**
+
+- **Studien-Datenbanken** (5.25) mit WAL-Modus und Auswerfen: an einem Gerät mit externer SSD,
+  USB-Stick und USB-Festplatte geprüft (Oktober 2026).
+- **Overlay mit mehreren Kontrastphasen** und neue Auswahl (5.20) sowie die Phasenerkennung der
+  Öffnungsprotokolle (5.3): an CT-Studien von Siemens und Canon geprüft (Oktober 2026).
+- **Vet-Einstellungen sichern, exportieren, in der Praxis verteilen** (5.26): an einem Rechner
+  geprüft (Oktober 2026).
+- **Komprimiert laden per DICOMweb** (5.12, Punkt 7): gegen Orthanc 1.13 geprüft (Oktober 2026);
+  andere Server können die Umwandlung ablehnen — dann lädt SekhVet unkomprimiert.
+- **Arbeitsplätze — mehrere Monitore** (5.14): mit nachgebildeten Monitor-Kombinationen geprüft,
+  noch nicht an zwei echten Monitoren (Oktober 2026).
 
 **Neu in 1.0, erst an wenigen Geräten geprüft.** Diese Funktionen laufen in einer Praxis, sind
 aber jung. Mit kritischem Blick benutzen und Auffälligkeiten melden:

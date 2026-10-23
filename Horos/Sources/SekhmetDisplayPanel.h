@@ -12,6 +12,7 @@ extern NSString* const SekhmetScreenAreasKey;        // Dict: "id<NSScreenNumber
 extern NSString* const SekhmetScreenAreaRectsKey;    // Dict: gleiche Schluessel -> "x y w h" (relativ zur sichtbaren Flaeche)
 extern NSString* const SekhmetAnnotationBackgroundKey; // 0 Horos, 1 Kontur, 2 Kasten, 3 beide
 extern NSString* const SekhmetMPRSyncKey;
+extern NSString* const SekhmetMPRSyncWLWWKey; // SekhVet Paket EC: WL/WW follows between MPR windows of the same modality
 extern NSString* const SekhmetMPRSyncSettingDidChangeNotification; // SekhVet Paket CS: MPR-Sync umgeschaltet (Toolbar-Knopf oder Panel) -> alle Anzeigen des Schalters folgen
 extern NSString* const SekhmetTile3DWindowsKey;
 extern NSString* const SekhmetAppearanceKey;        // SekhVet Paket N: 0 System, 1 Hell, 2 Dunkel
@@ -20,22 +21,16 @@ extern NSString* const SekhmetROITextColorModeKey;  // SekhVet Paket N: 0 ROI-Fa
 extern NSString* const SekhmetROITextColorKey;      // "r g b"
 extern NSString* const SekhmetAnnotationBoxColorKey; // "r g b a"
 
-enum {
-    SekhmetAreaFull = 0,
-    SekhmetAreaLeftHalf = 1,
-    SekhmetAreaRightHalf = 2,
-    SekhmetAreaLeftTwoThirds = 3,
-    SekhmetAreaRightTwoThirds = 4,
-    SekhmetAreaCenterHalf = 5,
-    SekhmetAreaPixelRect = 9
-};
+#import "SekhmetArbeitsplatz.h" // SekhVet Paket EE: SekhmetArea* modes, monitor and workplace keys
+
+extern NSString* const SekhmetWorkplacesKey;         // SekhVet Paket EE: Dict Arbeitsplatz-Kennung -> {name, areas, rects, nonViewer, db, hinted, used}; ersetzt die beiden Schluessel oben (bleiben nur fuer die Uebernahme)
 
 @interface SekhmetDisplayPanel : NSWindowController
 {
     NSMutableArray *areaPopups;     // je Bildschirm
     NSMutableArray *rectFields;
     NSPopUpButton *annotationPopup;
-    NSButton *syncButton, *tileButton, *staticCursorButton, *zoomSyncButton, *magneticButton; // magneticButton: SekhVet Paket AH // zoomSyncButton: SekhVet Paket P
+    NSButton *syncButton, *tileButton, *staticCursorButton, *zoomSyncButton, *magneticButton, *wlwwSyncButton; // wlwwSyncButton: SekhVet Paket EC; // magneticButton: SekhVet Paket AH // zoomSyncButton: SekhVet Paket P
     NSTextField *centerZoneField, *lineZoneField;
     NSPopUpButton *appearancePopup, *fontPopup, *textColorPopup; // SekhVet Paket N
     NSButton *modalityColorsButton;
@@ -57,6 +52,11 @@ enum {
 + (NSInteger) indexForMode:(NSInteger) m;
 + (void) setMode:(NSInteger) mode forScreen:(NSScreen*) screen;
 + (NSInteger) modeForScreen:(NSScreen*) screen;
++ (BOOL) takeAreaFromWindow:(NSWindow*) w;                       // SekhVet Paket EE: Lage eines Fensters wird die Viewer-Flaeche seines Bildschirms (eingerastet auf 1/2, 2/3 ... oder Pixel-Rechteck)
++ (void) identifyScreens;                                         // SekhVet Paket EE: Name, Lage und Viewer-Flaeche je Bildschirm fuer 3 s einblenden
++ (void) startWorkplaces;                                         // SekhVet Paket EE: beim Start -- Arbeitsplatz erkennen, Bildschirmwechsel verfolgen
++ (void) rememberViewerScreens;                                   // SekhVet Paket EE: Horos-Auswahl "Screens used for viewers" in den Arbeitsplatz uebernehmen
++ (NSString*) workplaceName;                                      // SekhVet Paket EE: "DELL U2723QE + DELL U2723QE" (links nach rechts)
 + (void) placeWindow:(NSWindow*) w nearWindow:(NSWindow*) ref centered:(BOOL) centered;   // in die Viewer-Flaeche des Bildschirms von ref (oben links oder mittig), nur wenn w noch nicht sichtbar
 + (void) applyAppearance;                                        // SekhVet Paket N: NSApp.appearance aus SekhmetAppearance
 + (NSColor*) modalityColorForModality:(NSString*) modality;     // SekhVet Paket N: Zeilentoenung (alpha 0.22) oder nil

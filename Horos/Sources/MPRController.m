@@ -382,6 +382,7 @@ static float deg2rad = M_PI/180.0;
     {
         sekhmetObserving = YES;
         [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetSyncFromNotification:) name: SekhmetMPRDidChangeNotification object: nil];
+        [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetWLWWFromNotification:) name: SekhmetMPRWLWWDidChangeNotification object: nil]; // SekhVet Paket EC
         if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetTile3DWindowsKey])
             [[AppController sharedAppController] performSelector: @selector(tile3DWindows:) withObject: nil afterDelay: 0.6];
         [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetPresetDidChange:) name: SekhmetVetPresetDidChangeNotification object: nil];
@@ -770,6 +771,7 @@ static float deg2rad = M_PI/180.0;
 	mprView1.camera.wl = [sender curWL];	mprView1.camera.ww = [sender curWW];
 	mprView2.camera.wl = [sender curWL];	mprView2.camera.ww = [sender curWW];
 	mprView3.camera.wl = [sender curWL];	mprView3.camera.ww = [sender curWW];
+	[self sekhmetScheduleWLWWBroadcast]; // SekhVet Paket EC: WL/WW an die anderen MPR-Fenster
 }
 
 - (void) computeCrossReferenceLines:(MPRDCMView*) sender
@@ -1406,6 +1408,7 @@ static float deg2rad = M_PI/180.0;
 	}
 	
 	[self applyWLWWForString: menuString];
+	[self sekhmetScheduleWLWWBroadcast]; // SekhVet Paket EC: Preset aus dem Popup auch an die anderen MPR-Fenster
 	
 	[[NSNotificationCenter defaultCenter] postNotificationName: OsirixUpdateWLWWMenuNotification object: curWLWWMenu userInfo: nil];
 }
@@ -2961,6 +2964,19 @@ static float deg2rad = M_PI/180.0;
             if( haveZoom == NO) [toolbar insertItemWithItemIdentifier: @"SekhmetZoomSync" atIndex: (syncIdx >= 0) ? syncIdx + 1 : [[toolbar items] count]];
             [ud setBool: YES forKey: @"SekhmetZoomSyncToolbarInsertedMPR"];
         }
+        // SekhVet Paket EC: "WL/WW" einmalig hinter Zoom-Sync; nimmt der Benutzer ihn heraus, bleibt er weg
+        if( [ud boolForKey: @"SekhmetWLWWSyncToolbarInsertedMPR"] == NO)
+        {
+            BOOL haveWL = NO; NSInteger zoomIdx = -1; idx = 0;
+            for( NSToolbarItem *it in [toolbar items])
+            {
+                if( [[it itemIdentifier] isEqualToString: @"SekhmetWLWWSync"]) haveWL = YES;
+                if( [[it itemIdentifier] isEqualToString: @"SekhmetZoomSync"]) zoomIdx = idx;
+                idx++;
+            }
+            if( haveWL == NO) [toolbar insertItemWithItemIdentifier: @"SekhmetWLWWSync" atIndex: (zoomIdx >= 0) ? zoomIdx + 1 : [[toolbar items] count]];
+            [ud setBool: YES forKey: @"SekhmetWLWWSyncToolbarInsertedMPR"];
+        }
         // SekhVet Paket BW-2: "Swap MPR" einmalig hinter Zoom-Sync; nimmt der Benutzer ihn heraus, bleibt er weg
         if( [ud boolForKey: @"SekhmetMPRSwapToolbarInsertedMPR"] == NO)
         {
@@ -3093,6 +3109,22 @@ static float deg2rad = M_PI/180.0;
         [toolbarItem setMinSize: NSMakeSize( 70, 24)];
         [toolbarItem setMaxSize: NSMakeSize( 70, 24)];
     }
+    else if ([itemIdent isEqualToString: @"SekhmetWLWWSync"]) // SekhVet Paket EC: WL/WW-Gleichlauf zwischen MPR-Fenstern
+    {
+        NSButton *b = [[[NSButton alloc] initWithFrame: NSMakeRect( 0, 0, 74, 24)] autorelease];
+        [b setButtonType: NSButtonTypeSwitch];
+        [b setTitle: NSLocalizedString( @"WL/WW", nil)];
+        [b setFont: [NSFont systemFontOfSize: 11]];
+        [b bind: @"value" toObject: [NSUserDefaultsController sharedUserDefaultsController] withKeyPath: @"values.SekhmetMPRSyncWLWW" options: nil]; // all windows and the Display panel follow
+        [b setTarget: self];
+        [b setAction: @selector(sekhmetToggleWLWWSync:)]; // switched on here: this window's WL/WW goes to the others
+        [toolbarItem setLabel: NSLocalizedString( @"WL-Sync", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString( @"WL/WW sync (SekhVet)", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"Window level and width follow between MPR windows of the same modality (also between studies)", nil)];
+        [toolbarItem setView: b];
+        [toolbarItem setMinSize: NSMakeSize( 74, 24)];
+        [toolbarItem setMaxSize: NSMakeSize( 74, 24)];
+    }
     else if ([itemIdent isEqualToString: @"SekhmetMPROverlay"]) // SekhVet Paket DA: Overlay aus dem MPR (Chips, ▾, ✕ wie im 2D-Viewer)
     {
         [SekhmetUeberlagerung konfiguriereToolbarItem: toolbarItem viewer: viewer2D];
@@ -3111,7 +3143,7 @@ static float deg2rad = M_PI/180.0;
         BOOL on = [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncKey];
         [toolbarItem setLabel: NSLocalizedString( @"MPR-Sync", nil)];
         [toolbarItem setPaletteLabel: NSLocalizedString( @"MPR sync (SekhVet)", nil)];
-        [toolbarItem setToolTip: NSLocalizedString( @"MPR windows of the same study follow point, planes and thickness", nil)];
+        [toolbarItem setToolTip: NSLocalizedString( @"MPR windows of the same study follow point, planes and thickness (window level: WL/WW switch)", nil)];
         [toolbarItem setImage: [NSImage imageNamed: on ? @"SyncLock.pdf" : @"Sync.pdf"]];
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(sekhmetToggleSync:)];
@@ -3275,7 +3307,7 @@ static float deg2rad = M_PI/180.0;
 
 - (NSArray *) toolbarDefaultItemIdentifiers: (NSToolbar *) toolbar
 {
-		return [NSArray arrayWithObjects: @"tbTools", @"tbWLWW", @"tbThickSlab", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetMPRSwap", @"SekhmetMPROverlay", @"SekhmetSpine", NSToolbarFlexibleSpaceItemIdentifier, @"ViewsPosition", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisShowHide", @"MousePositionShowHide", nil]; // SekhVet Paket CS: Horos' "syncZoomLevel" left the DEFAULT set - "SekhmetZoomSync" switches the same default; it stays available in Customize Toolbar
+		return [NSArray arrayWithObjects: @"tbTools", @"tbWLWW", @"tbThickSlab", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetWLWWSync", @"SekhmetMPRSwap", @"SekhmetMPROverlay", @"SekhmetSpine", NSToolbarFlexibleSpaceItemIdentifier, @"ViewsPosition", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisShowHide", @"MousePositionShowHide", nil]; // SekhVet Paket CS: Horos' "syncZoomLevel" left the DEFAULT set - "SekhmetZoomSync" switches the same default; it stays available in Customize Toolbar
 }
 
 - (NSArray *) toolbarAllowedItemIdentifiers: (NSToolbar *) toolbar
@@ -3284,7 +3316,7 @@ static float deg2rad = M_PI/180.0;
 											NSToolbarFlexibleSpaceItemIdentifier,
 											NSToolbarSpaceItemIdentifier,
 											NSToolbarSeparatorItemIdentifier,
-											@"tbTools", @"tbWLWW", @"tbLOD", @"tbThickSlab", @"tbBlending", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetMPRSwap", @"SekhmetMPROverlay", @"SekhmetSpine", @"tbMovie", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisColors", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"ViewsPosition", nil];
+											@"tbTools", @"tbWLWW", @"tbLOD", @"tbThickSlab", @"tbBlending", @"tbShading", @"SekhmetVetPreset", @"SekhmetMPRConv", @"SekhmetMPRSync", @"SekhmetZoomSync", @"SekhmetWLWWSync", @"SekhmetMPRSwap", @"SekhmetMPROverlay", @"SekhmetSpine", @"tbMovie", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisColors", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"ViewsPosition", nil];
     for (id key in [PluginManager plugins])
     {
         if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])

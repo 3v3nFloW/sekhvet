@@ -895,6 +895,7 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"+xi" forKey:@"AETransferSyntax"];
 	[defaultValues setObject:@"" forKey:@"STORESCPEXTRA"];
 	[defaultValues setObject:@"0" forKey:@"ROITEXTIFSELECTED"];
+	[defaultValues setObject:@"1" forKey: @"addNewIncomingFilesToDefaultDBOnly"]; // SekhVet Paket DQ: incoming files (listener, Q/R, DICOMweb) always go to the default database, also while a study database is shown (Preferences > Listener)
 	[defaultValues setObject:@"0" forKey: @"STORESCP"]; // SekhVet Paket CT: DICOM listener off on a fresh install (Preferences > Listener); existing installs keep "on", see +[AppController sekhvetMigrateDefaultsOnce]
 	[defaultValues setObject:@"1" forKey: @"DCMPRINT_Interval"];
 	[defaultValues setObject:@"3" forKey: @"LISTENERCHECKINTERVAL"];
@@ -912,6 +913,7 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject: @"1 1 1" forKey: @"SekhmetROITextColor"]; // SekhVet Paket N: eigene Textfarbe r g b
 	[defaultValues setObject: @"0 0 0 0.7" forKey: @"SekhmetAnnotationBoxColor"]; // SekhVet Paket N: Kasten r g b a
 	[defaultValues setObject: @"1" forKey: @"SekhmetMPRSync"];
+	[defaultValues setObject: @"0" forKey: @"SekhmetMPRSyncWLWW"]; // SekhVet Paket EC: WL/WW zwischen MPR-Fenstern, Vorgabe aus (WL eigen wie bisher)
 	[defaultValues setObject: @"18" forKey: @"SekhmetMPRCenterZone"]; // SekhVet: Fadenkreuz-Mittenzone px
 	[defaultValues setObject: @"12" forKey: @"SekhmetMPRLineZone"];   // SekhVet: Fadenkreuz-Linienzone px
 	[defaultValues setObject: @"1" forKey: @"SekhmetMPRStaticCursor"]; // SekhVet: im MPR nur der Pfeil-Cursor

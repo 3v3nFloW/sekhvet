@@ -161,6 +161,11 @@ NSString* const O2NonViewerScreensDefaultsKey = @"NonViewerScreens";
         [a removeObject:[NSNumber numberWithUnsignedInteger:screen.screenNumber]];
 
     [self setObject:a forKey:O2NonViewerScreensDefaultsKey];
+    
+    // SekhVet Paket EE: the choice belongs to the current workplace (combination of monitors); by name, because not every target links the class
+    Class sekhmetDisplayPanel = NSClassFromString( @"SekhmetDisplayPanel");
+    if( [sekhmetDisplayPanel respondsToSelector: @selector(rememberViewerScreens)])
+        [sekhmetDisplayPanel performSelector: @selector(rememberViewerScreens)];
 }
 
 

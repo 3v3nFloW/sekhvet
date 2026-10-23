@@ -5,6 +5,7 @@
 #import "SekhmetDICOMweb.h"
 #import "SekhmetTesthaken.h" // SekhVet: Testhaken nur mit Build-Flag SEKHVET_TESTHAKEN=1
 #import "SekhmetDisplayPanel.h"
+#import "SekhmetAutoRegel.h"       // SekhVet Paket ED: rule of the automatic retrieve
 #import "DicomDatabase.h"
 #import "BrowserController.h"
 #import "DicomStudy.h"
@@ -40,6 +41,11 @@ static NSString* const SekhmetDICOMwebAutoRetrieveKey = @"SekhmetDICOMwebAutoRet
 static NSString* const SekhmetDICOMwebInstitutionFilterKey = @"SekhmetDICOMwebInstitutionFilter"; // missing = on
 static NSString* const SekhmetDICOMwebInstitutionTextKey = @"SekhmetDICOMwebInstitutionText";
 static NSString* const SekhmetDICOMwebSelectedNodeKey = @"SekhmetDICOMwebSelectedNode";          // account "url|user"
+// SekhVet Paket EA: WADO-RS asks for JPEG-LS lossless -- pixels bit-identical, CT about 2.7x less data (measured 14.10.2026
+// against Orthanc 1.13.0). Only for modalities made of single images: an ultrasound cine loop (270 frames 1280x960 RGB per
+// file) is decoded completely in the server's memory to transcode it -- on 14.10.2026 that put Orthanc over 8 GB (OOM).
+static NSString* const SekhmetDICOMwebCompressedKey = @"SekhmetDICOMwebCompressedTransfer";      // missing = on
+static NSString* const SekhmetJPEGLSLossless = @"1.2.840.10008.1.2.4.80";
 
 // SekhVet Paket CS: everything a server sends is untrusted -- nil instead of an object of the wrong class
 static id sekhmetTyped( id obj, Class cls)
@@ -104,6 +110,14 @@ static NSString* sekhmetPathEscape( NSString *s)
 - (void) restoreAutoSettings;                                                     // SekhVet Paket DN
 - (void) setupAutoTimer:(BOOL) refreshSoon;                                       // SekhVet Paket DN
 - (void) autoRetrieveNew;                                                         // SekhVet Paket DN
+- (BOOL) compressedTransferOn;                                                    // SekhVet Paket EA
+- (BOOL) jobsPendingForStudy:(NSString*) uid;                                     // SekhVet Paket ED
+- (void) autoJob:(NSString*) job endedFailed:(BOOL) failed;                       // SekhVet Paket ED
+- (NSString*) autoHint:(SekhmetAutoAction) action state:(NSDictionary*) state;    // SekhVet Paket ED
++ (int) instancesOfSeries:(DicomSeries*) se;                                      // SekhVet Paket ED
+- (IBAction) compressedChanged:(id) sender;                                       // SekhVet Paket EA
+- (NSString*) modalitiesForJob:(NSString*) job;                                   // SekhVet Paket EA
++ (BOOL) modalitiesAllowCompression:(NSString*) mods;                             // SekhVet Paket EA
 @end
 
 @implementation SekhmetDICOMweb
@@ -361,7 +375,7 @@ static NSString* sekhmetPathEscape( NSString *s)
     [cv addSubview: institutionFilterButton];
 
     // Ergebnisse
-    float tableTop = y - 12, tableBottom = 250;
+    float tableTop = y - 12, tableBottom = 274;   // SekhVet Paket EA: 24 px for the compression row below the list
     NSScrollView *sv = [[[NSScrollView alloc] initWithFrame: NSMakeRect( 20, tableBottom, W - 40, tableTop - tableBottom)] autorelease];
     [sv setAutoresizingMask: NSViewWidthSizable | NSViewHeightSizable];
     // Paket AM: Outline statt Tabelle — Dreieck klappt die Serien der Studie auf, Spalte "Local" sagt, was schon hier liegt
@@ -405,8 +419,24 @@ static NSString* sekhmetPathEscape( NSString *s)
     [sv setDocumentView: resultTable]; [sv setHasVerticalScroller: YES]; [sv setBorderType: NSBezelBorder];
     [cv addSubview: sv];
 
-    y = tableBottom - 34;
-    retrieveButton = [self button: NSLocalizedString( @"Retrieve (WADO-RS)", nil) frame: NSMakeRect( 20, y - 2, 180, 30) action: @selector(retrieve:)];
+    // SekhVet Paket EA: compressed transfer, right above the Retrieve button
+    compressedButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 20, tableBottom - 23, 300, 18)] autorelease];
+    [compressedButton setButtonType: NSButtonTypeSwitch];
+    [compressedButton setTitle: NSLocalizedString( @"Compressed transfer (JPEG-LS, lossless)", nil)];
+    [compressedButton setFont: [NSFont systemFontOfSize: 12]];
+    [compressedButton setAutoresizingMask: NSViewMaxYMargin];
+    [compressedButton setTarget: self]; [compressedButton setAction: @selector(compressedChanged:)];
+    [compressedButton setToolTip: NSLocalizedString( @"The node packs the images as JPEG-LS lossless before sending: CT and MR need about a third of the data, faster on slow or mobile networks. Pixel values stay bit-identical. Studies with ultrasound, angiography or unknown modality always come uncompressed. If the node cannot compress, SekhVet retries once uncompressed.", nil)];
+    [compressedButton setState: [self compressedTransferOn] ? NSControlStateValueOn : NSControlStateValueOff];
+    [cv addSubview: compressedButton];
+    NSTextField *compressedHint = [self label: NSLocalizedString( @"≈ 3× less data for CT/MR · pixels bit-identical · ultrasound always uncompressed", nil) frame: NSMakeRect( 322, tableBottom - 23, W - 342, 18)];
+    [compressedHint setFont: [NSFont systemFontOfSize: 11]];
+    [compressedHint setTextColor: [NSColor secondaryLabelColor]];
+    [compressedHint setAutoresizingMask: NSViewMaxYMargin | NSViewWidthSizable];
+    [cv addSubview: compressedHint];
+
+    y = tableBottom - 34 - 24;
+    retrieveButton =[self button: NSLocalizedString( @"Retrieve (WADO-RS)", nil) frame: NSMakeRect( 20, y - 2, 180, 30) action: @selector(retrieve:)];
     [retrieveButton setAutoresizingMask: NSViewMaxYMargin];
     [cv addSubview: retrieveButton];
     // SekhVet Paket CS: a running retrieve (and everything still queued) can be stopped
@@ -1163,6 +1193,7 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
         [autoRetrieveButton setState: NSControlStateValueOff];
         fetch = NO;
     }
+    if( fetch && [d boolForKey: SekhmetDICOMwebAutoRetrieveKey] == NO) [autoRetrieved removeAllObjects];   // SekhVet Paket ED: switched on again = new tries
     [d setInteger: minutes forKey: SekhmetDICOMwebAutoMinutesKey];
     [d setBool: fetch forKey: SekhmetDICOMwebAutoRetrieveKey];
     NSDictionary *n = [self currentNode];
@@ -1190,8 +1221,10 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
     [self searchAutomatically: YES];
 }
 
-// After an automatic refresh: every study of the (filtered) list that is not completely here is retrieved -- once per
-// session, and again only when the node has more images of it than at the last automatic retrieve (still arriving).
+// After an automatic refresh: every study of the (filtered) list that is not completely here is retrieved, once its image
+// count on the node has stood still (SekhVet Paket ED, rule in SekhmetAutoRegel.h). A try that failed or left the study
+// incomplete is repeated after a pause, at most SekhmetAutoTries times per image count. Until Paket ED a study was marked
+// as done when its retrieve STARTED and came back only with more images on the node -- a broken retrieve was never repeated.
 - (void) autoRetrieveNew
 {
     if( resultsNode == nil) return;
@@ -1202,7 +1235,8 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
     }
     NSDictionary *node = [[resultsNode retain] autorelease];
     NSMutableArray *jobs = [NSMutableArray array];
-    int partial = 0;
+    int partial = 0, arriving = 0, waiting = 0, gaveUp = 0;
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate], due = 0;
     for( NSMutableDictionary *r in [NSArray arrayWithArray: results])
     {
         NSString *uid = [r objectForKey: @"uid"];
@@ -1211,10 +1245,17 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
         int remote = [[r objectForKey: @"Images"] intValue];
         int have = [[[r objectForKey: @"local"] objectForKey: @"images"] intValue];
         float frac = [f isKindOfClass: [NSNumber class]] ? [f floatValue] : (have > 0 ? 1.0f : 0.0f);   // NSNull = node gave no image count
-        if( frac >= 1.0f) continue;
-        NSNumber *done = [autoRetrieved objectForKey: uid];
-        if( done && remote <= [done intValue]) continue;
-        [autoRetrieved setObject: [NSNumber numberWithInt: remote] forKey: uid];
+        NSMutableDictionary *state = [autoRetrieved objectForKey: uid];
+        if( state == nil) { state = [NSMutableDictionary dictionary]; [autoRetrieved setObject: state forKey: uid]; }
+        SekhmetAutoAction action = sekhmetAutoDecide( state, frac, remote, [self jobsPendingForStudy: uid], now);
+        NSString *hint = [self autoHint: action state: state];
+        if( hint.length) [r setObject: [NSString stringWithFormat: @"%@\n%@", [r objectForKey: @"localTip"] ?: @"", hint] forKey: @"localTip"];   // key exists: hash unchanged
+        if( action == SekhmetAutoArriving) arriving++;
+        if( action == SekhmetAutoWaiting) waiting++;
+        if( action == SekhmetAutoGaveUp) gaveUp++;
+        NSTimeInterval d = sekhmetAutoDueAt( state, action);
+        if( d > 0 && (due == 0 || d < due)) due = d;
+        if( action != SekhmetAutoRetrieve) continue;
         if( frac > 0)   // part is here: only the missing series (series list first, if not loaded yet)
         {
             if( [[r objectForKey: @"loaded"] boolValue]) [jobs addObjectsFromArray: [self missingSeriesJobsForStudy: r]];
@@ -1228,11 +1269,68 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
         }
         else [jobs addObject: uid];
     }
+    // SekhVet Paket ED: say what waits, and look again when it is due instead of only at the next timer
+    NSMutableArray *notes = [NSMutableArray array];
+    if( arriving) [notes addObject: [NSString stringWithFormat: NSLocalizedString( @"%d still arriving", nil), arriving]];
+    if( waiting) [notes addObject: [NSString stringWithFormat: NSLocalizedString( @"%d incomplete, next try pending", nil), waiting]];
+    if( gaveUp) [notes addObject: [NSString stringWithFormat: NSLocalizedString( @"%d incomplete — use Retrieve", nil), gaveUp]];
+    if( notes.count) [self setStatus: [NSString stringWithFormat: @"%@ — %@", [statusField stringValue], [notes componentsJoinedByString: @", "]]];
+    if( arriving || waiting) NSLog( @"SekhVet DICOMweb: auto-retrieve waits: %d arriving, %d before the next try, %d given up", arriving, waiting, gaveUp);
+    if( due > 0 && due - now < [[autoPopup selectedItem] tag] * 60.0 - 10)
+    {
+        [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(autoTimerFired:) object: nil];
+        [self performSelector: @selector(autoTimerFired:) withObject: nil afterDelay: MAX( 20.0, due - now + 2)];
+    }
     if( jobs.count == 0 && partial == 0) return;
     BOOL running = (retrieveStudyUID != nil || retrieveQueue.count > 0);
     int added = [self enqueueJobs: jobs node: node];
     NSLog( @"SekhVet DICOMweb: auto-retrieve %d jobs (%d partly here)", added, partial);
     if( running == NO && retrieveQueue.count) { filesWritten = 0; failedJobs = 0; [self retrieveNextStudy]; }
+}
+
+// SekhVet Paket ED: a job "<StudyUID>" or "<StudyUID>|<SeriesUID>" of this study is running, queued, or waits for its series list
+- (BOOL) jobsPendingForStudy:(NSString*) uid
+{
+    if( uid.length == 0) return NO;
+    NSString *prefix = [uid stringByAppendingString: @"|"];
+    if( retrieveJob && ([retrieveJob isEqualToString: uid] || [retrieveJob hasPrefix: prefix])) return YES;
+    for( NSDictionary *q in retrieveQueue)
+    {
+        NSString *job = [q objectForKey: @"job"];
+        if( [job isEqualToString: uid] || [job hasPrefix: prefix]) return YES;
+    }
+    return [retrieveAfterLoad containsObject: uid];
+}
+
+// SekhVet Paket ED: a retrieve job ended -- the pause before the next automatic try counts from here
+- (void) autoJob:(NSString*) job endedFailed:(BOOL) failed
+{
+    NSString *uid = [[job componentsSeparatedByString: @"|"] objectAtIndex: 0];
+    if( uid.length) sekhmetAutoEnded( [autoRetrieved objectForKey: uid], failed, [NSDate timeIntervalSinceReferenceDate]);
+}
+
+// SekhVet Paket ED: line for the tooltip of the study row
+- (NSString*) autoHint:(SekhmetAutoAction) action state:(NSDictionary*) state
+{
+    NSDateFormatter *f = [[[NSDateFormatter alloc] init] autorelease];
+    [f setDateFormat: @"HH:mm"];
+    int tries = [[state objectForKey: @"tries"] intValue];
+    switch( action)
+    {
+        case SekhmetAutoArriving: return NSLocalizedString( @"Auto-retrieve: images are still arriving at the node — retrieving once the count stands still", nil);
+        case SekhmetAutoPending: return NSLocalizedString( @"Auto-retrieve: queued or running", nil);
+        case SekhmetAutoWaiting:
+        {
+            NSString *at = [f stringFromDate: [NSDate dateWithTimeIntervalSinceReferenceDate: sekhmetAutoDueAt( state, action)]];
+            return [[state objectForKey: @"failed"] boolValue]
+                ? [NSString stringWithFormat: NSLocalizedString( @"Auto-retrieve failed (try %d of %d) — next try at %@", nil), tries, SekhmetAutoTries, at]
+                : [NSString stringWithFormat: NSLocalizedString( @"Auto-retrieve: not complete after try %d of %d — next try at %@", nil), tries, SekhmetAutoTries, at];
+        }
+        case SekhmetAutoGaveUp:
+            return [[state objectForKey: @"stopped"] boolValue] ? NSLocalizedString( @"Auto-retrieve stopped — use Retrieve", nil)
+                : [NSString stringWithFormat: NSLocalizedString( @"Auto-retrieve gave up after %d tries — use Retrieve", nil), tries];
+        default: return nil;
+    }
 }
 
 #pragma mark - Was liegt schon hier? (Paket AM)
@@ -1259,6 +1357,25 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
     if( cache.count > 5000) [cache removeAllObjects];
     [cache setObject: uid.length ? uid : @"" forKey: path];
     return uid.length ? uid : nil;
+}
+
+// SekhVet Paket ED: Zahl der Instanzen (Dateien) einer lokalen Serie -- das, was QIDO als Bildzahl nennt.
+// Horos legt fuer JEDEN Frame einer Multiframe-Datei ein DicomImage an und markiert die Serie mit negativem
+// numberOfImages ("There are frames!", DicomSeries.m:597); noFiles liefert dann die Frames. Bis Paket ED zaehlte der
+// Bestand Frames: ein einziger US-Cine-Loop mit 96 Frames machte eine Studie mit 20 Instanzen "complete", und der
+// automatische Abruf holte den Rest nie (20.10.2026). Bei Multiframe-Serien zaehlen darum die verschiedenen Dateien.
+// numberOfImages NICHT roh summieren (negativ, gesehen 15.09.2026) -- noFiles fuellt es und dreht das Vorzeichen zurueck.
++ (int) instancesOfSeries:(DicomSeries*) se
+{
+    int n = [[se valueForKey: @"noFiles"] intValue];
+    if( [[se valueForKey: @"numberOfImages"] intValue] >= 0) return n;
+    NSMutableSet *files = [NSMutableSet set];
+    for( DicomImage *im in [[se valueForKey: @"images"] allObjects])
+    {
+        NSString *path = [im valueForKey: @"completePath"];
+        if( path.length) [files addObject: path];
+    }
+    return files.count ? (int) files.count : n;
 }
 
 + (NSDictionary*) localStatusForStudyUID:(NSString*) studyUID
@@ -1292,12 +1409,8 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
                 {
                     NSString *uid = [se valueForKey: @"seriesDICOMUID"];
                     if( uid.length == 0) continue;
-                    // numberOfImages NICHT roh lesen: bei Multiframe-Serien (US-Cine-Loops) legt Horos
-                    // dort den NEGIERTEN Zaehler ab ("There are frames!", DicomSeries.m:600). Roh summiert
-                    // wurde der Bestand negativ, localFractionForStudy: sah <= 0 und malte trotz vollstaendig
-                    // geholter Studie einen leeren Kreis (15.09.2026 an drei US-Studien gesehen).
-                    // noFiles ist Horos' eigener Zugriff und dreht das Vorzeichen zurueck.
-                    int n = [[se valueForKey: @"noFiles"] intValue];
+                    // SekhVet Paket ED: Instanzen, nicht Frames -- siehe instancesOfSeries:
+                    int n = [self instancesOfSeries: se];
                     images += n;
                     // Horos fasst Localizer/Topogramme mehrerer Serien beim Import zu EINER Serie zusammen und gibt ihr
                     // eine eigene UID ("LOCALIZER" + StudyInstanceUID). Deren Bilder lassen sich keiner PACS-Serie mehr
@@ -1305,9 +1418,13 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
                     if( [uid hasPrefix: @"LOCALIZER"])
                     {
                         int resolved = 0;   // SekhVet Paket BQ: je Bild die echte Serie aus dem Dateikopf
+                        NSMutableSet *files = [NSMutableSet set];   // SekhVet Paket ED: je Datei einmal, nicht je Frame
                         for( DicomImage *im in [[se valueForKey: @"images"] allObjects])
                         {
-                            NSString *real = [self seriesUIDOfFile: [im valueForKey: @"completePath"]];
+                            NSString *path = [im valueForKey: @"completePath"];
+                            if( path.length == 0 || [files containsObject: path]) continue;
+                            [files addObject: path];
+                            NSString *real = [self seriesUIDOfFile: path];
                             if( real.length == 0) continue;
                             [series setObject: [NSNumber numberWithInt: 1 + [[series objectForKey: real] intValue]] forKey: real];
                             resolved++;
@@ -1329,6 +1446,52 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
 {
     // exakter Vergleich, kein Teilstring: "RTSTRUCT" enthaelt "CT"
     return mod.length && [[NSArray arrayWithObjects: @"SR", @"PR", @"KO", @"DOC", @"SEG", @"RTSTRUCT", nil] containsObject: mod];
+}
+
+#pragma mark - Compressed transfer (SekhVet Paket EA)
+
+- (BOOL) compressedTransferOn
+{
+    id stored = [[NSUserDefaults standardUserDefaults] objectForKey: SekhmetDICOMwebCompressedKey];
+    return stored == nil || [stored boolValue];
+}
+
+- (IBAction) compressedChanged:(id) sender
+{
+    [[NSUserDefaults standardUserDefaults] setBool: [compressedButton state] == NSControlStateValueOn forKey: SekhmetDICOMwebCompressedKey];
+}
+
+// YES only if every modality is on the list of single-image modalities; unknown (empty) = NO.
+// "CT/SR" as shown in the list, "CT\SR" as DICOM writes it -- both are split.
++ (BOOL) modalitiesAllowCompression:(NSString*) mods
+{
+    NSArray *allowed = [NSArray arrayWithObjects: @"CT", @"MR", @"DX", @"CR", @"MG", @"PX", @"IO", @"SR", @"KO", @"PR", nil];
+    int count = 0;
+    for( NSString *m in [mods ?: @"" componentsSeparatedByCharactersInSet: [NSCharacterSet characterSetWithCharactersInString: @"/\\, "]])
+    {
+        if( m.length == 0) continue;
+        if( [allowed containsObject: [m uppercaseString]] == NO) return NO;
+        count++;
+    }
+    return count > 0;
+}
+
+// Modalities of a job "<StudyUID>" or "<StudyUID>|<SeriesUID>" from the result list: the series' own modality if its row is
+// loaded, else the modalities of the whole study. Not in the list (e.g. a new search replaced it) = "" = uncompressed.
+- (NSString*) modalitiesForJob:(NSString*) job
+{
+    NSArray *parts = [job componentsSeparatedByString: @"|"];
+    NSString *uid = [parts objectAtIndex: 0];
+    NSString *seriesUID = parts.count > 1 ? [parts objectAtIndex: 1] : nil;
+    for( NSDictionary *r in results)
+    {
+        if( [[r objectForKey: @"uid"] isEqualToString: uid] == NO) continue;
+        if( seriesUID)
+            for( NSDictionary *s in [r objectForKey: @"children"])
+                if( [[s objectForKey: @"seriesUID"] isEqualToString: seriesUID]) return [s objectForKey: @"Modality"] ?: @"";
+        return [r objectForKey: @"Modality"] ?: @"";
+    }
+    return @"";
 }
 
 // SekhVet Paket BS: Soll und Ist einer Studie. Ist die Serienliste geladen, zaehlen nur Bildserien -- Berichte (SR, PR, KO ...)
@@ -1741,6 +1904,7 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
     [retrieveQueue removeObjectAtIndex: 0];
     NSString *job = [entry objectForKey: @"job"];
     NSDictionary *node = [entry objectForKey: @"node"];   // SekhVet Paket CS: the node the job was created for
+    retrieveCompressed = NO;
     NSArray *parts = [job componentsSeparatedByString: @"|"];   // Paket AM: "<StudyUID>" oder "<StudyUID>|<SeriesUID>"
     NSString *uid = [parts objectAtIndex: 0];
     NSString *seriesUID = parts.count > 1 ? [parts objectAtIndex: 1] : nil;
@@ -1773,10 +1937,16 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
 
     NSString *url = seriesUID.length ? [NSString stringWithFormat: @"%@/studies/%@/series/%@", [node objectForKey: @"url"], sekhmetPathEscape( uid), sekhmetPathEscape( seriesUID)]
                                      : [NSString stringWithFormat: @"%@/studies/%@", [node objectForKey: @"url"], sekhmetPathEscape( uid)];
-    NSMutableURLRequest *req = [self requestForURL: url accept: @"multipart/related; type=\"application/dicom\"; transfer-syntax=*" node: node];
+    // SekhVet Paket EA: JPEG-LS lossless if switched on and the job holds only single-image modalities; "plain" = the retry after a failed compressed try
+    NSString *mods = [entry objectForKey: @"modalities"] ?: [self modalitiesForJob: job];
+    retrieveCompressed = [[entry objectForKey: @"plain"] boolValue] == NO && [self compressedTransferOn] && [SekhmetDICOMweb modalitiesAllowCompression: mods];
+    NSString *syntax = retrieveCompressed ? SekhmetJPEGLSLossless : @"*";
+    NSLog( @"SekhVet DICOMweb: WADO-RS %@ modalities \"%@\" transfer-syntax=%@", job, mods, syntax);
+    NSMutableURLRequest *req = [self requestForURL: url accept: [NSString stringWithFormat: @"multipart/related; type=\"application/dicom\"; transfer-syntax=%@", syntax] node: node];
 
     [progress setIndeterminate: YES]; [progress setHidden: NO]; [progress startAnimation: nil];   // Paket BU: Retrieve bleibt bedienbar (haengt an)
-    [self setStatus: seriesUID.length ? NSLocalizedString( @"Retrieving series…", nil) : NSLocalizedString( @"Retrieving…", nil)];
+    if( retrieveCompressed) [self setStatus: seriesUID.length ? NSLocalizedString( @"Retrieving series (compressed)…", nil) : NSLocalizedString( @"Retrieving (compressed)…", nil)];
+    else [self setStatus: seriesUID.length ? NSLocalizedString( @"Retrieving series…", nil) : NSLocalizedString( @"Retrieving…", nil)];
 
     NSURLSessionDataTask *task = [[self session] dataTaskWithRequest: req];
     [retrieveTask release]; retrieveTask = [task retain];
@@ -1789,11 +1959,17 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
 {
     if( retrieveStudyUID == nil && retrieveQueue.count == 0) return;
     [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(retrieveNextStudy) object: nil];
+    // SekhVet Paket ED: what the user stopped is not started again by the automatic retrieve (until the node has more images)
+    NSMutableArray *stopped = [NSMutableArray arrayWithArray: [retrieveQueue valueForKey: @"job"]];
+    if( retrieveJob) [stopped addObject: retrieveJob];
+    for( NSString *job in stopped)
+        sekhmetAutoStopped( [autoRetrieved objectForKey: [[job componentsSeparatedByString: @"|"] objectAtIndex: 0]]);
     [retrieveQueue removeAllObjects];
     [retrieveAfterLoad removeAllObjects];
     NSURLSessionTask *t = [retrieveTask retain];
     [retrieveTask release]; retrieveTask = nil;   // late callbacks of the cancelled task no longer count
     [t cancel]; [t release];
+    retrieveCompressed = NO;   // SekhVet Paket EA
     [receivedData release]; receivedData = nil;
     [retrieveStudyUID release]; retrieveStudyUID = nil;
     [retrieveJob release]; retrieveJob = nil;
@@ -1807,7 +1983,22 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
 // SekhVet Paket BU: ein fehlgeschlagener Auftrag haelt die Warteschlange nicht an; der naechste startet, die Fehler stehen am Ende im Status
 - (void) retrieveFailed:(NSString*) message
 {
+    // SekhVet Paket EA: a compressed try that failed (error answer, broken stream) is retried once uncompressed, first in the queue.
+    // Instances already written stay in INCOMING; the import replaces them by the same SOPInstanceUID.
+    if( retrieveCompressed && retrieveJob && retrieveNode)
+    {
+        retrieveCompressed = NO;
+        NSLog( @"SekhVet DICOMweb: compressed retrieve of %@ failed (%@) -- retrying uncompressed", retrieveJob, message);
+        [retrieveQueue insertObject: [NSDictionary dictionaryWithObjectsAndKeys: retrieveJob, @"job", retrieveNode, @"node", @YES, @"plain", nil] atIndex: 0];
+        [self setStatus: NSLocalizedString( @"The node could not send compressed data — retrying uncompressed", nil)];
+        [retrieveTask release]; retrieveTask = nil;
+        [receivedData release]; receivedData = nil;
+        [retrieveStudyUID release]; retrieveStudyUID = nil;
+        [self performSelector: @selector(retrieveNextStudy) withObject: nil afterDelay: 0];
+        return;
+    }
     failedJobs++;
+    if( retrieveJob) [self autoJob: retrieveJob endedFailed: YES];   // SekhVet Paket ED: the automatic retrieve tries again after a pause
     [lastRetrieveError release]; lastRetrieveError = [message retain];
     [self setStatus: message];
     [retrieveTask release]; retrieveTask = nil;   // spaete Meldungen des abgebrochenen Tasks zaehlen nicht mehr
@@ -1834,6 +2025,8 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
     if( r.statusCode != 200)
     {
         completionHandler( NSURLSessionResponseCancel);
+        // SekhVet Paket EA: password, permission or a missing study do not get better uncompressed
+        if( r.statusCode == 401 || r.statusCode == 403 || r.statusCode == 404) retrieveCompressed = NO;
         [self retrieveFailed: [NSString stringWithFormat: NSLocalizedString( @"Retrieve: HTTP %d", nil), (int) r.statusCode]];
         return;
     }
@@ -1903,6 +2096,7 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
         return;
     }
     [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"%d files written…", nil), filesWritten]];
+    if( retrieveJob) [self autoJob: retrieveJob endedFailed: NO];   // SekhVet Paket ED
     [self retrieveNextStudy];
 }
 
@@ -2416,7 +2610,10 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
     [nodePopup selectItemAtIndex: 0];
     // SekhVet Paket CS: the queue is an ivar of {job, node}
     [retrieveQueue removeAllObjects];
-    [retrieveQueue addObject: [NSDictionary dictionaryWithObjectsAndKeys: [NSString stringWithUTF8String: env], @"job", [[[nodes objectAtIndex: 0] copy] autorelease], @"node", nil]];
+    // SekhVet Paket EA: SEKHVET_WADO_TEST_MOD="CT" stands in for the modality the result list would give
+    const char *mod = sekhvetTesthaken( "SEKHVET_WADO_TEST_MOD");
+    [retrieveQueue addObject: [NSDictionary dictionaryWithObjectsAndKeys: [NSString stringWithUTF8String: env], @"job", [[[nodes objectAtIndex: 0] copy] autorelease], @"node",
+                               mod ? [NSString stringWithUTF8String: mod] : @"", @"modalities", nil]];
     filesWritten = 0; failedJobs = 0;
     [self retrieveNextStudy];
 }
@@ -2496,6 +2693,50 @@ static const int SekhmetPickerPage = 500, SekhmetPickerMaxPages = 40;   // hoech
         NSLog( @"SekhVet Bestand-Test Serie: %@ | %@ | %@ | Bilder %@ | lokal: '%@'",
               [s objectForKey: @"Name"], [s objectForKey: @"Modality"], [s objectForKey: @"Description"], [s objectForKey: @"Images"], [s objectForKey: @"Local"]);
     [self debugPieLog];   // Paket AO
+}
+// SekhVet Paket ED: SEKHVET_DICOMWEB_AUTO_TEST="<url>" -- automatic refresh every minute with automatic retrieve against a
+// test node that lives in memory only (nothing goes into the prefs), name filter SEKHVET_DICOMWEB_AUTO_TEST_NAME, any date.
+// Every 20 s one line per study: image count of the node, local instances AND local frames (= the count before Paket ED),
+// text, share and tooltip of the row.
+- (void) debugAutoFromEnvironment
+{
+    const char *env = sekhvetTesthaken( "SEKHVET_DICOMWEB_AUTO_TEST");
+    if( env == NULL) return;
+    const char *name = sekhvetTesthaken( "SEKHVET_DICOMWEB_AUTO_TEST_NAME");
+    [nodes addObject: [NSMutableDictionary dictionaryWithObjectsAndKeys: @"Auto test", @"name", [NSString stringWithUTF8String: env], @"url", @"", @"user", nil]];
+    [nodePopup addItemWithTitle: @"Auto test"];
+    [nodePopup selectItemAtIndex: nodes.count - 1];
+    [institutionFilterButton setState: NSControlStateValueOff];
+    [institutionField setStringValue: @""];
+    [periodPopup selectItemAtIndex: 0];
+    [dateFromField setStringValue: @"19000101"]; [dateToField setStringValue: @"29991231"];
+    [nameField setStringValue: name ? [NSString stringWithUTF8String: name] : @""];
+    [idField setStringValue: @""]; [modalityField setStringValue: @""];
+    [autoPopup selectItemWithTag: 1];
+    [autoRetrieveButton setState: NSControlStateValueOn];
+    NSLog( @"SekhVet Auto-Test: Knoten %s, Name '%s', jede Minute, Auto-Retrieve an", env, name ?: "");
+    [self setupAutoTimer: YES];   // not autoChanged: that would store the settings
+    [self performSelector: @selector(debugAutoLog) withObject: nil afterDelay: 20 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
+
+- (void) debugAutoLog
+{
+    for( NSDictionary *r in [NSArray arrayWithArray: results])
+    {
+        int frames = 0;
+        @try
+        {
+            DicomDatabase *db = [DicomDatabase activeLocalDatabase];
+            for( DicomStudy *st in [db objectsForEntity: [db studyEntity] predicate: [NSPredicate predicateWithFormat: @"studyInstanceUID == %@", [r objectForKey: @"uid"]]])
+                for( DicomSeries *se in [[st valueForKey: @"series"] allObjects]) frames += [[se valueForKey: @"noFiles"] intValue];
+        }
+        @catch (NSException *e) { frames = -1; }
+        NSLog( @"SekhVet Auto-Test: '%@' Knoten %@ | lokal Instanzen %@ Frames %d | '%@' Anteil %@ | Tip '%@'",
+              [r objectForKey: @"Name"], [r objectForKey: @"Images"], [[r objectForKey: @"local"] objectForKey: @"images"], frames,
+              [r objectForKey: @"Local"], [r objectForKey: @"localFraction"],
+              [[r objectForKey: @"localTip"] stringByReplacingOccurrencesOfString: @"\n" withString: @" / "]);
+    }
+    [self performSelector: @selector(debugAutoLog) withObject: nil afterDelay: 20 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
 }
 #endif // SEKHVET_TESTHAKEN
 

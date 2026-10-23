@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "BrowserController+Sources.h"
+#import "SekhmetStudienDB.h" // SekhVet Paket DV
 #import "BrowserController+Sources+Copy.h"
 #import "DataNodeIdentifier.h"
 #import "PrettyCell.h"
@@ -349,6 +350,11 @@ enum {
     
     @try
     {
+        // SekhVet Paket DV: a study database on a disk that is not connected - say so instead of "Permissions error?"
+        NSString* sekhmetFehlt = [dni isKindOfClass:[LocalDatabaseNodeIdentifier class]] ? [SekhmetStudienDB missingVolumeMessageForPath:dni.location] : nil;
+        if (sekhmetFehlt)
+            [UnavaliableDataNodeException raise:NSGenericException format:@"%@", sekhmetFehlt];
+        
         DicomDatabase* db = [dni database];
         
         if (db)

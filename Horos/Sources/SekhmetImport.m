@@ -287,7 +287,11 @@ static SekhmetImport *sekhmetImport = nil;
 - (IBAction) importNow:(id) sender
 {
     if( files.count == 0) { [self setStatus: NSLocalizedString( @"No files selected", nil)]; return; }
-    NSString *dir = [[DicomDatabase activeLocalDatabase] incomingDirPath];
+    // SekhVet Paket DQ: into the database shown in the browser (e.g. a study database), not the active one; with
+    // "incoming files always to the default database" (default since DQ) the active one is always the main database
+    DicomDatabase *targetDB = [[BrowserController currentBrowser] database];
+    if( targetDB == nil || [targetDB isLocal] == NO || [targetDB isReadOnly]) targetDB = [DicomDatabase activeLocalDatabase];
+    NSString *dir = [targetDB incomingDirPath];
     if( dir.length == 0) { [self setStatus: NSLocalizedString( @"No active database", nil)]; return; }
 
     BOOL attach = ([attachButton state] == NSControlStateValueOn && attachStudyUID.length);
@@ -317,6 +321,7 @@ static SekhmetImport *sekhmetImport = nil;
     else
     {
         [self setStatus: [NSString stringWithFormat: NSLocalizedString( @"%d DICOM file(s) written to INCOMING — importing now", nil), n]];
+        if( targetDB != [DicomDatabase activeLocalDatabase]) [targetDB initiateImportFilesFromIncomingDirUnlessAlreadyImporting]; // SekhVet Paket DQ: the incoming timer only serves the active database
         [files removeAllObjects];
         [self updateFilesLabel];
     }

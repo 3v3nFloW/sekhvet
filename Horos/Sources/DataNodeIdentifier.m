@@ -42,6 +42,7 @@
 #import "NSHost+N2.h"
 #import <stdlib.h>
 #import "N2Debug.h"
+#import "SekhmetStudienDB.h" // SekhVet Paket DV: eject button for study databases on external disks
 
 @implementation DataNodeIdentifier
 
@@ -180,6 +181,13 @@
 
 -(void)willDisplayCell:(PrettyCell*)cell {    
     [super willDisplayCell:cell];
+
+    // SekhVet Paket DV: eject button like the one of mounted media (that subclass draws its own)
+    if( [self isKindOfClass: NSClassFromString( @"MountedDatabaseNodeIdentifier")] == NO)
+    {
+        NSButton *eject = [SekhmetStudienDB ejectButtonForDatabasePath: self.location];
+        if( eject) [cell.rightSubviews addObject: eject];
+    }
 
     BOOL isDir;
     if (![[NSFileManager defaultManager] fileExistsAtPath:self.location isDirectory:&isDir]) {

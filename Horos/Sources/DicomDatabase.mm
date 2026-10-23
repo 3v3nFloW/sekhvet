@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "DicomDatabase.h"
+#import "SekhmetStudienDB.h" // SekhVet Paket DT: SekhmetCopyDataOnly
 #import "NSString+N2.h"
 #import "NSString+SymlinksAndAliases.h"
 #import "Notifications.h"
@@ -2640,6 +2641,8 @@ static NSString *SekhmetImportImageLookupKey(NSString *sopUID, int frameID)
 {
     @autoreleasepool
     {
+        // SekhVet Paket DR: no idle sleep while files are copied and indexed (a long import stopped when the Mac slept)
+        id sekhmetWach = [[[NSProcessInfo processInfo] beginActivityWithOptions: NSActivityUserInitiated reason: @"SekhVet: importing files"] retain];
         NSOperationQueue* queue = [[[NSOperationQueue alloc] init] autorelease];
         [queue setMaxConcurrentOperationCount:1];
         
@@ -2699,7 +2702,7 @@ static NSString *SekhmetImportImageLookupKey(NSString *sopUID, int frameID)
                                         }
                                         else
                                         {
-                                            if( [[NSFileManager defaultManager] copyItemAtPath: srcPath toPath: dstPath error: nil] == NO)
+                                            if( SekhmetCopyDataOnly( srcPath, dstPath) == NO) // SekhVet Paket DT: no ._ files on exFAT
                                                 NSLog( @"***** copyItemAtPath %@ failed", srcPath);
                                         }
                                         
@@ -2873,6 +2876,9 @@ static NSString *SekhmetImportImageLookupKey(NSString *sopUID, int frameID)
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"EJECTCDDVD"])
                 [[NSWorkspace sharedWorkspace] unmountAndEjectDeviceAtPath: [filesInput objectAtIndex:0]];
         }
+
+        [[NSProcessInfo processInfo] endActivity: sekhmetWach]; // SekhVet Paket DR
+        [sekhmetWach release];
     }
 }
 

@@ -157,8 +157,24 @@ NSString* const SekhmetReportPilotViewerToolbarItemIdentifier = @"SekhmetReportP
 
 - (IBAction) sekhmetScreenAreaChanged:(id) sender
 {
-    [SekhmetDisplayPanel setMode: [SekhmetDisplayPanel modeForIndex: [sender indexOfSelectedItem]] forScreen: [[self window] screen]];
-    [[AppController sharedAppController] tileWindows: nil];
+    NSInteger tag = [[sender selectedItem] tag];
+    if( tag == 101) // SekhVet Paket EE: Identify Screens
+        [SekhmetDisplayPanel identifyScreens];
+    else if( tag == 100) // SekhVet Paket EE: this window's place becomes the viewer area of its screen
+    {
+        if( [SekhmetDisplayPanel takeAreaFromWindow: [self window]] == NO) NSBeep();
+        else
+        {
+            [[AppController sharedAppController] tileWindows: nil];
+            [SekhmetDisplayPanel identifyScreens];
+        }
+    }
+    else
+    {
+        [SekhmetDisplayPanel setMode: [SekhmetDisplayPanel modeForIndex: [sender indexOfSelectedItem]] forScreen: [[self window] screen]];
+        [[AppController sharedAppController] tileWindows: nil];
+    }
+    [sender selectItemAtIndex: [SekhmetDisplayPanel indexForMode: [SekhmetDisplayPanel modeForScreen: [[self window] screen]]]]; // the popup shows the area, not the command
 }
 
 - (IBAction) sekhmetPresetChanged:(id) sender

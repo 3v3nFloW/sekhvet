@@ -29,6 +29,13 @@ static void erwartePhase( NSString *name, int phase)
     check( [NSString stringWithFormat: @"CT „%@\" → %@", name, phase == 2 ? @"contrast" : phase == 1 ? @"native" : @"unknown"], p == phase, [NSString stringWithFormat: @"{phase:%d}", p]);
 }
 
+// SekhVet Paket DW: contrast phase (0 none, 1 arterial, 2 venous, 3 delayed)
+static void erwarteKMPhase( NSString *name, int phase)
+{
+    int p = [SekhmetSequenz ctKMPhaseFuer: name];
+    check( [NSString stringWithFormat: @"CT-Phase „%@\" → %d", name, phase], p == phase, [NSString stringWithFormat: @"{kmphase:%d}", p]);
+}
+
 int main( void)
 {
     @autoreleasepool
@@ -135,6 +142,26 @@ int main( void)
         erwartePhase( @"Abdomen KM portalvenös", 2);
         erwartePhase( @"Abdomen pre und post KM", 2);
         erwartePhase( @"Abdomen 1.0 Br40", 0);
+        // SekhVet Paket DW: Canon names the phases without "KM" (Canon, 07.10.2026)
+        erwartePhase( @"WT nativ Vol 1.0  BODY_SHARP", 1);
+        erwartePhase( @"WT arteriell Vol 1.0  BODY_SHARP", 2);
+        erwartePhase( @"WT venoes Vol 1.0  BODY_SHARP", 2);
+        erwartePhase( @"Abdomen venös", 2);
+        erwartePhase( @"Abdomen portal venous", 2);
+        erwartePhase( @"Thorax arterial 1.0", 2);
+        erwartePhase( @"Niere Spätphase", 2);
+        erwartePhase( @"Abdomen delayed", 2);
+        erwartePhase( @"CT Angio Thorax", 2);
+        erwartePhase( @"Arteria carotis", 0);
+        erwartePhase( @"Venenkatheter Kontrolle", 0);
+        erwarteKMPhase( @"WT arteriell Vol 1.0  BODY_SHARP", 1);
+        erwarteKMPhase( @"WT venoes Vol 1.0  BODY_SHARP", 2);
+        erwarteKMPhase( @"Abdomen KM portalvenös", 2);
+        erwarteKMPhase( @"Abdomen PV", 2);
+        erwarteKMPhase( @"Niere Spätphase", 3);
+        erwarteKMPhase( @"WT KM Vol 1.0  BODY_SHARP", 0);
+        erwarteKMPhase( @"WT nativ Vol 1.0  BODY_SHARP", 0);
+        erwarteKMPhase( @"Abdomen ohne KM arteriell", 0);
         erwartePhase( @"", 0);
         erwartePhase( nil, 0);
 

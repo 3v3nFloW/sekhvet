@@ -8164,6 +8164,13 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         yPosition += stringSize.height + 3;
     }
     
+    NSString *sekhmetOverlayHinweis = [self is2DViewer] ? [SekhmetUeberlagerung hinweisFuerView: self] : nil; // SekhVet Paket DW: overlaid series has no slice here
+    if( sekhmetOverlayHinweis)
+    {
+        [self DrawNSStringGL: sekhmetOverlayHinweis : fontListGL :size.origin.x + size.size.width/2 :yPosition align:DCMViewTextAlignCenter useStringTexture: YES];
+        yPosition += stringSize.height + 3;
+    }
+    
     //Bottom
     [self getOrientationText:string :vectors+3 :NO];
     [self DrawCStringGL: string : fontListGL :size.origin.x + size.size.width/2 :size.origin.y + 2+size.size.height - 6 rightAlignment: NO useStringTexture: YES];

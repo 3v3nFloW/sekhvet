@@ -50,3 +50,14 @@ Beide brauchen ebenfalls den Bau **mit** Testhaken.
   "seitliche Aufnahme links" ein. Testpaare in der Test-Datenbank: Katzogramm, Abdomen,
   Thorax — bei allen dreien hat die SEITLICHE die kleinere Seriennummer,
   Horos allein wuerde sie also links haengen.
+
+## Testskript Paket EE (21.10.2026)
+
+Braucht den Bau **mit** Testhaken.
+
+- `arbeitsplatz-e2e.sh` — Arbeitsplaetze (Viewer-Flaeche je Monitor-Kombination). Startet SekhVet
+  fuenfmal und ersetzt die EDID von Bildschirm 1 (`SEKHVET_MONITORE_TEST`): A = DELL 27", B = 49",
+  A, B, A. Prueft Uebernahme der alten Einstellung, neue Kombination = ganze Flaeche, Flaeche,
+  "Screens used for viewers" und Lage des DB-Fensters je Arbeitsplatz, Einrasten und Pixel-Rechteck.
+  Sichert die SekhVet-Prefs vorher und stellt sie danach byte-gleich wieder her (Pruefung am Ende).
+  Unit-Test der Logik: `bash SekhVet/test/arbeitsplatz-test.sh` (27 Faelle).

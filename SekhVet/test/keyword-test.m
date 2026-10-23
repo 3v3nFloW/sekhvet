@@ -156,6 +156,14 @@ int main( void)
         expectContrast( @"Abdomen pre", SekhmetContrastNative);
         expectContrast( @"SUB KM-nativ", SekhmetContrastAgent);
         expectContrast( @"", SekhmetContrastAny);
+        // SekhVet Paket DW: contrast phases without "KM" (Canon, 07.10.2026)
+        expectContrast( @"WT arteriell Vol 1.0  BODY_SHARP", SekhmetContrastAgent);
+        expectContrast( @"WT venoes Vol 1.0  BODY_SHARP", SekhmetContrastAgent);
+        expectContrast( @"Abdomen venös", SekhmetContrastAgent);
+        expectContrast( @"Abdomen portalvenös", SekhmetContrastAgent);
+        expectContrast( @"Niere Spätphase", SekhmetContrastAgent);
+        expectContrast( @"WT nativ Vol 1.0  BODY_SHARP", SekhmetContrastNative);
+        expectContrast( @" 1.0 FC23 Vol.", SekhmetContrastAny);
 
         printf( "\n%d passed, %d failed\n", pass, fail);
     }

@@ -1673,7 +1673,14 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 	   && ([theEvent modifierFlags] & (NSEventModifierFlagCommand | NSEventModifierFlagOption | NSEventModifierFlagControl | NSEventModifierFlagShift)) == 0)
 	{
 		NSMenu *sekhmetMenu = [windowController sekhmetToolsMenu];
-		if( sekhmetMenu) [NSMenu popUpContextMenu: sekhmetMenu withEvent: theEvent forView: self];
+		if( sekhmetMenu)
+		{
+			[NSMenu popUpContextMenu: sekhmetMenu withEvent: theEvent forView: self];
+			// SekhVet Paket DQ: a left click outside the menu closes it and the menu keeps that mouseDown; the drag that
+			// follows reached mouseDragged: with the tool and start point of the PREVIOUS click (WL/WW jumped to black or
+			// grey, the crosshair did not move). The next left drag without its mouseDown now starts like a fresh click.
+			sekhmetAfterMenu = YES;
+		}
 	}
 }
 
@@ -1690,6 +1697,8 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 
 - (void) mouseDown:(NSEvent *)theEvent
 {
+	sekhmetAfterMenu = NO; // SekhVet Paket DQ
+	
 	if( [[self window] firstResponder] != self)
 		[[self window] makeFirstResponder: self];
 	
@@ -1866,6 +1875,8 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 {
 	[self checkCursor];
 	
+	if( sekhmetAfterMenu) { sekhmetAfterMenu = NO; return; } // SekhVet Paket DQ: the click that closed the menu, no tool action
+	
 	if( sekhmetZoomClick) // SekhVet Paket BK: Ende des Doppelklick-Zooms, kein Werkzeug
 	{
 		sekhmetZoomClick = NO;
@@ -2001,6 +2012,14 @@ static BOOL sekhmetStaticCursor( void) { return [[NSUserDefaults standardUserDef
 - (void) mouseDragged:(NSEvent *)theEvent
 {
 	if( sekhmetZoomClick) return; // SekhVet Paket BK
+	if( sekhmetAfterMenu) // SekhVet Paket DQ: the menu kept the mouseDown of this drag; start it here as a fresh click
+	{
+		sekhmetAfterMenu = NO;
+		NSEvent *down = [NSEvent mouseEventWithType: NSEventTypeLeftMouseDown location: [theEvent locationInWindow] modifierFlags: [theEvent modifierFlags]
+										  timestamp: [theEvent timestamp] windowNumber: [theEvent windowNumber] context: nil eventNumber: 0 clickCount: 1 pressure: 1];
+		[self mouseDown: down];
+		return;
+	}
 	[self restoreCamera];
 	
 	if( rotateLines)

@@ -30,7 +30,9 @@
 NSString* const SekhmetOverlayToolbarItemIdentifier = @"SekhmetOverlay";
 NSString* const SekhmetOverlayKeyNextKey = @"SekhmetOverlayKeyNext";
 NSString* const SekhmetOverlayKeyPrevKey = @"SekhmetOverlayKeyPrev";
-static NSString* const SekhmetOverlayDeselectedKey = @"SekhmetOverlayDeselected";   // Paket CN: abgewaehlte CT-Raenge (0 Nativ, 1 KM, 3 Nativ Kn, 4 KM Kn)
+// Paket CN: abgewaehlte CT-Raenge. SekhVet Paket DW: new key — the ranks are now 10 * kernel class + phase rank
+// (svRang), the numbers stored under the old key "SekhmetOverlayDeselected" meant something else.
+static NSString* const SekhmetOverlayDeselectedKey = @"SekhmetOverlayDeselected2";
 
 #define SEKHMET_STAPEL_MAX 4
 
@@ -53,6 +55,9 @@ static char SekhmetBereitKey;   // SekhVet Paket CK: "Overlay" ist an, aber noch
 @public
     NSMutableArray *namen, *serienNamen, *serienUIDs, *phasen, *knochen, *sequenzen, *mrKM, *fenster, *versteckt, *reihenfolge;
     NSMutableArray *aus;   // Paket CN: @YES = abgewaehlt (geladen, aber ohne Chip und nicht im Durchschalten)
+    // SekhVet Paket DW: kernel class (0 soft tissue, 1 bone, 2 lung), contrast phase (SekhmetSequenz +ctKMPhaseFuer:)
+    // and the reference slices the series does not reach (NSIndexSet; shown as a hint in the image instead of fill grey)
+    NSMutableArray *klassen, *kmphasen, *leer;
     NSString *modalitaet;
     void *refPixList;   // nur zum Vergleich: haengt noch unser Stapel im Viewer?
     // SekhVet Paket CS:
@@ -74,6 +79,7 @@ static char SekhmetBereitKey;   // SekhVet Paket CK: "Overlay" ist an, aber noch
         phasen = [[NSMutableArray alloc] init]; knochen = [[NSMutableArray alloc] init]; sequenzen = [[NSMutableArray alloc] init];
         mrKM = [[NSMutableArray alloc] init]; fenster = [[NSMutableArray alloc] init]; versteckt = [[NSMutableArray alloc] init];
         reihenfolge = [[NSMutableArray alloc] init]; aus = [[NSMutableArray alloc] init];
+        klassen = [[NSMutableArray alloc] init]; kmphasen = [[NSMutableArray alloc] init]; leer = [[NSMutableArray alloc] init];
     }
     return self;
 }
@@ -81,6 +87,7 @@ static char SekhmetBereitKey;   // SekhVet Paket CK: "Overlay" ist an, aber noch
 {
     [namen release]; [serienNamen release]; [serienUIDs release]; [phasen release]; [knochen release]; [sequenzen release];
     [mrKM release]; [fenster release]; [versteckt release]; [reihenfolge release]; [aus release]; [modalitaet release];
+    [klassen release]; [kmphasen release]; [leer release];
     [super dealloc];
 }
 - (NSUInteger) count { return namen.count; }
@@ -213,23 +220,53 @@ static BOOL svTrifft( NSRegularExpression *re, NSString *s)
     return [SekhmetSequenz ctPhaseFuer: beschreibung];
 }
 
-+ (BOOL) istKnochenkern:(NSString*) kernel beschreibung:(NSString*) beschreibung
+// SekhVet Paket DW (08.10.2026, Canon Aquilion): kernel class 0 soft tissue, 1 bone, 2 lung. The plain
+// SHARP of the bone rule made the Canon soft-tissue kernel "BODY_SHARP" a bone kernel — every soft-tissue series got
+// "bone" in its chip and the ranks mixed up; a LUNG kernel counted as soft tissue and took the place of the
+// soft-tissue contrast series ("Contrast — Lunge KM Vol 1.0 LUNG").
++ (int) kernklasseFuer:(NSString*) kernel beschreibung:(NSString*) beschreibung
 {
-    static NSRegularExpression *reKern = nil, *reName = nil;
+    static NSRegularExpression *reKern = nil, *reName = nil, *reWeich = nil, *reLunge = nil, *reLungeName = nil;
     if( reKern == nil)
     {
         reKern = svRegex( @"^(BR|HR|UR|QR)?[6-9]\\d|^B[7-9]\\d|^FC8\\d|BONE|KNOCHEN|SHARP|EDGE|YB|YC", NO);
         reName = svRegex( @"(^|\\s)(KNOCHEN|BONE|KF)(\\s|$)", YES);
+        reWeich = svRegex( @"BODY|SOFT|STANDARD|STND|ABD|MEDIASTIN", NO);
+        reLunge = svRegex( @"LUNG|PULMO", NO);
+        reLungeName = svRegex( @"(^|[\\s_])(LUNGE|LUNG|LUNGS|PULMO|LUNGENFENSTER)([\\s_]|$)", YES);
     }
-    return svTrifft( reKern, [(kernel ?: @"") uppercaseString]) || svTrifft( reName, beschreibung ?: @"");
+    NSString *k = [(kernel ?: @"") uppercaseString], *d = beschreibung ?: @"";
+    if( svTrifft( reLunge, k) || svTrifft( reLungeName, d)) return 2;
+    BOOL kernKnochen = svTrifft( reKern, k) && (svTrifft( reWeich, k) == NO || [k rangeOfString: @"BONE"].location != NSNotFound);
+    return (kernKnochen || svTrifft( reName, d)) ? 1 : 0;
+}
+
++ (BOOL) istKnochenkern:(NSString*) kernel beschreibung:(NSString*) beschreibung
+{
+    return [self kernklasseFuer: kernel beschreibung: beschreibung] == 1;
+}
+
+// SekhVet Paket DW: the name first; when it says nothing, Contrast/Bolus Agent (0018,0010) — the Canon phases
+// "WT arteriell" / "WT venoes" carry "CE" there.
++ (int) phaseFuerInfo:(NSDictionary*) info
+{
+    int p = [self phaseFuer: info[ @"desc"]];
+    if( p == 0 && [info[ @"agent"] length]) p = 2;
+    return p;
+}
+
+// SekhVet Paket DW: order within a kernel class — native, arterial, venous, contrast without phase, delayed, unknown
+static int svPhasenRang( int phase, int kmPhase)
+{
+    if( phase == 1) return 0;
+    if( phase == 2) return kmPhase == 1 ? 1 : kmPhase == 2 ? 2 : kmPhase == 3 ? 4 : 3;
+    return 5;
 }
 
 static int svRang( NSDictionary *s)
 {
-    int p = [SekhmetUeberlagerung phaseFuer: s[ @"desc"]];
-    BOOL kn = [SekhmetUeberlagerung istKnochenkern: s[ @"kernel"] beschreibung: s[ @"desc"]];
-    int phase = p == 1 ? 0 : p == 2 ? 1 : 2;
-    return (kn ? 3 : 0) + phase;
+    int klasse = [SekhmetUeberlagerung kernklasseFuer: s[ @"kernel"] beschreibung: s[ @"desc"]];
+    return 10 * klasse + svPhasenRang( [SekhmetUeberlagerung phaseFuerInfo: s], [SekhmetSequenz ctKMPhaseFuer: s[ @"desc"]]);
 }
 
 static NSString *svRegion( NSString *d)
@@ -239,7 +276,7 @@ static NSString *svRegion( NSString *d)
     {
         // SekhVet Paket CS: VOR, WITHOUT, SANS, PLAIN, UNENHANCED, KONTRASTMITTEL added — the phase rule knows them now,
         // and "Abdomen vor KM" / "Abdomen post KM" must stay one region.
-        reFuell = svRegex( @"\\b(KM|CE|C|N|NATIV|NATIVE|POST|PRE|VOR|KONTRAST|KONTRASTMITTEL|CONTRAST|BONE|KNOCHEN|KF|WT|VOL|MIT|OHNE|WITH|WITHOUT|SANS|PLAIN|UNENHANCED|NO|NON|UND|AND)\\b", NO);
+        reFuell = svRegex( @"\\b(KM|CE|C|N|NATIV|NATIVE|POST|PRE|VOR|KONTRAST|KONTRASTMITTEL|CONTRAST|BONE|KNOCHEN|KF|WT|VOL|MIT|OHNE|WITH|WITHOUT|SANS|PLAIN|UNENHANCED|NO|NON|UND|AND|ART|ARTERIELL|ARTERIELLE|ARTERIAL|ANGIO|VEN|VENOES|VENÖS|VENOS|VENOUS|PORTAL|PORTALVENOES|PORTALVENÖS|PORTALVENOUS|PV|PVP|SPAET|SPÄT|SPAETPHASE|SPÄTPHASE|DELAYED|LATE|PHASE)\\b", NO);
         reKern = svRegex( @"\\b[A-Z]{1,3}\\d+[A-Z]?\\b", NO);
         reZahl = svRegex( @"[\\d.,]+", NO);
         reLeer = svRegex( @"\\s+", NO);
@@ -267,6 +304,19 @@ static BOOL svIstTopogramm( NSString *beschreibung)
     return svTrifft( reTopo, beschreibung);
 }
 
+// SekhVet Paket DW: share of the slice range of "bezug" that series s covers (slice locations from the database),
+// -1 = unknown. Canon test case: "WT KM" and "Lunge KM" cover 37 % of the native series — overlaid, most slices showed
+// only the fill value (grey in the lung window).
+static double svDeckung( NSDictionary *s, NSDictionary *bezug)
+{
+    NSNumber *a0 = s[ @"zmin"], *a1 = s[ @"zmax"], *b0 = bezug[ @"zmin"], *b1 = bezug[ @"zmax"];
+    if( a0 == nil || a1 == nil || b0 == nil || b1 == nil) return -1;
+    double laenge = b1.doubleValue - b0.doubleValue;
+    if( laenge < 1e-3 || a1.doubleValue - a0.doubleValue < 1e-3) return -1;
+    double ueber = MIN( a1.doubleValue, b1.doubleValue) - MAX( a0.doubleValue, b0.doubleValue);
+    return MAX( 0., ueber) / laenge;
+}
+
 + (NSArray*) vorschlagAus:(NSArray*) alle aktuell:(NSDictionary*) aktuell
 {
 
@@ -278,6 +328,8 @@ static BOOL svIstTopogramm( NSString *beschreibung)
         if( [s[ @"count"] intValue] < 10) continue;
         if( svIstTopogramm( s[ @"desc"])) continue;
         if( svGleicheEbene( s, aktuell) == NO) continue;
+        double deckung = svDeckung( s, aktuell);   // SekhVet Paket DW: a series that covers less than half is not suggested
+        if( deckung >= 0 && deckung < 0.5 && [s[ @"uid"] isEqualToString: aktuell[ @"uid"]] == NO) continue;
         [kandidaten addObject: s];
     }
     NSString *regionAktuell = svRegion( aktuell[ @"desc"]);
@@ -336,6 +388,8 @@ static BOOL svIstTopogramm( NSString *beschreibung)
             NSString *teil = [o attributeValueWithName: @"BodyPartExamined"];
             if( kern.length) k[ @"kernel"] = kern;
             if( teil.length) k[ @"bodypart"] = teil;
+            NSString *mittel = [o attributeValueWithName: @"Contrast/BolusAgent"];   // SekhVet Paket DW; der DCM-Framework-Name traegt den Schraegstrich, "ContrastBolusAgent" liefert immer nil
+            if( mittel.length) k[ @"agent"] = mittel;
             NSArray *iop = [[o attributeWithName: @"ImageOrientationPatient"] values];
             if( iop.count == 6)
             {
@@ -356,6 +410,17 @@ static BOOL svIstTopogramm( NSString *beschreibung)
         kopf = k;
     }
     [d addEntriesFromDictionary: kopf];
+    // SekhVet Paket DW: slice range from the database, not cached (a series can still be arriving)
+    @try
+    {
+        NSSet *bilder = [s valueForKey: @"images"];
+        if( bilder.count >= 2)
+        {
+            NSNumber *z0 = [bilder valueForKeyPath: @"@min.sliceLocation"], *z1 = [bilder valueForKeyPath: @"@max.sliceLocation"];
+            if( [z0 isKindOfClass: [NSNumber class]] && [z1 isKindOfClass: [NSNumber class]]) { d[ @"zmin"] = z0; d[ @"zmax"] = z1; }
+        }
+    }
+    @catch( NSException *e) { NSLog( @"SekhVet Overlay: slice range of %@ not readable: %@", s.name, e); }
     return d;
 }
 
@@ -369,13 +434,20 @@ static BOOL svIstTopogramm( NSString *beschreibung)
         if( seq.length) return km ? [NSString stringWithFormat: @"%@ %@", seq, NSLocalizedString( @"CM", @"contrast medium, short")] : seq;
         return [NSString stringWithFormat: @"S%@", info[ @"number"]];
     }
-    int p = [self phaseFuer: info[ @"desc"]];
-    BOOL kn = [self istKnochenkern: info[ @"kernel"] beschreibung: info[ @"desc"]];
-    NSString *teil = p == 2 ? NSLocalizedString( @"Contrast", @"overlay chip") : p == 1 ? NSLocalizedString( @"Native", @"overlay chip") : nil;
-    if( teil && kn) return [NSString stringWithFormat: @"%@ %@", teil, NSLocalizedString( @"bone", @"overlay chip: bone kernel")];
-    if( teil) return teil;
-    if( kn) return [NSString stringWithFormat: @"S%@ %@", info[ @"number"], NSLocalizedString( @"bone", nil)];
-    return [NSString stringWithFormat: @"S%@", info[ @"number"]];
+    // SekhVet Paket DW: the contrast phase in the chip ("Arterial", "Venous", "Delayed"; "Contrast" without one) and
+    // the lung kernel ("Contrast lung") — before, "WT arteriell" / "WT venoes" were "S8 bone" / "S9 bone"
+    int p = [self phaseFuerInfo: info];
+    int klasse = [self kernklasseFuer: info[ @"kernel"] beschreibung: info[ @"desc"]];
+    NSString *teil = nil;
+    if( p == 1) teil = NSLocalizedString( @"Native", @"overlay chip");
+    else if( p == 2)
+    {
+        int kp = [SekhmetSequenz ctKMPhaseFuer: info[ @"desc"]];
+        teil = kp == 1 ? NSLocalizedString( @"Arterial", @"overlay chip") : kp == 2 ? NSLocalizedString( @"Venous", @"overlay chip") : kp == 3 ? NSLocalizedString( @"Delayed", @"overlay chip") : NSLocalizedString( @"Contrast", @"overlay chip");
+    }
+    if( teil == nil) teil = [NSString stringWithFormat: @"S%@", info[ @"number"]];
+    NSString *kern = klasse == 1 ? NSLocalizedString( @"bone", @"overlay chip: bone kernel") : klasse == 2 ? NSLocalizedString( @"lung", @"overlay chip: lung kernel") : nil;
+    return kern ? [NSString stringWithFormat: @"%@ %@", teil, kern] : teil;
 }
 
 + (NSArray*) vorschlagFuerViewer:(ViewerController*) v
@@ -518,7 +590,7 @@ static BOOL svIstTopogramm( NSString *beschreibung)
 }
 
 // Tastet die geladene Quellserie auf die Zielschichten ab. Rueckgabe NO + Meldung, wenn die Quelle nicht passt.
-+ (BOOL) tasteAb:(NSArray*) quellPix auf:(NSArray*) zielPix nach:(float*) ziel fuell:(float) fuell naechste:(NSMutableArray*) naechsteOut meldung:(NSString**) meldung
++ (BOOL) tasteAb:(NSArray*) quellPix auf:(NSArray*) zielPix nach:(float*) ziel fuell:(float) fuell naechste:(NSMutableArray*) naechsteOut leer:(NSMutableIndexSet*) leerOut meldung:(NSString**) meldung
 {
     int ns = (int) quellPix.count;
     DCMPix *q0 = quellPix[ 0];
@@ -580,6 +652,7 @@ static BOOL svIstTopogramm( NSString *beschreibung)
         int best = 0; double bd = DBL_MAX;
         for( int j = 0; j < ns; j++) { double dd = fabs( pos[ j] - z); if( dd < bd) { bd = dd; best = j; } }
         naechste[ i] = best;
+        if( leerOut && (z < pos[ 0] - q.tolz || z > pos[ ns - 1] + q.tolz)) [leerOut addIndex: i];   // SekhVet Paket DW
     }
     double *zrc = malloc( 6 * sizeof( double)), *zcc = zrc + 3;   // Bloecke duerfen keine C-Arrays einfangen
     memcpy( zrc, zr, sizeof zr); memcpy( zcc, zc, sizeof zc);
@@ -664,7 +737,8 @@ static BOOL svIstTopogramm( NSString *beschreibung)
     NSData *daten = [[[NSData alloc] initWithBytesNoCopy: buf length: (size_t) w * h * ziel.count * sizeof( float) freeWhenDone: YES] autorelease];
     float fuell = [[ref modalityString] isEqualToString: @"CT"] ? -1024.f : 0.f;
     NSMutableArray *naechste = [NSMutableArray array];
-    if( [self tasteAb: qpix auf: ziel nach: buf fuell: fuell naechste: naechste meldung: meldung] == NO) return NO;
+    NSMutableIndexSet *leer = [NSMutableIndexSet indexSet];
+    if( [self tasteAb: qpix auf: ziel nach: buf fuell: fuell naechste: naechste leer: leer meldung: meldung] == NO) return NO;
 
     NSDictionary *fenster = [self fensterFuerInfo: info studie: [[v currentStudy] valueForKey: @"studyName"] ersatz: qpix[ 0]];
     NSMutableArray *neuPix = [NSMutableArray arrayWithCapacity: ziel.count], *neuDateien = [NSMutableArray arrayWithCapacity: ziel.count];
@@ -692,8 +766,8 @@ static BOOL svIstTopogramm( NSString *beschreibung)
     [st->namen addObject: [self eindeutig: [self kurznameFuer: info] in: st->namen]];
     [st->serienNamen addObject: s.name ?: @""];
     [st->serienUIDs addObject: info[ @"uid"]];
-    [st->phasen addObject: @( [self phaseFuer: info[ @"desc"]])];
-    [st->knochen addObject: @( [self istKnochenkern: info[ @"kernel"] beschreibung: info[ @"desc"]])];
+    [self merkeArtVon: info stapel: st];
+    [st->leer addObject: leer];
     BOOL km = NO, sub = NO;
     NSString *seq = [SekhmetSequenz kontrastFuer: info[ @"desc"] km: &km sub: &sub];
     [st->sequenzen addObject: seq ?: (id) [NSNull null]];
@@ -704,13 +778,23 @@ static BOOL svIstTopogramm( NSString *beschreibung)
     return YES;
 }
 
+// SekhVet Paket DW: phase, kernel class and contrast phase of one stack entry
++ (void) merkeArtVon:(NSDictionary*) info stapel:(SekhmetStapel*) st
+{
+    int klasse = [self kernklasseFuer: info[ @"kernel"] beschreibung: info[ @"desc"]];
+    [st->phasen addObject: @( [self phaseFuerInfo: info])];
+    [st->knochen addObject: @( klasse == 1)];
+    [st->klassen addObject: @( klasse)];
+    [st->kmphasen addObject: @( [SekhmetSequenz ctKMPhaseFuer: info[ @"desc"]])];
+}
+
 + (void) eintragFuerBezug:(SekhmetStapel*) st viewer:(ViewerController*) v info:(NSDictionary*) info
 {
     [st->namen addObject: [self kurznameFuer: info]];
     [st->serienNamen addObject: info[ @"desc"] ?: @""];
     [st->serienUIDs addObject: info[ @"uid"]];
-    [st->phasen addObject: @( [self phaseFuer: info[ @"desc"]])];
-    [st->knochen addObject: @( [self istKnochenkern: info[ @"kernel"] beschreibung: info[ @"desc"]])];
+    [self merkeArtVon: info stapel: st];
+    [st->leer addObject: [NSIndexSet indexSet]];
     BOOL km = NO, sub = NO;
     NSString *seq = [SekhmetSequenz kontrastFuer: info[ @"desc"] km: &km sub: &sub];
     [st->sequenzen addObject: seq ?: (id) [NSNull null]];
@@ -728,9 +812,9 @@ static BOOL svIstTopogramm( NSString *beschreibung)
     for( NSUInteger i = 0; i < st.count; i++) [idx addObject: @( i)];
     [idx sortUsingComparator: ^NSComparisonResult( NSNumber *a, NSNumber *b) {
         int ia = a.intValue, ib = b.intValue;
-        int pa = [st->phasen[ ia] intValue], pb = [st->phasen[ ib] intValue];
-        int ra = ([st->knochen[ ia] boolValue] ? 3 : 0) + (pa == 1 ? 0 : pa == 2 ? 1 : 2);
-        int rb = ([st->knochen[ ib] boolValue] ? 3 : 0) + (pb == 1 ? 0 : pb == 2 ? 1 : 2);
+        // SekhVet Paket DW: same rank as the suggestion — kernel class, then native, arterial, venous, contrast, delayed
+        int ra = 10 * [st->klassen[ ia] intValue] + svPhasenRang( [st->phasen[ ia] intValue], [st->kmphasen[ ia] intValue]);
+        int rb = 10 * [st->klassen[ ib] intValue] + svPhasenRang( [st->phasen[ ib] intValue], [st->kmphasen[ ib] intValue]);
         if( [st->modalitaet isEqualToString: @"MR"]) ra = rb = 0;   // MRT: Reihenfolge der Serien
         if( ra != rb) return ra < rb ? NSOrderedAscending : NSOrderedDescending;
         return ia < ib ? NSOrderedAscending : ia > ib ? NSOrderedDescending : NSOrderedSame;
@@ -1219,9 +1303,9 @@ static BOOL svStapelbar( NSString *modalitaet)
     if( st == nil) return nil;
     DCMView *view = r.curView;
     NSInteger cm = [v curMovieIndex], idx = [view curImage];
-    BOOL kn = [st->knochen[ cm] boolValue];
+    int klasse = [st->klassen[ cm] intValue];   // SekhVet Paket DW: kernel class instead of bone yes/no (lung is its own)
     NSMutableArray *gruppe = [NSMutableArray array];
-    for( NSNumber *m in st->reihenfolge) if( [st->knochen[ m.intValue] boolValue] == kn) [gruppe addObject: m];
+    for( NSNumber *m in st->reihenfolge) if( [st->klassen[ m.intValue] intValue] == klasse) [gruppe addObject: m];
     if( gruppe.count < 2) return nil;
 
     NSMutableDictionary *mittel = [NSMutableDictionary dictionary];
@@ -1245,12 +1329,13 @@ static BOOL svStapelbar( NSString *modalitaet)
 
     // Δ = KM − nativ: CT ueber die Phase, MRT ueber dieselbe Gewichtung ohne/mit KM. Genau ein Paar, sonst kein Δ.
     NSNumber *nativ = nil, *km = nil; int nN = 0, nK = 0;
+    NSMutableArray *kms = [NSMutableArray array];
     if( mr == NO)
     {
         for( NSNumber *m in gruppe)
         {
             int p = [st->phasen[ m.intValue] intValue];
-            if( p == 1) { nativ = m; nN++; } else if( p == 2) { km = m; nK++; }
+            if( p == 1) { nativ = m; nN++; } else if( p == 2) { km = m; nK++; [kms addObject: m]; }
         }
     }
     else
@@ -1262,6 +1347,20 @@ static BOOL svStapelbar( NSString *modalitaet)
             for( NSNumber *m in gruppe)
                 if( [st->mrKM[ m.intValue] boolValue] == NO && [seq isKindOfClass: [NSString class]] && [st->sequenzen[ m.intValue] isEqual: seq]) { nativ = m; nN++; }
         }
+    }
+    // SekhVet Paket DW: several contrast phases against ONE native series — each phase its own Δ in brackets:
+    // "Native 42 · Arterial 180 (+138) · Venous 150 (+108) HU". One phase keeps the line of build 142.
+    if( mr == NO && nN == 1 && nK >= 2)
+    {
+        float a = [mittel[ nativ] floatValue];
+        NSMutableArray *mit = [NSMutableArray array];
+        for( NSNumber *m in gruppe)
+        {
+            NSString *t = [NSString stringWithFormat: @"%@ %.0f", st->namen[ m.intValue], [mittel[ m] floatValue]];
+            if( [kms containsObject: m]) t = [t stringByAppendingFormat: @" (%+.0f)", [mittel[ m] floatValue] - a];
+            [mit addObject: t];
+        }
+        return [[mit componentsJoinedByString: @" · "] stringByAppendingString: @" HU"];
     }
     if( nN == 1 && nK == 1)
     {
@@ -1322,6 +1421,23 @@ static inline uint64_t svMische( uint64_t h, double w)   // FNV-1a step over the
         else zeile = nil;
     }
     objc_setAssociatedObject( r, &SekhmetZeileKey, zeile.length ? zeile : nil, OBJC_ASSOCIATION_COPY_NONATOMIC);
+}
+
+// SekhVet Paket DW: the visible overlaid series has no slice at this level (it covers a shorter range than the base
+// series) — the image shows only the fill value, which looks grey in a lung window. Drawn by DCMView under the
+// orientation lines.
++ (NSString*) hinweisFuerView:(DCMView*) view
+{
+    id wc = [view windowController];
+    if( [wc isKindOfClass: [ViewerController class]] == NO) return nil;
+    ViewerController *v = wc;
+    if( [[v imageViews] containsObject: view] == NO) return nil;
+    SekhmetStapel *st = objc_getAssociatedObject( v, &SekhmetStapelKey);
+    if( st == nil || [v maxMovieIndex] != (short) st.count) return nil;
+    NSInteger cm = [v curMovieIndex];
+    if( cm <= 0 || cm >= (NSInteger) st->leer.count) return nil;
+    if( [st->leer[ cm] containsIndex: [view curImage]] == NO) return nil;
+    return [NSString stringWithFormat: NSLocalizedString( @"%@: no images at this level", @"overlay: the visible series does not reach this slice"), st->namen[ cm]];
 }
 
 #pragma mark Werkzeugleiste
@@ -1396,7 +1512,7 @@ static inline uint64_t svMische( uint64_t h, double w)   // FNV-1a step over the
             }
             [seg setImage: nil forSegment: k];
             [seg setLabel: titel forSegment: k];
-            [seg setWidth: ceil( [titel sizeWithAttributes: @{ NSFontAttributeName: f}].width) + 16 forSegment: k];
+            [seg setWidth: ceil( [titel sizeWithAttributes: @{ NSFontAttributeName: f}].width) + 26 forSegment: k];   // SekhVet Paket DY: +16 schnitt unter macOS 27 "Native bone" ab
             [seg setToolTip: tipp forSegment: k];
             [seg setSelected: m == [v curMovieIndex] forSegment: k];
         }
@@ -1495,6 +1611,7 @@ static inline uint64_t svMische( uint64_t h, double w)   // FNV-1a step over the
     if( st == nil || s == nil) return NO;
     NSUInteger m = [st->serienUIDs indexOfObject: s.seriesInstanceUID ?: @""];
     if( m == 0) return NO;                                   // die Bezugsserie bleibt
+    NSString *basisUID = [[st->serienUIDs[ 0] retain] autorelease];   // SekhVet Paket DW: st is gone after a rebuild in waehle:
     if( m != NSNotFound)
     {
         st->aus[ m] = @( an == NO);
@@ -1504,10 +1621,24 @@ static inline uint64_t svMische( uint64_t h, double w)   // FNV-1a step over the
     }
     else if( an)
     {
-        if( [self staple: @[ s] inViewer: v meldung: meldung] == NO) return NO;
+        // SekhVet Paket DW: deselected series stay loaded and used up the four places — a fifth one was refused with
+        // "at most four series" although only two chips were visible. waehle: rebuilds the stack when it is full.
+        NSMutableArray *w = [NSMutableArray array];
+        for( NSNumber *k in [self sichtbar: st])
+        {
+            DicomSeries *x = k.intValue > 0 ? [self serieMitUID: st->serienUIDs[ k.intValue] viewer: v] : nil;
+            if( x) [w addObject: x];
+        }
+        [w addObject: s];
+        if( [self waehle: w viewer: v meldung: meldung] == NO) return NO;
     }
     else return NO;
     NSNumber *rang = [self merkbarerRang: s];
+    // SekhVet Paket DW: a series that covers only part of the base series says nothing about its kind in general —
+    // switching off the short "WT KM" of the Canon test case would have hidden the soft-tissue contrast series of every later study
+    DicomSeries *basis = [self serieMitUID: basisUID viewer: v];
+    double deckung = basis ? svDeckung( [self infoFuerSerie: s], [self infoFuerSerie: basis]) : -1;
+    if( deckung >= 0 && deckung < 0.95) rang = nil;
     if( rang)
     {
         NSMutableArray *ab = [NSMutableArray arrayWithArray: [[NSUserDefaults standardUserDefaults] arrayForKey: SekhmetOverlayDeselectedKey] ?: @[]];
@@ -1535,21 +1666,165 @@ static inline uint64_t svMische( uint64_t h, double w)   // FNV-1a step over the
     if( m.length) NSRunAlertPanel( NSLocalizedString( @"Overlay", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, m);
 }
 
+// SekhVet Paket DW
++ (DicomSeries*) serieMitUID:(NSString*) uid viewer:(ViewerController*) v
+{
+    for( DicomSeries *s in [self kandidatenFuerViewer: v]) if( [s.seriesInstanceUID ?: @"" isEqualToString: uid]) return s;
+    return nil;
+}
+
+// SekhVet Paket DW: end the overlay and stack again with these series; the base series stays the base. An open MPR
+// is closed and reopened (Paket DA).
++ (BOOL) baueNeu:(NSArray*) serien viewer:(ViewerController*) v meldung:(NSString**) meldung
+{
+    NSArray *liste = [[serien copy] autorelease];
+    if( [self dreiDFensterOffenFuer: v])
+    {
+        BOOL geplant = [self mitMPRNeuaufbau: v aktion: ^{
+            [self beende: v];
+            NSString *m = nil;
+            if( [self staple: liste inViewer: v meldung: &m] == NO || m.length) NSRunAlertPanel( NSLocalizedString( @"Overlay", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, m ?: @"");
+            [self aktualisiereToolbar: v];
+        }];
+        if( geplant) return YES;
+        *meldung = NSLocalizedString( @"Close the 3D windows (MPR, VR …) of this series first, then change the overlay.", nil);
+        return NO;
+    }
+    NSLog( @"SekhVet Overlay: stack full, rebuilt with %lu series", (unsigned long) liste.count + 1);
+    [self beende: v];
+    return [self staple: liste inViewer: v meldung: meldung];
+}
+
+// SekhVet Paket DW: show exactly these series (plus the base series, which always stays). Loaded series are switched
+// on/off; missing ones are loaded; if they do not fit beside the loaded ones, the stack is rebuilt.
++ (BOOL) waehle:(NSArray*) serien viewer:(ViewerController*) v meldung:(NSString**) meldung
+{
+    NSString *dummy = nil;
+    if( meldung == NULL) meldung = &dummy;
+    SekhmetStapel *st = [self stapelVon: v];
+    if( st == nil) return NO;
+    NSString *basis = st->serienUIDs[ 0];
+    NSMutableSet *w = [NSMutableSet setWithObject: basis];
+    NSMutableArray *fehlend = [NSMutableArray array], *ohneBasis = [NSMutableArray array];
+    for( DicomSeries *s in serien)
+    {
+        NSString *uid = s.seriesInstanceUID ?: @"";
+        if( [w containsObject: uid]) continue;
+        [w addObject: uid];
+        [ohneBasis addObject: s];
+        if( [st->serienUIDs containsObject: uid] == NO) [fehlend addObject: s];
+    }
+    if( w.count > SEKHMET_STAPEL_MAX)
+    {
+        *meldung = NSLocalizedString( @"An overlay holds at most four series. Deselect one first.", nil);
+        return NO;
+    }
+    if( st.count + fehlend.count > SEKHMET_STAPEL_MAX) return [self baueNeu: ohneBasis viewer: v meldung: meldung];
+    for( NSUInteger m = 1; m < st.count; m++) st->aus[ m] = @( [w containsObject: st->serienUIDs[ m]] == NO);
+    MPRController *mpr = [self mprFuer: v];
+    NSInteger sichtbarJetzt = mpr ? mpr.curMovieIndex : [v curMovieIndex];
+    if( sichtbarJetzt > 0 && sichtbarJetzt < (NSInteger) st.count && [st->aus[ sichtbarJetzt] boolValue]) [self zeigeSerie: 0 viewer: v];
+    if( fehlend.count && [self staple: fehlend inViewer: v meldung: meldung] == NO) return NO;
+    [self aktualisiereToolbar: v];
+    [[v imageView] setNeedsDisplay: YES];
+    return YES;
+}
+
++ (void) gruppeGeklickt:(NSMenuItem*) item
+{
+    NSArray *ziel = [item representedObject];
+    if( [ziel isKindOfClass: [NSArray class]] == NO || ziel.count != 2) return;
+    ViewerController *v = ziel[ 1];
+    if( [v windowWillClose]) return;
+    NSString *m = nil;
+    [self waehle: ziel[ 0] viewer: v meldung: &m];
+    if( m.length) NSRunAlertPanel( NSLocalizedString( @"Overlay", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, m);
+}
+
+// SekhVet Paket DW (08.10.2026, Eigentuemer: "Nativ und die beiden KM-Serien im Weichteilfenster — schaffe es nicht
+// auszuwaehlen"): the menu is grouped by kernel (soft tissue, bone, lung) and starts with one line per group that
+// shows exactly that group in one click (native + contrast phases, one series per phase, only series that cover
+// at least half of the base series). Each line says which series is the base and how much of it a series covers.
 + (void) zeigeAuswahlMenu:(ViewerController*) v
 {
     SekhmetStapel *st = [self stapelVon: v];
     if( st == nil) return;
+    BOOL mr = [st->modalitaet isEqualToString: @"MR"];
+    DicomSeries *basisSerie = [self serieMitUID: st->serienUIDs[ 0] viewer: v];
+    NSDictionary *basis = basisSerie ? [self infoFuerSerie: basisSerie] : nil;
+    NSMutableArray *infos = [NSMutableArray array];
+    for( DicomSeries *s in [self kandidatenFuerViewer: v]) [infos addObject: [self infoFuerSerie: s]];
+    [infos sortUsingComparator: ^NSComparisonResult( NSDictionary *a, NSDictionary *b) {
+        int ra = mr ? 0 : svRang( a), rb = mr ? 0 : svRang( b);
+        if( ra != rb) return ra < rb ? NSOrderedAscending : NSOrderedDescending;
+        int na = [a[ @"number"] intValue], nb = [b[ @"number"] intValue];
+        return na < nb ? NSOrderedAscending : na > nb ? NSOrderedDescending : NSOrderedSame;
+    }];
+    NSString *(^kurz)( NSDictionary*) = ^NSString*( NSDictionary *i) {
+        NSUInteger m = [st->serienUIDs indexOfObject: i[ @"uid"]];
+        return m != NSNotFound ? st->namen[ m] : [self kurznameFuer: i];
+    };
+    NSArray *gruppenNamen = @[ NSLocalizedString( @"Soft tissue", @"overlay menu: kernel group"), NSLocalizedString( @"Bone", @"overlay menu: kernel group"), NSLocalizedString( @"Lung", @"overlay menu: kernel group")];
+
     NSMenu *menu = [[[NSMenu alloc] initWithTitle: @""] autorelease];
     [menu setAutoenablesItems: NO];
-    for( DicomSeries *s in [self kandidatenFuerViewer: v])
+    NSDictionary *kopfAttr = @{ NSFontAttributeName: [NSFont boldSystemFontOfSize: 11], NSForegroundColorAttributeName: [NSColor secondaryLabelColor]};
+    if( mr == NO)
     {
-        NSUInteger m = [st->serienUIDs indexOfObject: s.seriesInstanceUID ?: @""];
-        NSString *kurz = m != NSNotFound ? st->namen[ m] : [self kurznameFuer: [self infoFuerSerie: s]];
-        NSMenuItem *it = [menu addItemWithTitle: [NSString stringWithFormat: @"%@ — %@", kurz, s.name ?: @""] action: @selector(auswahlGeklickt:) keyEquivalent: @""];
+        BOOL vorwahl = NO;
+        for( int g = 0; g < 3; g++)
+        {
+            NSMutableArray *serien = [NSMutableArray array], *namen = [NSMutableArray array];
+            NSMutableSet *raenge = [NSMutableSet set];
+            NSUInteger platz = SEKHMET_STAPEL_MAX - ([basis[ @"uid"] length] && [self kernklasseFuer: basis[ @"kernel"] beschreibung: basis[ @"desc"]] != g ? 1 : 0);
+            for( NSDictionary *i in infos)
+            {
+                if( svRang( i) / 10 != g || serien.count >= platz) continue;
+                double d = basis ? svDeckung( i, basis) : -1;
+                if( d >= 0 && d < 0.5) continue;
+                if( svRang( i) % 10 == 5) continue;   // unknown phase: only by hand
+                NSNumber *r = @( svRang( i));
+                BOOL istBasis = [i[ @"uid"] isEqualToString: st->serienUIDs[ 0]];
+                if( [raenge containsObject: r] && istBasis == NO) continue;
+                [raenge addObject: r];
+                [serien addObject: i[ @"series"]];
+                [namen addObject: kurz( i)];
+            }
+            if( serien.count < 2) continue;
+            NSString *titel = [NSString stringWithFormat: @"%@: %@", gruppenNamen[ g], [namen componentsJoinedByString: @" · "]];
+            NSMenuItem *it = [menu addItemWithTitle: titel action: @selector(gruppeGeklickt:) keyEquivalent: @""];
+            [it setTarget: self];
+            [it setRepresentedObject: @[ serien, v]];
+            [it setToolTip: NSLocalizedString( @"Show exactly these series (the base series always stays)", nil)];
+            vorwahl = YES;
+        }
+        if( vorwahl) [menu addItem: [NSMenuItem separatorItem]];
+    }
+    int letzteGruppe = -1;
+    for( NSDictionary *i in infos)
+    {
+        int g = mr ? 0 : svRang( i) / 10;
+        if( mr == NO && g != letzteGruppe)
+        {
+            if( letzteGruppe >= 0) [menu addItem: [NSMenuItem separatorItem]];
+            NSMenuItem *kopf = [menu addItemWithTitle: @"" action: nil keyEquivalent: @""];
+            [kopf setAttributedTitle: [[[NSAttributedString alloc] initWithString: gruppenNamen[ MIN( g, 2)] attributes: kopfAttr] autorelease]];
+            [kopf setEnabled: NO];
+            letzteGruppe = g;
+        }
+        DicomSeries *s = i[ @"series"];
+        NSUInteger m = [st->serienUIDs indexOfObject: i[ @"uid"]];
+        NSMutableString *titel = [NSMutableString stringWithFormat: @"%@ — %@", kurz( i), s.name ?: @""];
+        if( m == 0) [titel appendString: NSLocalizedString( @"  (base series)", @"overlay menu: the series the overlay was built on")];
+        double d = basis ? svDeckung( i, basis) : -1;
+        if( m != 0 && d >= 0 && d < 0.95) [titel appendFormat: NSLocalizedString( @"  · covers %.0f %%", @"overlay menu: share of the base series' slice range"), 100 * d];
+        NSMenuItem *it = [menu addItemWithTitle: titel action: @selector(auswahlGeklickt:) keyEquivalent: @""];
         [it setTarget: self];
         [it setRepresentedObject: @[ s, v]];
         [it setState: (m != NSNotFound && [st->aus[ m] boolValue] == NO) ? NSControlStateValueOn : NSControlStateValueOff];
         [it setEnabled: m != 0];
+        if( mr == NO) [it setIndentationLevel: 1];
+        if( m == 0) [it setToolTip: NSLocalizedString( @"The overlay was built on this series; it always stays. To build it on another series, end the overlay, show that series and click Overlay again.", nil)];
     }
     [menu popUpMenuPositioningItem: nil atLocation: [NSEvent mouseLocation] inView: nil];
 }
@@ -1789,6 +2064,34 @@ static void sekhmetSchichtMitte( DCMPix *p, float mitte[ 3], float normale[ 3])
     PRUEFE( [self istKnochenkern: @"" beschreibung: @"Wirbelsäule nativ 0 80 Br64 KF"], @"kern KF im Namen");
     PRUEFE( [self istKnochenkern: @"FC08" beschreibung: @""] == NO, @"kern FC08");
     PRUEFE( [self istKnochenkern: @"BONE" beschreibung: @""], @"kern BONE");
+    // SekhVet Paket DW: Canon (07.10.2026)
+    PRUEFE( [self kernklasseFuer: @"BODY_SHARP" beschreibung: @"WT nativ Vol 1.0  BODY_SHARP"] == 0, @"kern BODY_SHARP weich");
+    PRUEFE( [self kernklasseFuer: @"BONE" beschreibung: @"KF nativ Vol 1.0  BONE"] == 1, @"kern Canon BONE");
+    PRUEFE( [self kernklasseFuer: @"LUNG" beschreibung: @"Lunge KM Vol 1.0  LUNG"] == 2, @"kern LUNG");
+    PRUEFE( [self kernklasseFuer: @"" beschreibung: @"Thorax Lunge 1.0"] == 2, @"kern Lunge im Namen");
+    PRUEFE( [self kernklasseFuer: @"SHARP" beschreibung: @""] == 1, @"kern SHARP allein bleibt Knochen");
+    {
+        NSDictionary *(^ca)( NSString*, NSString*, NSString*, NSString*, int, double, double) = ^NSDictionary*( NSString *uid, NSString *desc, NSString *kern, NSString *agent, int nr, double z0, double z1) {
+            NSMutableDictionary *d = [NSMutableDictionary dictionaryWithDictionary: @{ @"uid": uid, @"desc": desc, @"kernel": kern, @"modality": @"CT", @"study": @"AL", @"count": @( 697), @"number": @( nr), @"zmin": @( z0), @"zmax": @( z1)}];
+            if( agent) d[ @"agent"] = agent;
+            return d;
+        };
+        NSArray *al = @[ ca( @"6", @"WT nativ Vol 1.0  BODY_SHARP", @"BODY_SHARP", nil, 6, -1206.5, -858.5), ca( @"7", @"KF nativ Vol 1.0  BONE", @"BONE", nil, 7, -1206.5, -858.5),
+                         ca( @"8", @"WT arteriell Vol 1.0  BODY_SHARP", @"BODY_SHARP", @"CE", 8, -1206.5, -858.5), ca( @"9", @"WT venoes Vol 1.0  BODY_SHARP", @"BODY_SHARP", @"CE", 9, -1206.5, -858.5),
+                         ca( @"10", @"WT KM Vol 1.0  BODY_SHARP", @"BODY_SHARP", @"CE", 10, -986.5, -662.5), ca( @"11", @"Lunge KM Vol 1.0  LUNG", @"LUNG", @"CE", 11, -986.5, -662.5)];
+        NSString *u = [[[self vorschlagAus: al aktuell: al[ 0]] valueForKey: @"uid"] componentsJoinedByString: @","];
+        PRUEFE( [u isEqualToString: @"6,8,9"], ([NSString stringWithFormat: @"vorschlag Canon-Testfall von nativ %@ statt 6,8,9", u]));
+        u = [[[self vorschlagAus: al aktuell: al[ 2]] valueForKey: @"uid"] componentsJoinedByString: @","];
+        PRUEFE( [u isEqualToString: @"6,8,9"], ([NSString stringWithFormat: @"vorschlag Canon-Testfall von arteriell %@ statt 6,8,9", u]));
+        NSMutableArray *k = [NSMutableArray array];
+        for( NSDictionary *i in al) [k addObject: [self kurznameFuer: i]];
+        NSString *kn = [k componentsJoinedByString: @"|"];
+        PRUEFE( [kn isEqualToString: @"Native|Native bone|Arterial|Venous|Contrast|Contrast lung"], ([NSString stringWithFormat: @"kurznamen Canon-Testfall %@", kn]));
+        PRUEFE( fabs( svDeckung( al[ 4], al[ 0]) - 128.0 / 348.0) < 1e-6, @"deckung WT KM 37 %");
+        PRUEFE( svDeckung( al[ 2], al[ 0]) == 1.0, @"deckung arteriell 100 %");
+        // ohne Phasenwort, nur Contrast/Bolus Agent
+        PRUEFE( [self phaseFuerInfo: ca( @"x", @"WT Vol 1.0  BODY_SHARP", @"BODY_SHARP", @"CE", 12, 0, 1)] == 2, @"phase ueber ContrastBolusAgent");
+    }
 
     // Vorschlag: 4 CT-Serien + Topogramm + andere Region
     NSDictionary *(^ser)( NSString*, NSString*, NSString*, int, int) = ^NSDictionary*( NSString *uid, NSString *desc, NSString *kern, int count, int nr) {
@@ -1872,6 +2175,10 @@ static void sekhmetSchichtMitte( DCMPix *p, float mitte[ 3], float normale[ 3])
     {
     if( schritt == 0)
     {
+        // SekhVet Paket DW: the native soft-tissue series is the base when it is open — the first viewer in window order
+        // depended on which window happened to be in front (bone series -> other chips, no enhancement pair)
+        for( ViewerController *x in [ViewerController getDisplayed2DViewers])
+            if( v == nil && [[x pixList] count] >= 10 && [[[x currentSeries] modality] isEqualToString: @"CT"] && [[self kurznameFuer: [self infoFuerSerie: [x currentSeries]]] isEqualToString: @"Native"]) v = [x retain];
         for( ViewerController *x in [ViewerController getDisplayed2DViewers])
             if( v == nil && [[x pixList] count] >= 10 && [[[x currentSeries] modality] isEqualToString: @"CT"]) v = [x retain];
         if( v == nil) { NSLog( @"%@: kein CT-Viewer offen", P); return; }
@@ -2132,6 +2439,66 @@ static void sekhmetSchichtMitte( DCMPix *p, float mitte[ 3], float normale[ 3])
                 [self segmentGeklickt: seg];
                 NSLog( @"%@ 14: Chip 2 geklickt -> curMovieIndex %d (erwartet %d); X geklickt -> gestapelt %@, Segmente %ld (erwartet 1)", P, nachChip, erwartet,
                       [self istGestapelt: v] ? @"NOCH" : @"nein", (long) [seg segmentCount]);
+            }
+            // SekhVet Paket DW: Serie mit kurzer Deckung dazu, Hinweis im Bild, voller Stapel -> Umbau, Vorwahl, mehr als vier
+            [self segmentGeklickt: seg];
+            st = [self stapelVon: v];
+            if( st)
+            {
+                NSString *(^chips)( void) = ^NSString*( void) {
+                    SekhmetStapel *s = [self stapelVon: v];
+                    NSMutableArray *c = [NSMutableArray array];
+                    for( NSNumber *k in [self sichtbar: s]) [c addObject: s->namen[ k.intValue]];
+                    return [NSString stringWithFormat: @"%lu geladen [%@]", (unsigned long) s.count, [c componentsJoinedByString: @", "]];
+                };
+                NSDictionary *bi = [self infoFuerSerie: [self serieMitUID: st->serienUIDs[ 0] viewer: v]];
+                DicomSeries *kurz = nil, *fremd = nil; double dmin = 2;
+                NSMutableArray *weich = [NSMutableArray array], *alle = [NSMutableArray array];
+                for( DicomSeries *k in [self kandidatenFuerViewer: v])
+                {
+                    NSDictionary *i = [self infoFuerSerie: k];
+                    if( [i[ @"uid"] isEqualToString: st->serienUIDs[ 0]]) continue;
+                    [alle addObject: k];
+                    double d = svDeckung( i, bi);
+                    if( d >= 0 && d < dmin) { dmin = d; kurz = k; }
+                    if( [st->serienUIDs containsObject: i[ @"uid"]]) [weich addObject: k];
+                    else if( fremd == nil && d >= 0.5) fremd = k;
+                }
+                NSLog( @"%@ 15: Vorschlag %@; kuerzeste Serie '%@' Deckung %.0f %%, fremde Serie '%@'", P, chips(), kurz.name ?: @"-", dmin < 2 ? 100 * dmin : -1., fremd.name ?: @"-");
+                if( kurz && dmin < 0.95)
+                {
+                    NSString *m = nil;
+                    BOOL an = [self setzeSerie: kurz an: YES viewer: v meldung: &m];
+                    st = [self stapelVon: v];
+                    NSUInteger mk = [st->serienUIDs indexOfObject: kurz.seriesInstanceUID];
+                    NSIndexSet *leer = mk != NSNotFound ? st->leer[ mk] : nil;
+                    [self zeige: mk inViewer: v];
+                    NSString *h1 = nil, *h2 = nil;
+                    if( leer.count) { [[v imageView] setIndex: (short) leer.firstIndex]; h1 = [self hinweisFuerView: [v imageView]]; }
+                    NSUInteger drin = NSNotFound;
+                    for( NSUInteger i = 0; i < [[v pixList: 0] count]; i++) if( [leer containsIndex: i] == NO) { drin = i; break; }
+                    if( drin != NSNotFound) { [[v imageView] setIndex: (short) drin]; h2 = [self hinweisFuerView: [v imageView]]; }
+                    [self zeige: 0 inViewer: v];
+                    NSString *h0 = [self hinweisFuerView: [v imageView]];
+                    NSLog( @"%@ 15a: '%@' dazu %@ (%@) -> %@; leere Bezugsschichten %lu von %lu; Hinweis ausserhalb '%@' (erwartet Text), innerhalb '%@' (erwartet nil), Bezugsserie '%@' (erwartet nil)", P, kurz.name, an ? @"JA" : @"NEIN", m ?: @"-", chips(),
+                          (unsigned long) leer.count, (unsigned long) [[v pixList: 0] count], h1 ?: @"nil", h2 ?: @"nil", h0 ?: @"nil");
+                    BOOL ab = [self setzeSerie: kurz an: NO viewer: v meldung: NULL];
+                    NSLog( @"%@ 15b: '%@' abgewaehlt %@ -> %@", P, kurz.name, ab ? @"JA" : @"NEIN", chips());
+                }
+                st = [self stapelVon: v];
+                if( fremd && st.count >= SEKHMET_STAPEL_MAX)
+                {
+                    NSString *m = nil;
+                    BOOL an = [self setzeSerie: fremd an: YES viewer: v meldung: &m];
+                    NSLog( @"%@ 15c: Stapel voll, '%@' dazu %@ (%@) -> %@ (erwartet Umbau ohne die abgewaehlte, 4 geladen)", P, fremd.name, an ? @"JA" : @"NEIN", m ?: @"-", chips());
+                }
+                NSString *m5 = nil;
+                BOOL fuenf = [self waehle: alle viewer: v meldung: &m5];
+                NSLog( @"%@ 15d: alle %lu Serien waehlen %@ (erwartet NEIN bei > 3), Meldung '%@'", P, (unsigned long) alle.count, fuenf ? @"JA" : @"NEIN", m5 ?: @"-");
+                NSString *mw = nil;
+                BOOL vw = [self waehle: weich viewer: v meldung: &mw];
+                NSLog( @"%@ 15e: Vorwahl der ersten Vorschlagsserien %@ (%@) -> %@", P, vw ? @"JA" : @"NEIN", mw ?: @"-", chips());
+                [self beende: v];
             }
         }
         NSLog( @"%@: fertig", P);

@@ -6252,6 +6252,11 @@ static ViewerController *draggedController = nil;
     else if ([itemIdent isEqualToString: SekhmetScreenAreaToolbarItemIdentifier]) { // SekhVet: Bildschirmflaeche je Bildschirm
         NSPopUpButton *pb = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect( 0, 0, 150, 22) pullsDown: NO] autorelease];
         [pb addItemsWithTitles: [SekhmetDisplayPanel areaModeNames]];
+        [[pb menu] addItem: [NSMenuItem separatorItem]]; // SekhVet Paket EE
+        [pb addItemWithTitle: NSLocalizedString(@"Use This Window's Place", nil)];
+        [[pb lastItem] setTag: 100];
+        [pb addItemWithTitle: NSLocalizedString(@"Identify Screens", nil)];
+        [[pb lastItem] setTag: 101];
         [[pb cell] setControlSize: NSControlSizeSmall];
         [pb setFont: [NSFont systemFontOfSize: 11]];
         [pb selectItemAtIndex: [SekhmetDisplayPanel indexForMode: [SekhmetDisplayPanel modeForScreen: [[self window] screen]]]];

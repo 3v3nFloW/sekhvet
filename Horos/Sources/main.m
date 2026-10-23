@@ -38,6 +38,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import "NSFont_OpenGL.h"
+#import "SekhmetEinstellungen.h" // SekhVet Paket EG: erster Start
 
 #include "options.h"
 
@@ -51,5 +52,6 @@ int main(int argc, const char *argv[])
     FVTIFFInitialize();
 	#endif
 	
+    @autoreleasepool { [SekhmetEinstellungen merkeErstenStart]; }   // SekhVet Paket EG: vor jedem anderen Schreiben in die Einstellungen
     return NSApplicationMain(argc, argv);
 }

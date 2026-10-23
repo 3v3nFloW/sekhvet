@@ -431,9 +431,26 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
                         ++i;
                         
                         NSError* err = nil;
+                        // SekhVet Paket DS: a SekhVet database on a local external disk (USB/Thunderbolt) runs in WAL mode.
+                        // With the rollback journal every save creates, flushes and deletes a journal file; on an exFAT USB
+                        // hard disk that took 2.85 s per save while images were copied (WAL: 0.01 s, measured 05.10.2026),
+                        // so indexing crawled at ~150 images/min. Horos forced "delete" (2018) because database sharing
+                        // sends only Database.sql; the internal main database keeps it, network volumes too (WAL needs
+                        // shared memory on the same machine).
+                        NSString* journalMode = @"delete";
+                        if ([sqlFilePath rangeOfString:@"/SekhVet Data/"].location != NSNotFound) {
+                            NSNumber *isLocal = nil, *isInternal = nil;
+                            NSURL* dirURL = [NSURL fileURLWithPath:[sqlFilePath stringByDeletingLastPathComponent]];
+                            [dirURL getResourceValue:&isLocal forKey:NSURLVolumeIsLocalKey error:NULL];
+                            [dirURL getResourceValue:&isInternal forKey:NSURLVolumeIsInternalKey error:NULL];
+                            if (isLocal.boolValue && !isInternal.boolValue) {
+                                journalMode = @"wal";
+                                NSLog(@"SekhVet: database on an external disk, WAL mode: %@", sqlFilePath);
+                            }
+                        }
                         NSDictionary* options = @{ NSInferMappingModelAutomaticallyOption: @YES,
                                                    NSMigratePersistentStoresAutomaticallyOption: @([self migratePersistentStoresAutomatically]),
-                                                   NSSQLitePragmasOption: @{ @"journal_mode": @"delete" } };
+                                                   NSSQLitePragmasOption: @{ @"journal_mode": journalMode } };
                         NSURL* url = [NSURL fileURLWithPath:sqlFilePath];
                         @try {
                             pStore = [persistentStoreCoordinator addPersistentStoreWithType:NSSQLiteStoreType configuration:nil URL:url options:options error:&err];

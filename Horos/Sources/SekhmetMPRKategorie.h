@@ -20,6 +20,9 @@
 /** Ein MPR-Fenster hat seinen Kamerastand geaendert — die anderen ziehen nach. */
 extern NSString* const SekhmetMPRDidChangeNotification;
 
+/** SekhVet Paket EC: ein MPR-Fenster hat sein WL/WW geaendert — die anderen derselben Modalitaet ziehen nach (Schalter SekhmetMPRSyncWLWW). */
+extern NSString* const SekhmetMPRWLWWDidChangeNotification;
+
 /** Gesetzt, solange ein Fenster einen fremden Stand uebernimmt oder eine gemerkte
  *  Lage zurueckspielt: in dieser Zeit meldet niemand etwas zurueck (sonst Ping-Pong).
  *  War bis Stufe 6c ein `static` in MPRController.m; die eine Horos-Stelle, die ihn
@@ -53,6 +56,11 @@ extern BOOL SekhmetMPRSyncing;
 - (void) sekhmetDelayedFullLODRendering;  // SekhVet Paket R: scharf nachrendern als Folge eines Empfangs -> nichts zuruecksenden
 - (NSString*) sekhmetFoRForPix:(DCMPix*) pix;  // nil = no frame of reference known, never sync (SekhVet Paket CS)
 - (void) sekhmetSyncFromNotification:(NSNotification*) n;
+- (IBAction) sekhmetToggleWLWWSync:(id) sender;            // SekhVet Paket EC: toolbar switch WL/WW (value via binding)
+- (void) sekhmetScheduleWLWWBroadcast;                     // SekhVet Paket EC: called by propagateWLWW: and the preset popup
+- (void) sekhmetBroadcastWLWW;
+- (void) sekhmetWLWWFromNotification:(NSNotification*) n;
+- (BOOL) sekhmetTakeWLWWFrom:(MPRController*) src;          // NO = other modality, switch off or nothing to take
 @end
 
 /** SekhVet Paket CH: Hanging Protocol auch im Curved MPR (Popup in der Toolbar, beim Oeffnen angewandt). */

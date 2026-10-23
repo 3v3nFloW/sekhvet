@@ -104,6 +104,11 @@ static NSArray* sekhmetDefaultKeywords( void)
 #import "VRView.h"
 #import "Camera.h"
 #import "Point3D.h"
+#if SEKHVET_TESTHAKEN
+@interface MPRDCMView (SekhVetDQTest)   // SekhVet Paket DQ: only the right-click test calls it
+- (int) mouseOnLines: (NSPoint) mouseLocation;
+@end
+#endif
 
 NSString* const SekhmetVetPresetKey = @"SekhmetVetOrientationPreset";
 NSString* const SekhmetVetKeywordsKey = @"SekhmetVetOrientationKeywords";
@@ -1268,6 +1273,7 @@ static NSString* sekhmetOrientReason( int r)
     }
     if( sekhvetTesthaken( "SEKHVET_HP_SWITCH_TEST")) [self performSelector: @selector(debugHPSwitch) withObject: nil afterDelay: 20 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
     if( sekhvetTesthaken( "SEKHVET_DOUBLE_MPR_ZOOM_TEST")) [self performSelector: @selector(debugDoubleMPRZoom) withObject: nil afterDelay: 25 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]]; // SekhVet Paket AT
+    if( sekhvetTesthaken( "SEKHVET_MPR_RCLICK_TEST")) [self performSelector: @selector(debugMPRRightClick) withObject: nil afterDelay: 20 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]]; // SekhVet Paket DQ
 }
 #endif // SEKHVET_TESTHAKEN
 
@@ -1366,6 +1372,123 @@ static MPRDCMView *sekhmetZoomTestView = nil;   // SekhVet Paket CS: only the te
 + (void) debugDoubleMPRZoomStep3
 {
     [self debugDoubleMPRZoomLog: @"nach dem 2. Doppelklick (wieder geteilt)"];
+}
+
+// SekhVet Paket DQ: MPR-Rechtsklickmenue, danach Linksklick aufs Fadenkreuz und ziehen (Eigentuemer 05.10.: "manchmal kommt
+// man nicht zurueck zum Fadenkreuz-Modus, manchmal springen WL/WW nach sehr schwarz/sehr grau").
+// SEKHVET_MPR_RCLICK_TEST="direct": Menue oeffnen und schliessen, dann Ziehen am Fadenkreuz OHNE mouseDown (= das Menue
+//   hat den schliessenden Klick behalten) - genau der vermutete Zustand.
+// SEKHVET_MPR_RCLICK_TEST="post": Klick + Ziehen werden in die Ereignisschlange gestellt, waehrend das Menue offen ist
+//   (wie ein echter Klick neben das Menue); was AppKit daraus macht, zeigt das Protokoll.
+// Erwartet nach DQ: Fadenkreuz bewegt sich (Kameras der Ansichten 2/3 aendern sich), WL/WW bleibt.
+static MPRDCMView *dqView = nil;
+static NSMenu *dqMenu = nil;
+static NSPoint dqCross;
+static BOOL dqPost = NO;
+
++ (NSEvent*) dqEvent:(NSEventType) t at:(NSPoint) p clicks:(NSInteger) n
+{
+    BOOL up = (t == NSEventTypeLeftMouseUp || t == NSEventTypeRightMouseUp);
+    return [NSEvent mouseEventWithType: t location: p modifierFlags: 0 timestamp: [[NSProcessInfo processInfo] systemUptime]
+                          windowNumber: [[dqView window] windowNumber] context: nil eventNumber: 0 clickCount: n pressure: up ? 0 : 1];
+}
+
++ (void) dqLog:(NSString*) phase
+{
+    MPRController *c = (MPRController*) [[dqView window] windowController];
+    for( int i = 0; i < 3; i++)
+    {
+        MPRDCMView *v = [c sekhmetView: i];
+        Camera *cam = v.camera;
+        NSLog( @"SekhVet DQ %@: Ansicht %d WL/WW %.0f/%.0f Kamera %.1f/%.1f/%.1f", phase, i + 1, [v curWL], [v curWW], cam.position.x, cam.position.y, cam.position.z);
+    }
+    NSLog( @"SekhVet DQ %@: Werkzeug %d, Fadenkreuz-Mitte unter dem Zeiger: %d", phase, (int) dqView.currentTool,
+          [dqView mouseOnLines: [dqView convertPoint: dqCross fromView: nil]]);
+}
+
++ (void) dqDrag:(BOOL) post
+{
+    NSWindow *w = [dqView window];
+    NSMutableArray *ev = [NSMutableArray array];
+    if( post) [ev addObject: [self dqEvent: NSEventTypeLeftMouseDown at: dqCross clicks: 1]];
+    for( int k = 1; k <= 6; k++) [ev addObject: [self dqEvent: NSEventTypeLeftMouseDragged at: NSMakePoint( dqCross.x + 6*k, dqCross.y + 4*k) clicks: 1]];
+    [ev addObject: [self dqEvent: NSEventTypeLeftMouseUp at: NSMakePoint( dqCross.x + 36, dqCross.y + 24) clicks: 1]];
+    for( NSEvent *e in ev) { if( post) [NSApp postEvent: e atStart: NO]; else [w sendEvent: e]; }
+}
+
++ (void) dqMenuBegan:(NSNotification*) note
+{
+    [[NSNotificationCenter defaultCenter] removeObserver: self name: NSMenuDidBeginTrackingNotification object: nil];
+    dqMenu = [[note object] retain];
+    NSMutableArray *titles = [NSMutableArray array];
+    for( NSMenuItem *it in [dqMenu itemArray]) [titles addObject: [it isSeparatorItem] ? @"---" : [NSString stringWithFormat: @"%@(%d)", [it title], (int) [it tag]]];
+    NSLog( @"SekhVet DQ: Menue offen: %@", [titles componentsJoinedByString: @" "]);
+    if( dqPost) [self performSelector: @selector(dqPostWhileOpen) withObject: nil afterDelay: 0.8 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+    [self performSelector: @selector(dqCancelMenu) withObject: nil afterDelay: dqPost ? 3 : 0.8 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
+
++ (void) dqPostWhileOpen { NSLog( @"SekhVet DQ: Klick + Ziehen in die Schlange (Menue offen)"); [self dqDrag: YES]; }
+
++ (void) dqCancelMenu
+{
+    NSLog( @"SekhVet DQ: Menue noch offen? %@ -> cancelTracking", dqMenu ? @"ja" : @"nein");
+    [dqMenu cancelTracking];
+}
+
++ (void) debugMPRRightClick
+{
+    const char *env = sekhvetTesthaken( "SEKHVET_MPR_RCLICK_TEST");
+    if( env == NULL) return;
+    dqPost = (strcmp( env, "post") == 0);
+    MPRController *c = nil;
+    for( NSWindow *w in [NSApp windows])
+        if( [[w windowController] isKindOfClass: [MPRController class]] && [(MPRController*) [w windowController] windowWillClose] == NO) { c = (MPRController*) [w windowController]; break; }
+    if( c == nil) { NSLog( @"SekhVet DQ: kein MPR-Fenster"); return; }
+    dqView = [c sekhmetView: 0];
+    NSWindow *w = [dqView window];
+    [NSApp activateIgnoringOtherApps: YES];
+    [w makeKeyAndOrderFront: nil];
+    [w makeFirstResponder: dqView];
+
+    // Fadenkreuz-Mitte suchen (mouseOnLines == 2)
+    NSRect b = [dqView bounds];
+    BOOL found = NO;
+    for( CGFloat y = NSMinY( b) + 4; y < NSMaxY( b) - 4 && !found; y += 2)
+        for( CGFloat x = NSMinX( b) + 4; x < NSMaxX( b) - 4 && !found; x += 2)
+            if( [dqView mouseOnLines: NSMakePoint( x, y)] == 2) { dqCross = [dqView convertPoint: NSMakePoint( x + 2, y + 2) toView: nil]; found = YES; }
+    if( !found) { NSLog( @"SekhVet DQ: Fadenkreuz-Mitte nicht gefunden"); return; }
+    NSLog( @"SekhVet DQ: Modus %s, Ansicht 1 %.0fx%.0f, Fadenkreuz-Mitte bei %.0f/%.0f (Fenster)", env, b.size.width, b.size.height, dqCross.x, dqCross.y);
+
+    // der VORIGE Klick: Kontrast-Werkzeug, kurzer Klick links unten (setzt Startpunkt + Werkzeug von mouseDown)
+    NSPoint old = [dqView convertPoint: NSMakePoint( NSMinX( b) + b.size.width * 0.15, NSMinY( b) + b.size.height * 0.15) toView: nil];
+    [w sendEvent: [self dqEvent: NSEventTypeLeftMouseDown at: old clicks: 1]];
+    [w sendEvent: [self dqEvent: NSEventTypeLeftMouseUp at: old clicks: 1]];
+    [self dqLog: @"vorher"];
+
+    // Rechtsklick ohne Ziehen -> Menue (blockiert, bis es zu ist)
+    [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(dqMenuBegan:) name: NSMenuDidBeginTrackingNotification object: nil];
+    NSPoint rp = [dqView convertPoint: NSMakePoint( NSMinX( b) + b.size.width * 0.75, NSMinY( b) + b.size.height * 0.75) toView: nil];
+    [w sendEvent: [self dqEvent: NSEventTypeRightMouseDown at: rp clicks: 1]];
+    [w sendEvent: [self dqEvent: NSEventTypeRightMouseUp at: rp clicks: 1]];
+    NSLog( @"SekhVet DQ: Menue zu (popUpContextMenu zurueck)%@", dqMenu ? @"" : @" - es wurde NIE geoeffnet");
+
+    if( dqPost == NO) { [self dqDrag: NO]; [self dqLog: @"nachher (direct)"]; [self dqCheck3DRotate]; }
+    else [self performSelector: @selector(dqAfterPost) withObject: nil afterDelay: 2 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
+
++ (void) dqAfterPost { [self dqLog: @"nachher (post)"]; [self dqCheck3DRotate]; }
+
++ (void) dqCheck3DRotate
+{
+    MPRController *c = (MPRController*) [[dqView window] windowController];
+    NSMenuItem *it = nil;
+    for( NSMenuItem *m in [[c sekhmetToolsMenu] itemArray]) if( [m tag] == tCamera3D) it = m;
+    NSLog( @"SekhVet DQ: Menuepunkt 3D Rotate vorhanden: %@", it ? @"ja" : @"NEIN");
+    if( it == nil) return;
+    [c sekhmetToolFromMenu: it];
+    NSLog( @"SekhVet DQ: nach Wahl 3D Rotate: Werkzeug %d (erwartet %d)", (int) dqView.currentTool, (int) tCamera3D);
+    for( NSMenuItem *m in [[c sekhmetToolsMenu] itemArray]) if( [m tag] == tWL) [c sekhmetToolFromMenu: m];
+    NSLog( @"SekhVet DQ: zurueck auf Contrast: Werkzeug %d (erwartet %d) - FERTIG", (int) dqView.currentTool, (int) tWL);
 }
 
 // SekhVet Paket AN: einen gemeldeten Fall nachstellen — Ebenen schraeg stellen und die Schicht verschieben ("von der
