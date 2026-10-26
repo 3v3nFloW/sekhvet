@@ -1,6 +1,6 @@
 # SekhVet — Anleitung (Deutsch)
 
-Version 1.1, Build 190 · Stand 22.10.2026
+Version 1.1.1, Build 194 · Stand 26.10.2026
 
 > **SekhVet ist ein veterinärmedizinischer DICOM-Viewer und kein zertifiziertes Medizinprodukt.**
 > Es ist weder FDA-cleared noch CE-gekennzeichnet und hat keine formale Validierung durchlaufen.

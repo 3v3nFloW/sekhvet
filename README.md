@@ -5,7 +5,7 @@ A veterinary DICOM viewer for macOS. SekhVet is a fork of [Horos](https://horosp
 
 Developed and maintained by Kappa1-VRS GmbH, Zurich, Switzerland.
 
-**Status: version 1.1** (October 2026; 1.0 was the first regular release). See [Status](#status) below before you rely on a function.
+**Status: version 1.1.1** (October 2026; bug-fix release of 1.1; 1.0 was the first regular release). See [Status](#status) below before you rely on a function.
 
 ---
 
@@ -32,6 +32,10 @@ SekhVet 1.1 follows 1.0, the first regular release after a public beta (builds 4
 to October 2026). The Horos core and the veterinary tools are in daily use in one practice.
 Functions that are new in 1.0 or 1.1 and have been tested on few devices so far are marked
 **new** here and in the manuals.
+
+SekhVet 1.1.1 changes one thing only: in a fresh installation the checkbox “Activate DICOM listener
+when SekhVet is running” (Preferences › Listener) reacted only at its upper edge, so the DICOM listener
+could hardly be switched on. Everything else is identical to 1.1 (build 190).
 
 | Function | Status |
 |---|---|

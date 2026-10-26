@@ -35,17 +35,6 @@
                 <rect key="frame" x="0.0" y="0.0" width="632" height="761"/>
                 <autoresizingMask key="autoresizingMask"/>
                 <subviews>
-                    <button id="101">
-                        <rect key="frame" x="24" y="726" width="502" height="18"/>
-                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <buttonCell key="cell" type="check" title="Activate DICOM listener when SekhVet is running" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" state="on" inset="2" id="309">
-                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                            <font key="font" metaFont="smallSystem"/>
-                        </buttonCell>
-                        <connections>
-                            <binding destination="296" name="value" keyPath="values.STORESCP" id="1007"/>
-                        </connections>
-                    </button>
                     <box autoresizesSubviews="NO" horizontalCompressionResistancePriority="1000" borderType="line" id="867">
                         <rect key="frame" x="17" y="487" width="589" height="252"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
@@ -345,6 +334,17 @@
                             </subviews>
                         </view>
                     </box>
+                    <button id="101">
+                        <rect key="frame" x="24" y="726" width="502" height="18"/>
+                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+                        <buttonCell key="cell" type="check" title="Activate DICOM listener when SekhVet is running" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" state="on" inset="2" id="309">
+                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                            <font key="font" metaFont="smallSystem"/>
+                        </buttonCell>
+                        <connections>
+                            <binding destination="296" name="value" keyPath="values.STORESCP" id="1007"/>
+                        </connections>
+                    </button>
                     <box autoresizesSubviews="NO" horizontalCompressionResistancePriority="1000" misplaced="YES" borderType="line" title="Incoming files" id="908">
                         <rect key="frame" x="17" y="249" width="589" height="209"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>

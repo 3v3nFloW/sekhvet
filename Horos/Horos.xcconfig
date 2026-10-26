@@ -10,13 +10,13 @@
 PRODUCT_BUNDLE_IDENTIFIER_PREFIX = vet.kappa1.sekhvet
 
 /// Current version of the project
-CURRENT_PROJECT_VERSION = 190
+CURRENT_PROJECT_VERSION = 194
 
 /// User-visible version of the project
-MARKETING_VERSION = 1.1
+MARKETING_VERSION = 1.1.1
 
 /// Copyright notice for the bundle
-HUMAN_READABLE_VERSION = SekhVet 1.1
+HUMAN_READABLE_VERSION = SekhVet 1.1.1
 
 /// Copyright notice for the bundle
 HUMAN_READABLE_COPYRIGHT = © 2026 Kappa1-VRS GmbH. Based on Horos © The Horos Project and OsiriX © OsiriX Team / Pixmeo SARL
