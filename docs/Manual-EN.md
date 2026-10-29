@@ -1,6 +1,6 @@
 # SekhVet — User Guide (English)
 
-Version 1.1.1, build 194 · 26 October 2026
+Version 1.1.2, build 197 · 29 October 2026
 
 > **SekhVet is a veterinary DICOM viewer and is not a certified medical device.**
 > It is not cleared by the FDA, not CE-marked and has not undergone any formal validation.
@@ -413,6 +413,10 @@ etc.). Requires the same study and the same Frame of Reference.
   gives the window level; a newly opened MPR adopts it. Off = every window keeps its own window
   level (e.g. bone kernel next to soft-tissue kernel). The same switch is in **Vet Tools ›
   Display** (5.14).
+- **View sizes** (Vet Tools › Display, off by default): on = dragging a divider between the views of
+  one MPR window gives the other MPR windows the same split – as a proportion, so it also fits
+  windows of different size. When switched on, the front MPR window gives the split; a newly opened
+  one adopts it. The double-click zoom of a single view stays in its own window.
 - New MPR windows open above their 2D series and are tiled inside the viewer area; they remain
   freely movable.
 - A second MPR adopts the position of the first when it opens.
@@ -429,6 +433,16 @@ etc.). Requires the same study and the same Frame of Reference.
   Highpass on all three planes.
 - **Thick Slab** defaults to Mean (Horos: MIP). The mode (MIP/Mean) applies per MPR window, not
   to all open MPRs.
+- **No stripes on oblique planes:** Horos samples a thin MPR slab with only one or two samples per
+  pixel; with the plane almost, but not exactly, axis-aligned (after rotating in one view only) the
+  image breaks up into black rows. SekhVet takes at least four samples per slab thickness. Geometry
+  and measurements are unchanged.
+- **Movie export shows the whole view:** in Horos a QuickTime movie of an MPR view (3D rotation or
+  batch) is often only a strip in the middle, because the co-rotated neighbouring view imposes its
+  size; with export size 512 or 768 a square is cut out as well. SekhVet exports crop, zoom and
+  rotation exactly as set in the view; 512/768 scale down the whole view (long side) and keep the
+  aspect ratio (since build 196). The same applies to DICOM screen-capture export (MPR, CPR) at
+  512/768: whole view instead of a square, pixel spacing converted accordingly (since build 197).
 - **Zoom** (checkbox in the MPR toolbar): couples the zoom of the three views of one window.
   Off by default; between windows the zoom always follows per view. The button can be removed
   via Customize Toolbar.
@@ -584,7 +598,7 @@ Put photos, screenshots, lab reports and referral letters into the study.
 - **Modality colours:** study and series rows in the database tinted by modality (CT blue, MR
   violet, radiographs green, US orange …). Can be switched off.
 - **Magnetic windows:** off by default; windows stay freely movable.
-- **MPR:** hit zones, static cursor, MPR sync, tiling, zoom sync, WL/WW sync.
+- **MPR:** hit zones, static cursor, MPR sync, tiling, zoom sync, WL/WW sync, view sizes.
 - The display rows (Screen Area) follow newly connected displays automatically; the values
   belong to the current workplace (see above).
 
@@ -650,8 +664,8 @@ Databases** (Horos: "Migration Assistant").
   window and you can keep working. The **source is only read**, never changed.
 - Images already in SekhVet are recognised (SOPInstanceUID) and **not duplicated** — importing
   the same database again only adds what is new.
-- ROIs stored as DICOM (SR) in the database come along. Albums, reports and settings are
-  **not** imported.
+- ROIs stored as DICOM (SR) in the database come along. Albums and reports are **not**
+  imported; settings have their own dialog (5.27).
 - On the first start after a foreign database is found, SekhVet points this out once.
 - Why "SekhVet Data" and not "Horos Data": SekhVet is an independent fork; its own data folder
   leaves the Horos database untouched (and keeps the "Horos" trademark out of SekhVet).
@@ -867,6 +881,48 @@ Unknown entries in a file are dropped.
   changed yourself, SekhVet asks once: **Replace / Not Now / View…**. Replacing makes a backup first.
 - Some changes (hanging protocols, keys, toolbars) take full effect after SekhVet is restarted.
 
+### 5.27 Import settings from Horos / OsiriX (File › Import or Vet Tools) *(new in 1.1.2)*
+
+For switching on a Mac where Horos or OsiriX is already set up: the dialog
+**Import Settings from Horos / OsiriX…** reads their settings and adds them to SekhVet. At the
+first start it opens by itself when SekhVet has no DICOM node of its own yet and a source is
+found; later it is always available via **File › Import** or **Vet Tools**.
+
+- **Sources:** Horos (`org.horosproject.horos`, older builds `com.horosproject.horos`), OsiriX and
+  OsiriX Lite. Several hits are listed under **Source**, the most recently changed one first.
+- **Groups** (all checked by default): DICOM nodes · listener (AE title, port) · hotkeys ·
+  window / CLUT / opacity presets · display (ROI colours, annotations, hanging protocols, default
+  tool) · query/retrieve settings. The database location and "Horos Data" are never touched;
+  studies are copied by 5.18.
+- **Add, do not replace:** whatever you have already set in SekhVet stays. Only what is missing
+  is filled in; lists are merged (nodes equal by AE + address + port, keys per function, presets
+  per name). The checkbox **Overwrite existing SekhVet settings** (off by default) turns this
+  around.
+- **DICOM nodes:** every node of the source is contacted in the background (TCP, 3 s, then
+  C-ECHO) and the result appears in the **Check** column: *echo OK*, *port open, echo rejected*
+  or *no answer*. Dead nodes stay checked; you can uncheck them.
+- **Listener — the question that decides whether both can run side by side:**
+  - **New AE title and port:** SekhVet gets its own AE title (suggested: the Horos title plus
+    "SV", at most 16 characters) and its own port (suggested: Horos port + 1). Horos or OsiriX can
+    keep running. **Your PACS does not know the new AE title:** register this Mac with the new
+    title and port there as a second destination, otherwise retrieve (C-MOVE) fails although the
+    query works.
+  - **Same as the source:** AE title and port are taken 1:1 from Horos/OsiriX, the PACS needs no
+    change — but Horos/OsiriX and SekhVet must **never run at the same time**; the second one
+    cannot open the port.
+  - This answer takes precedence over the add-only rule. **The listener values take effect only
+    after SekhVet is restarted:** the message after the import offers "Quit and reopen SekhVet"
+    (SekhVet opens again by itself); with "Later" the old port stays open until you quit SekhVet.
+    Check: Preferences › Listener. If Horos has no AE title of its own (it then uses the computer
+    name), SekhVet takes the computer name as well with "Same as the source".
+- **Backup:** before writing, SekhVet saves its previous settings as
+  `~/Library/Application Support/SekhVet/prefs-vor-import-<date>.plist`; the path is shown in the
+  message after the import. To go back, quit SekhVet and run
+  `defaults import vet.kappa1.sekhvet.horos <file>` in Terminal. If the backup cannot be written,
+  nothing is imported.
+- Without a source the dialog says "Nothing to take over". The first-start dialog appears once;
+  via the menu it is always available.
+
 ## 6. Behaviour that differs from Horos
 
 | Topic | Horos | SekhVet |
@@ -886,6 +942,8 @@ Unknown entries in a file are dropped.
 | Propagate settings | re-enabled by protocols | stays off until you switch it on |
 | Magnetic windows | on | off |
 | Thick slab | MIP | Mean |
+| Thin MPR slab, plane almost axis-aligned | black stripes possible | at least 4 samples per slab, no stripes |
+| Exporting an MPR movie / DICOM screen capture | often only a strip or a centred square | whole view as set |
 | Opening a series | slider with one tick per image (slow on large series) | no ticks, noticeably faster |
 | Update check | hourly against the Horos server | optional, once a day against GitHub; notice only |
 | Horos Cloud | plugin | removed |
@@ -897,7 +955,18 @@ All SekhVet windows open inside the viewer area. All SekhVet toolbar buttons can
 removed via **Customize Toolbar**; new buttons appear once automatically, and stay away if you
 remove them.
 
-## 7. Status of 1.1, limitations and known restrictions (build 190)
+## 7. Status of 1.1.2, limitations and known restrictions (build 197)
+
+**New in 1.1.2, tested on few devices so far:**
+
+- **Import settings from Horos / OsiriX** (5.27): tested on one clinic computer with Horos 4
+  (three DICOM nodes, 41 hotkeys) and on a freshly installed SekhVet (October 2026). The database
+  import (5.18) now also finds Horos installations that keep their settings under
+  `org.horosproject.horos` (Horos 3 and 4).
+- **Double MPR: view sizes in sync** (5.10, Vet Tools › Display, off by default): tested on one
+  device (October 2026).
+- **MPR improvements** (5.11): no stripes on oblique thin slabs, measurements in HU again, film and
+  DICOM screen-capture export show the whole view — tested on CT studies of one device (October 2026).
 
 **New in 1.1, tested on few devices so far:**
 

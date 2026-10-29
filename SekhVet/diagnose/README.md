@@ -61,3 +61,14 @@ Braucht den Bau **mit** Testhaken.
   "Screens used for viewers" und Lage des DB-Fensters je Arbeitsplatz, Einrasten und Pixel-Rechteck.
   Sichert die SekhVet-Prefs vorher und stellt sie danach byte-gleich wieder her (Pruefung am Ende).
   Unit-Test der Logik: `bash SekhVet/test/arbeitsplatz-test.sh` (27 Faelle).
+
+## Testskript Paket EH (23.10.2026)
+
+Braucht den Bau **mit** Testhaken in `build-test/` (`~/Projects/horos-vet-bau-test.sh`; `build/` mit dem
+Release bleibt dabei unberuehrt).
+
+- `layout-sync-e2e.sh <PatientID>` — Ansichtsgroessen zwischen zwei MPR-Fenstern. Oeffnet die Studie, macht in
+  jedem Viewer eine MPR auf, schaltet den Gleichlauf ein und zieht die Teiler mit echten Mausereignissen
+  (NSSplitView-Tracking): A waagrecht → B folgt; B senkrecht → A folgt; Doppelklick-Zoom in A → B bleibt;
+  Teiler in B waehrend A gezoomt → A bleibt; Zoom zurueck → A uebernimmt den Stand aus B; Schalter aus → B bleibt.
+  Erwartet `ERGEBNIS 6/6`, kein `ENTARTET`, kein `ZIEHEN GRIFF NICHT`. Testpatient: eine CT-Studie mit zwei Volumenserien aus der eigenen Datenbank.

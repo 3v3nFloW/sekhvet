@@ -11189,40 +11189,38 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 NSLog( @"********* spp != 3 I'll NOT resize");
             else
             {
-                unsigned char *cropData;
-                int cropHeight, cropWidth;
-                //				float rescale = 0;
-                //				NSPoint croppedOrigin;
+                // SekhVet: frueher wurde hier mittig ein Quadrat ausgeschnitten (Horos) — bei einer breiten Ansicht
+                // fehlten im Film links und rechts die Raender. Jetzt die ganze Ansicht skalieren: lange Seite = size,
+                // Seitenverhaeltnis bleibt, Masse gerade (H.264).
+                int destWidth, destHeight;
                 
-                if( width > height)
+                if( width >= height)
                 {
-                    //					rescale = (float) size / (float) height;
-                    cropHeight = height;
-                    cropWidth = height;
+                    destWidth = size;
+                    destHeight = (int) round( (double) size * height / width);
                 }
                 else
                 {
-                    //					rescale = (float) size / (float) width;
-                    cropHeight = width;
-                    cropWidth = width;
+                    destHeight = size;
+                    destWidth = (int) round( (double) size * width / height);
                 }
                 
-                //				croppedOrigin = NSMakePoint( ((width-cropWidth)/2.), ((height - cropHeight)/2.));
-                
-                cropData = data + spp*((width-cropWidth)/2) + spp*((height - cropHeight)/2)*width;
+                destWidth = MAX( 2, destWidth & ~1);
+                destHeight = MAX( 2, destHeight & ~1);
                 
                 // resize the data
                 
                 vImage_Buffer src, dest;
                 
-                src.data = cropData;
+                src.data = data;
                 src.rowBytes = width * spp;
-                src.height = cropHeight;
-                src.width = cropWidth;
+                src.height = height;
+                src.width = width;
                 
-                dest.data = malloc( size*size*spp);
-                dest.rowBytes = size*spp;
-                dest.width = dest.height = size;
+                dest.data = malloc( destWidth*destHeight*spp);
+                dest.rowBytes = destWidth*spp;
+                dest.width = destWidth;
+                dest.height = destHeight;
                 
                 if( dest.data)
                 {
@@ -11246,8 +11244,8 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     free( data);
                     
                     data = dest.data;
-                    width = size;
-                    height = size;
+                    width = destWidth;
+                    height = destHeight;
                 }
             }
         }
@@ -11349,40 +11347,41 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 NSLog( @"********* spp != 3 I'll NOT resize");
             else
             {
-                unsigned char *cropData;
-                int cropHeight, cropWidth;
-                float rescale = 0;
-                NSPoint croppedOrigin;
+                // SekhVet: wie im Filmexport — frueher mittiges Quadrat (Horos), jetzt die ganze Ansicht skalieren:
+                // lange Seite = size, Seitenverhaeltnis bleibt. Ohne Ausschnitt bleibt der Ursprung die obere linke
+                // Ecke der Ansicht; der Pixelabstand wird je Achse umgerechnet.
+                int destWidth, destHeight;
                 
-                if( width > height)
+                if( width >= height)
                 {
-                    rescale = (float) size / (float) height;
-                    cropHeight = height;
-                    cropWidth = height;
+                    destWidth = size;
+                    destHeight = (int) round( (double) size * height / width);
                 }
                 else
                 {
-                    rescale = (float) size / (float) width;
-                    cropHeight = width;
-                    cropWidth = width;
+                    destHeight = size;
+                    destWidth = (int) round( (double) size * width / height);
                 }
                 
-                croppedOrigin = NSMakePoint( ((width-cropWidth)/2.), ((height - cropHeight)/2.));
+                destWidth = MAX( 2, destWidth & ~1);
+                destHeight = MAX( 2, destHeight & ~1);
                 
-                cropData = data + spp*((width-cropWidth)/2) + spp*((height - cropHeight)/2)*width;
+                float rescaleX = (float) destWidth / (float) width;
+                float rescaleY = (float) destHeight / (float) height;
                 
                 // resize the data
                 
                 vImage_Buffer src, dest;
                 
-                src.data = cropData;
+                src.data = data;
                 src.rowBytes = width * spp;
-                src.height = cropHeight;
-                src.width = cropWidth;
+                src.height = height;
+                src.width = width;
                 
-                dest.data = calloc( size*size*spp, 1);
-                dest.rowBytes = size*spp;
-                dest.width = dest.height = size;
+                dest.data = calloc( destWidth*destHeight*spp, 1);
+                dest.rowBytes = destWidth*spp;
+                dest.width = destWidth;
+                dest.height = destHeight;
                 
                 if( dest.data)
                 {
@@ -11406,22 +11405,13 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     free( data);
                     
                     data = dest.data;
-                    width = size;
-                    height = size;
+                    width = destWidth;
+                    height = destHeight;
                     
-                    // correct the spacing & origin
+                    // correct the spacing (origin = upper left corner of the view, unchanged)
                     
-//                    if( imOrigin)
-                    {
-                        NSPoint tempPt = [self ConvertFromUpLeftView2GL: croppedOrigin];
-                        [self.curDCM convertPixX: tempPt.x pixY: tempPt.y toDICOMCoords: imOrigin pixelCenter: YES];
-                    }
-                    
-//                    if( imSpacing)
-                    {
-                        imSpacing[ 0] /= rescale;
-                        imSpacing[ 1] /= rescale;
-                    }
+                    imSpacing[ 0] /= rescaleX;
+                    imSpacing[ 1] /= rescaleY;
                 }
             }
         }

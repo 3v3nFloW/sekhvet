@@ -5,7 +5,7 @@ A veterinary DICOM viewer for macOS. SekhVet is a fork of [Horos](https://horosp
 
 Developed and maintained by Kappa1-VRS GmbH, Zurich, Switzerland.
 
-**Status: version 1.1.1** (October 2026; bug-fix release of 1.1; 1.0 was the first regular release). See [Status](#status) below before you rely on a function.
+**Status: version 1.1.2** (October 2026; 1.1.1 and 1.1.2 are small follow-ups to 1.1; 1.0 was the first regular release). See [Status](#status) below before you rely on a function.
 
 ---
 
@@ -33,9 +33,15 @@ to October 2026). The Horos core and the veterinary tools are in daily use in on
 Functions that are new in 1.0 or 1.1 and have been tested on few devices so far are marked
 **new** here and in the manuals.
 
-SekhVet 1.1.1 changes one thing only: in a fresh installation the checkbox “Activate DICOM listener
+SekhVet 1.1.1 changed one thing only: in a fresh installation the checkbox “Activate DICOM listener
 when SekhVet is running” (Preferences › Listener) reacted only at its upper edge, so the DICOM listener
-could hardly be switched on. Everything else is identical to 1.1 (build 190).
+could hardly be switched on. SekhVet 1.1.2 adds **Import Settings from Horos / OsiriX** (File › Import,
+Vet Tools; offered once at the first start): DICOM nodes, listener, hotkeys, presets, display and query
+settings are added to SekhVet without replacing what is already set, each node is checked with C-ECHO,
+and the dialog asks whether SekhVet should listen on its own AE title and port (so Horos can keep
+running) or on the same one (then never run both at once). 1.1.2 also carries the MPR changes from the
+test builds: optional view-size sync between the two MPR windows (Vet Tools › Display), no stripes on
+oblique thin slabs, measurements in HU again, and film / DICOM screen-capture export of the whole view.
 
 | Function | Status |
 |---|---|

@@ -914,6 +914,7 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject: @"0 0 0 0.7" forKey: @"SekhmetAnnotationBoxColor"]; // SekhVet Paket N: Kasten r g b a
 	[defaultValues setObject: @"1" forKey: @"SekhmetMPRSync"];
 	[defaultValues setObject: @"0" forKey: @"SekhmetMPRSyncWLWW"]; // SekhVet Paket EC: WL/WW zwischen MPR-Fenstern, Vorgabe aus (WL eigen wie bisher)
+	[defaultValues setObject: @"0" forKey: @"SekhmetMPRSyncLayout"]; // SekhVet Paket EH: Ansichtsgroessen zwischen MPR-Fenstern, Vorgabe aus
 	[defaultValues setObject: @"18" forKey: @"SekhmetMPRCenterZone"]; // SekhVet: Fadenkreuz-Mittenzone px
 	[defaultValues setObject: @"12" forKey: @"SekhmetMPRLineZone"];   // SekhVet: Fadenkreuz-Linienzone px
 	[defaultValues setObject: @"1" forKey: @"SekhmetMPRStaticCursor"]; // SekhVet: im MPR nur der Pfeil-Cursor

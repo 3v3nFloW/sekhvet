@@ -22,6 +22,8 @@ extern NSString* const SekhmetMPRDidChangeNotification;
 
 /** SekhVet Paket EC: ein MPR-Fenster hat sein WL/WW geaendert — die anderen derselben Modalitaet ziehen nach (Schalter SekhmetMPRSyncWLWW). */
 extern NSString* const SekhmetMPRWLWWDidChangeNotification;
+/** SekhVet Paket EH: ein MPR-Fenster hat seine Ansichtsgroessen (Teiler) geaendert — die anderen ziehen nach (Schalter SekhmetMPRSyncLayout). */
+extern NSString* const SekhmetMPRLayoutDidChangeNotification;
 
 /** Gesetzt, solange ein Fenster einen fremden Stand uebernimmt oder eine gemerkte
  *  Lage zurueckspielt: in dieser Zeit meldet niemand etwas zurueck (sonst Ping-Pong).
@@ -61,6 +63,12 @@ extern BOOL SekhmetMPRSyncing;
 - (void) sekhmetBroadcastWLWW;
 - (void) sekhmetWLWWFromNotification:(NSNotification*) n;
 - (BOOL) sekhmetTakeWLWWFrom:(MPRController*) src;          // NO = other modality, switch off or nothing to take
+- (void) sekhmetScheduleLayoutBroadcast;                   // SekhVet Paket EH: called by splitViewDidResizeSubviews:
+- (void) sekhmetBroadcastLayout;
+- (void) sekhmetLayoutFromNotification:(NSNotification*) n;
+- (BOOL) sekhmetTakeLayoutFrom:(MPRController*) src;        // NO = switch off, other arrangement (portrait/landscape) or nothing to take
+- (float) sekhmetLayoutFraction:(NSSplitView*) sv;         // size of the first view / usable length of the split, -1 = unknown
++ (void) sekhmetLayoutSyncSwitchedOn;                       // the front MPR window sends its view sizes
 @end
 
 /** SekhVet Paket CH: Hanging Protocol auch im Curved MPR (Popup in der Toolbar, beim Oeffnen angewandt). */

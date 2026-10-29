@@ -52,6 +52,7 @@
 #import "SekhmetUSKalibrierung.h" // SekhVet Paket BH
 #import "SekhmetDICOMweb.h" // Sekhmet
 #import "SekhmetImport.h" // SekhVet Paket G
+#import "SekhmetSettingsImport.h" // SekhVet Paket EI: Einstellungen aus Horos / OsiriX uebernehmen
 #import "SekhmetStudienDB.h" // SekhVet Paket DR
 #import "SekhmetEinstellungen.h" // SekhVet Paket DZ
 #import "SekhmetOrientationPanel.h"
@@ -3501,6 +3502,11 @@ static void sekhmetRotateFrames( NSArray *ordered)
     [[SekhmetDatenbankImport shared] zeigen: sender];
 }
 
+- (IBAction) sekhmetShowSettingsImport:(id) sender // SekhVet Paket EI
+{
+    [[SekhmetSettingsImport shared] show: sender];
+}
+
 - (void) sekhmetInstallMenu
 {
     NSMenu *sek = [[NSMenu alloc] initWithTitle: NSLocalizedString( @"Vet Tools", nil)]; // Paket F: App-Menue heisst SekhVet, darum eigener Name
@@ -3528,6 +3534,7 @@ static void sekhmetRotateFrames( NSArray *ordered)
     [[sek addItemWithTitle: NSLocalizedString( @"DICOMweb Query (QIDO-RS / WADO-RS)…", nil) action: @selector(sekhmetShowDICOMweb:) keyEquivalent: @""] setTarget: self];
     [[sek addItemWithTitle: NSLocalizedString( @"Import Image / PDF as DICOM…", nil) action: @selector(sekhmetShowImport:) keyEquivalent: @""] setTarget: self];
     [[sek addItemWithTitle: NSLocalizedString( @"Import from Other Databases (Horos, OsiriX …)…", nil) action: @selector(sekhmetShowOtherDatabases:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket BZ
+    [[sek addItemWithTitle: NSLocalizedString( @"Import Settings from Horos / OsiriX…", nil) action: @selector(sekhmetShowSettingsImport:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket EI
     [[sek addItemWithTitle: NSLocalizedString( @"New Study Database from Folder…", nil) action: @selector(sekhmetNewStudyDatabase:) keyEquivalent: @""] setTarget: self]; // SekhVet Paket DR
     [sek addItem: [SekhmetDICOMweb sendMenuItemWithTitle: NSLocalizedString( @"Send Selected Studies via DICOMweb", nil)]]; // SekhVet Paket CH: je Knoten ein Eintrag
     [sek addItemWithTitle: NSLocalizedString( @"Rename Patient (DICOM)…", nil) action: @selector(sekhmetRenamePatient:) keyEquivalent: @""]; // SekhVet Paket BC: Ziel nil = Datenbankfenster ueber die Responder-Kette
@@ -3547,6 +3554,18 @@ static void sekhmetRotateFrames( NSArray *ordered)
     if( sekhvetTesthaken( "SEKHVET_SETTINGS_TEST") == NULL) [SekhmetEinstellungen performSelector: @selector(beimStart) withObject: nil afterDelay: 8]; // SekhVet Paket DZ: Sicherung, neue Vorgaben, Praxisordner
 #if SEKHVET_TESTHAKEN
     if( sekhvetTesthaken( "SEKHVET_IMPORT_TEST")) [SekhmetImport performSelector: @selector(debugImportFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet: Headless-Test von Paket G
+    // SekhVet Paket EI: derselbe Eintrag auch unter File > Import, und der Erststart-Dialog (einmalig, nur ohne eigene Knoten)
+    {
+        NSMenu *fileMenu = [[[NSApp mainMenu] itemWithTitle: NSLocalizedString( @"File", nil)] submenu];
+        NSMenu *importMenu = [[fileMenu itemWithTitle: NSLocalizedString( @"Import", nil)] submenu];
+        if( importMenu)
+        {
+            [importMenu addItem: [NSMenuItem separatorItem]];
+            [[importMenu addItemWithTitle: NSLocalizedString( @"Import Settings from Horos / OsiriX…", nil) action: @selector(sekhmetShowSettingsImport:) keyEquivalent: @""] setTarget: self];
+        }
+    }
+    if( sekhvetTesthaken( "SEKHVET_SETTINGS_IMPORT_TEST")) [SekhmetSettingsImport performSelector: @selector(debugImportFromEnvironment) withObject: nil afterDelay: 12 inModes: @[ NSDefaultRunLoopMode, NSModalPanelRunLoopMode ]]; // auch waehrend eines Startdialogs
+    else if( sekhvetTesthaken( "SEKHVET_SETTINGS_TEST") == NULL) [SekhmetSettingsImport performSelector: @selector(offerAtStartIfNeeded) withObject: nil afterDelay: 12];
     if( sekhvetTesthaken( "SEKHVET_STUDYDB_TEST")) [SekhmetStudienDB performSelector: @selector(debugFromEnvironment) withObject: nil afterDelay: 25]; // SekhVet Paket DR
     if( sekhvetTesthaken( "SEKHVET_SETTINGS_TEST")) [SekhmetEinstellungen performSelector: @selector(debugFromEnvironment) withObject: nil afterDelay: 20]; // SekhVet Paket DZ
     if( sekhvetTesthaken( "SEKHVET_EJECT_TEST")) [SekhmetStudienDB performSelector: @selector(debugEjectFromEnvironment) withObject: nil afterDelay: 25]; // SekhVet Paket DV

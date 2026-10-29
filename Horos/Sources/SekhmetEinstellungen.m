@@ -34,7 +34,7 @@ static NSDictionary *svExakt( void)
             @"display": @[ @"SekhmetAnnotationBackground", @"SekhmetAnnotationBoxColor", @"SekhmetAnnotGraphicsWithOrientation", @"SekhmetAppearance",
                            @"SekhmetROITextColor", @"SekhmetROITextColorMode", @"SekhmetModalityColors", @"SekhmetLupeGroesse", @"SekhmetLupeZoom",
                            @"SekhmetMessLupe", @"SekhmetMessNavigator", @"SekhmetMPRCenterZone", @"SekhmetMPRLineZone", @"SekhmetMPRStaticCursor",
-                           @"SekhmetMPRSync", @"SekhmetMPRSyncWLWW", @"SekhmetMPRThickSlabMode", @"SekhmetTile3DWindows", @"syncZoomLevelMPR", @"ANNOTATIONS",
+                           @"SekhmetMPRSync", @"SekhmetMPRSyncWLWW", @"SekhmetMPRSyncLayout", @"SekhmetMPRThickSlabMode", @"SekhmetTile3DWindows", @"syncZoomLevelMPR", @"ANNOTATIONS",
                            @"FONTNAME", @"FONTSIZE", @"LabelFONTNAME", @"LabelFONTSIZE", @"ROIThickness", @"ROIArrowThickness", @"ROIRegionThickness",
                            @"ROITextThickness", @"ROIColorR", @"ROIColorG", @"ROIColorB", @"ROIOpacity", @"ROIRegionColorR", @"ROIRegionColorG",
                            @"ROIRegionColorB", @"ROIRegionOpacity", @"ROITextColorR", @"ROITextColorG", @"ROITextColorB", @"ROITEXTNAMEONLY",

@@ -76,6 +76,7 @@
 	NSString *sekhmetConvName; // Sekhmet: Faltung im MPR
 	BOOL sekhmetObserving, sekhmetSyncPending, sekhmetHPApplied; // SekhVet Paket O: Sync erst nach dem Hanging Protocol
 	BOOL sekhmetWLWWPending; float sekhmetLastWL, sekhmetLastWW; // SekhVet Paket EC: Drossel + zuletzt gesendetes/empfangenes WL/WW (Echo-Erkennung)
+	BOOL sekhmetLayoutPending; float sekhmetLastLayoutH, sekhmetLastLayoutV; // SekhVet Paket EH: Drossel + zuletzt gesendete/empfangene Teileranteile (Echo-Erkennung)
 	NSString *sekhmetLastSyncFingerprint; // SekhVet Paket R: zuletzt empfangener Kamerastand -> nie als eigener Stand zurueckmelden
 	DCMPix *originalPix;
 	NSData *volumeData[ MAX4D];

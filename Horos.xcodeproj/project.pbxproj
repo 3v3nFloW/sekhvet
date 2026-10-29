@@ -1026,6 +1026,7 @@
 		5EC0000000000000000002D2 /* SekhmetUeberlagerung.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002D1 /* SekhmetUeberlagerung.m */; };
 		5EC0000000000000000002D5 /* SekhmetRestrictedUnarchiver.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002D4 /* SekhmetRestrictedUnarchiver.m */; };
 		5EC0000000000000000002B2 /* SekhmetUpdate.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002B1 /* SekhmetUpdate.m */; };
+		5EC0000000000000000002F2 /* SekhmetSettingsImport.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002F1 /* SekhmetSettingsImport.m */; };
 		5EC0000000000000000002C2 /* SekhmetLupe.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002C1 /* SekhmetLupe.m */; };
 		5EC0000000000000000002D8 /* SekhmetMessNavigator.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002D7 /* SekhmetMessNavigator.m */; };
 		5EC0000000000000000002DB /* SekhmetStudienDB.m in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0000000000000000002DA /* SekhmetStudienDB.m */; };
@@ -4379,6 +4380,8 @@
 		5EC0000000000000000002D6 /* SekhmetRestrictedUnarchiver.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SekhmetRestrictedUnarchiver.h; sourceTree = "<group>"; };
 		5EC0000000000000000002B1 /* SekhmetUpdate.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SekhmetUpdate.m; sourceTree = "<group>"; };
 		5EC0000000000000000002B3 /* SekhmetUpdate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SekhmetUpdate.h; sourceTree = "<group>"; };
+		5EC0000000000000000002F1 /* SekhmetSettingsImport.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SekhmetSettingsImport.m; sourceTree = "<group>"; };
+		5EC0000000000000000002F3 /* SekhmetSettingsImport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SekhmetSettingsImport.h; sourceTree = "<group>"; };
 		5EC0000000000000000002C1 /* SekhmetLupe.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SekhmetLupe.m; sourceTree = "<group>"; };
 		5EC0000000000000000002C3 /* SekhmetLupe.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SekhmetLupe.h; sourceTree = "<group>"; };
 		5EC0000000000000000002D7 /* SekhmetMessNavigator.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SekhmetMessNavigator.m; sourceTree = "<group>"; };
@@ -7633,6 +7636,8 @@
 				5EC0000000000000000002D4 /* SekhmetRestrictedUnarchiver.m */,
 				5EC0000000000000000002B3 /* SekhmetUpdate.h */,
 				5EC0000000000000000002B1 /* SekhmetUpdate.m */,
+				5EC0000000000000000002F3 /* SekhmetSettingsImport.h */,
+				5EC0000000000000000002F1 /* SekhmetSettingsImport.m */,
 				5EC0000000000000000002C3 /* SekhmetLupe.h */,
 				5EC0000000000000000002C1 /* SekhmetLupe.m */,
 				5EC0000000000000000002D9 /* SekhmetMessNavigator.h */,
@@ -11183,6 +11188,7 @@
 				5EC0000000000000000002D2 /* SekhmetUeberlagerung.m in Sources */,
 				5EC0000000000000000002D5 /* SekhmetRestrictedUnarchiver.m in Sources */,
 				5EC0000000000000000002B2 /* SekhmetUpdate.m in Sources */,
+				5EC0000000000000000002F2 /* SekhmetSettingsImport.m in Sources */,
 				5EC0000000000000000002C2 /* SekhmetLupe.m in Sources */,
 				5EC0000000000000000002D8 /* SekhmetMessNavigator.m in Sources */,
 				5EC0000000000000000002DB /* SekhmetStudienDB.m in Sources */,

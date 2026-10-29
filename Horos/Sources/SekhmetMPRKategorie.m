@@ -28,6 +28,7 @@
 
 NSString* const SekhmetMPRDidChangeNotification = @"SekhmetMPRDidChangeNotification";
 NSString* const SekhmetMPRWLWWDidChangeNotification = @"SekhmetMPRWLWWDidChangeNotification"; // SekhVet Paket EC
+NSString* const SekhmetMPRLayoutDidChangeNotification = @"SekhmetMPRLayoutDidChangeNotification"; // SekhVet Paket EH
 BOOL SekhmetMPRSyncing = NO;
 
 @implementation MPRController (SekhVet)
@@ -118,6 +119,17 @@ BOOL SekhmetMPRSyncing = NO;
             id wc = [w windowController];
             if( wc != self && [wc isKindOfClass: [MPRController class]] && [(MPRController*) wc windowWillClose] == NO && [(MPRController*) wc sekhmetHPApplied]
                && [self sekhmetTakeWLWWFrom: (MPRController*) wc]) break;
+        }
+    }
+    // SekhVet Paket EH: Ansichtsgroessen-Gleichlauf an: ein offenes MPR gibt die Teiler vor
+    sekhmetLastLayoutH = [self sekhmetLayoutFraction: horizontalSplit]; sekhmetLastLayoutV = [self sekhmetLayoutFraction: verticalSplit];
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncLayoutKey])
+    {
+        for( NSWindow *w in [NSApp orderedWindows])
+        {
+            id wc = [w windowController];
+            if( wc != self && [wc isKindOfClass: [MPRController class]] && [(MPRController*) wc windowWillClose] == NO && [(MPRController*) wc sekhmetHPApplied]
+               && [self sekhmetTakeLayoutFrom: (MPRController*) wc]) break;
         }
     }
 }
@@ -265,6 +277,118 @@ static NSString* sekhmetModality( DCMPix *pix)
     SekhmetMPRSyncing = was;
     sekhmetLastWL = wl; sekhmetLastWW = ww;   // Echo: der eigene Haken in propagateWLWW: sendet diesen Stand nicht zurueck
     return YES;
+}
+
+#pragma mark - SekhVet Paket EH: Ansichtsgroessen zwischen MPR-Fenstern
+
+// 23.10.2026 (Wunsch aus dem Praxisbetrieb: "bei einer Double MPR auch die Groesse der Viewports synchronisieren (optional)"; Doppelklick-Zoom
+// ausdruecklich NICHT: "das wird zu viel"). Uebertragen werden Anteile statt Punkte - die Fenster duerfen verschieden gross
+// sein und auf verschiedenen Monitoren stehen. Ein gezoomtes Fenster sendet nichts; empfaengt es, merkt es sich den Stand
+// fuer das Zurueckstellen (sekhmetSplitH/V), damit es danach nicht seinen alten Stand an alle zurueckschickt.
+#define SEKHMET_LAYOUT_REST 2       // wie SEKHMET_SPLIT_REST in MPRDCMView.m: keine Ansicht auf 0 Punkte (Paket BK, macOS 27)
+#define SEKHMET_LAYOUT_ECHO 0.005f  // kleinere Aenderung = Rundung beim Setzen, kein neuer Stand
+
+static CGFloat sekhmetSplitUsable( NSSplitView *sv)
+{
+    CGFloat len = [sv isVertical] ? NSWidth( [sv bounds]) : NSHeight( [sv bounds]);
+    return len - [sv dividerThickness];
+}
+
+- (float) sekhmetLayoutFraction:(NSSplitView*) sv
+{
+    NSArray *sub = [sv subviews];
+    CGFloat len = sekhmetSplitUsable( sv);
+    if( sub.count < 2 || len < 10) return -1;
+    NSRect f = [[sub objectAtIndex: 0] frame];
+    return (float) (([sv isVertical] ? f.size.width : f.size.height) / len);
+}
+
+static void sekhmetSetSplitFraction( NSSplitView *sv, float fr)
+{
+    CGFloat lo = [sv minPossiblePositionOfDividerAtIndex: 0] + SEKHMET_LAYOUT_REST, hi = [sv maxPossiblePositionOfDividerAtIndex: 0] - SEKHMET_LAYOUT_REST;
+    if( hi <= lo) return;
+    CGFloat p = round( fr * sekhmetSplitUsable( sv));
+    [sv setPosition: MIN( hi, MAX( lo, p)) ofDividerAtIndex: 0];
+}
+
+- (void) sekhmetScheduleLayoutBroadcast
+{
+    if( SekhmetMPRSyncing || windowWillClose || sekhmetHPApplied == NO || self.sekhmetFrameZoomed) return; // Ladephase, Empfang und Doppelklick-Zoom senden nicht
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncLayoutKey] == NO) return;
+    if( sekhmetLayoutPending) return;   // Drossel wie bei WL/WW: waehrend des Ziehens alle 30 ms
+    sekhmetLayoutPending = YES;
+    [self performSelector: @selector(sekhmetBroadcastLayout) withObject: nil afterDelay: 0.03 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
+
+- (void) sekhmetBroadcastLayout
+{
+    sekhmetLayoutPending = NO;
+    if( windowWillClose || self.sekhmetFrameZoomed) return;
+    float h = [self sekhmetLayoutFraction: horizontalSplit], v = [self sekhmetLayoutFraction: verticalSplit];
+    if( h < 0 || v < 0) return;
+    if( fabsf( h - sekhmetLastLayoutH) < SEKHMET_LAYOUT_ECHO && fabsf( v - sekhmetLastLayoutV) < SEKHMET_LAYOUT_ECHO) return; // Echo oder nur die Fenstergroesse
+    sekhmetLastLayoutH = h; sekhmetLastLayoutV = v;
+    [[NSNotificationCenter defaultCenter] postNotificationName: SekhmetMPRLayoutDidChangeNotification object: self];
+}
+
+- (void) sekhmetLayoutFromNotification:(NSNotification*) n
+{
+    MPRController *src = [n object];
+    if( src == self || src == nil || windowWillClose) return;
+    [self sekhmetTakeLayoutFrom: src];
+}
+
+- (BOOL) sekhmetTakeLayoutFrom:(MPRController*) src
+{
+    if( windowWillClose || [src sekhmetHPApplied] == NO || src.sekhmetFrameZoomed) return NO;
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncLayoutKey] == NO) return NO;
+    // Hoch- und Querformat ordnen die Ansichten anders an (applyViewsPosition) - dann bedeuten die Anteile etwas anderes
+    if( [horizontalSplit isVertical] != [src.horizontalSplit isVertical] || [verticalSplit isVertical] != [src.verticalSplit isVertical]) return NO;
+    float h = [src sekhmetLayoutFraction: src.horizontalSplit], v = [src sekhmetLayoutFraction: src.verticalSplit];
+    if( h < 0 || v < 0) return NO;
+    BOOL was = SekhmetMPRSyncing;
+    SekhmetMPRSyncing = YES;
+    @try
+    {
+        if( self.sekhmetFrameZoomed)
+        {
+            // eine Ansicht ist hier per Doppelklick gross: so lassen, der Stand gilt beim Zurueckstellen (MPRDCMView mouseDown:)
+            self.sekhmetSplitH = (int) lround( h * sekhmetSplitUsable( horizontalSplit) + [horizontalSplit dividerThickness]);
+            self.sekhmetSplitV = (int) lround( v * sekhmetSplitUsable( verticalSplit) + [verticalSplit dividerThickness]);
+        }
+        else
+        {
+            sekhmetSetSplitFraction( verticalSplit, v);     // Reihenfolge wie beim Zurueckstellen des Zooms
+            sekhmetSetSplitFraction( horizontalSplit, h);
+            // Paket AV: erst im naechsten Runloop-Durchgang rendern, dann hat der gemeinsame vrView die neuen Groessen
+            SEL fertig = NSSelectorFromString( @"sekhmetFinishZoom");   // MPRDCMView, nicht oeffentlich: rendert sichtbare Ansichten + zweiter Durchgang
+            if( [mprView1 respondsToSelector: fertig])
+            {
+                [NSObject cancelPreviousPerformRequestsWithTarget: mprView1 selector: fertig object: nil];
+                [mprView1 performSelector: fertig withObject: nil afterDelay: 0 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+            }
+        }
+    }
+    @catch (NSException *e) { NSLog( @"SekhVet MPR layout sync: %@", e); }
+    SekhmetMPRSyncing = was;
+    sekhmetLastLayoutH = h; sekhmetLastLayoutV = v;   // Echo: der eigene Haken in splitViewDidResizeSubviews: sendet diesen Stand nicht zurueck
+    return YES;
+}
+
++ (void) sekhmetLayoutSyncSwitchedOn
+{
+    for( NSWindow *w in [NSApp orderedWindows])
+    {
+        id wc = [w windowController];
+        if( [wc isKindOfClass: [MPRController class]] && [(MPRController*) wc windowWillClose] == NO && [(MPRController*) wc sekhmetHPApplied]
+           && [(MPRController*) wc sekhmetFrameZoomed] == NO)
+        {
+            MPRController *c = (MPRController*) wc;
+            c->sekhmetLastLayoutH = -1; c->sekhmetLastLayoutV = -1;   // der naechste Stand geht sicher raus
+            [c sekhmetBroadcastLayout];
+            return;
+        }
+    }
 }
 
 #pragma mark - SekhVet Paket AH: MPR-Lage je Serie merken

@@ -40,6 +40,7 @@
 #include <vtkObjectFactory.h>
 #include <vtkRenderWindow.h>
 #include <vtkRenderer.h>
+#include <vtkCamera.h>
 #include <vtkTimerLog.h>
 #include <vtkRayCastImageDisplayHelper.h>
 #include "vtkHorosFixedPointVolumeRayCastMIPHelper.h"
@@ -82,6 +83,27 @@ void vtkHorosFixedPointVolumeRayCastMapper::Render( vtkRenderer *ren, vtkVolume 
 {
   this->Timer->StartTimer();
 
+  // SekhVet: thin slab (MPR, 3D slab). VTK samples the ray every SampleDistance (1.2, while interacting 2.0);
+  // a 0.5 mm slab then gets only 1-2 samples per ray. With the plane almost (not exactly) axis-aligned, the
+  // fixed-point step count in ComputeRayInfo rounds to 0 for some rays -> black rows ("stripes", gone after
+  // a few degrees). At least 4 samples per slab thickness; the original values are restored at every exit.
+  float sekhvetSampleDistance = this->SampleDistance;
+  float sekhvetInteractiveSampleDistance = this->InteractiveSampleDistance;
+  vtkCamera *sekhvetCamera = ren->GetActiveCamera();
+  if ( sekhvetCamera && sekhvetCamera->GetParallelProjection() )
+    {
+    double range[2];
+    sekhvetCamera->GetClippingRange( range );
+    double maxSampleDistance = ( range[1] - range[0] ) / 4.0;
+    if ( maxSampleDistance > 0 )
+      {
+      if ( this->SampleDistance > maxSampleDistance )
+        this->SampleDistance = maxSampleDistance;
+      if ( this->InteractiveSampleDistance > maxSampleDistance )
+        this->InteractiveSampleDistance = maxSampleDistance;
+      }
+    }
+
   // Since we are passing in a value of 0 for the multiRender flag
   // (this is a single render pass - not part of a multipass AMR render)
   // then we know the origin, spacing, and extent values will not
@@ -96,6 +118,14 @@ void vtkHorosFixedPointVolumeRayCastMapper::Render( vtkRenderer *ren, vtkVolume 
 				dummySpacing,
 				dummyExtent );
 
+  // SekhVet: for MIP/MinIP/Mean the opacity table does not depend on the sample distance (VTK corrects it only for
+  // composite blending), but any change of it (the thin-slab limit above, the interactive distance) makes VTK rebuild
+  // the table - and that throws away the linear "full 16-bit" table VRView writes for the MPR read-back: every MPR
+  // value came back stretched by 32767/range around the minimum (seen 23.10.2026 with preset 40/350: all white). Real
+  // changes (transfer function, scalars, blend mode) still rebuild it.
+  if ( this->GetBlendMode() != vtkVolumeMapper::COMPOSITE_BLEND )
+    this->SavedSampleDistance = this->SampleDistance;
+
   this->PerVolumeInitialization( ren, vol );
 
   vtkRenderWindow *renWin=ren->GetRenderWindow();
@@ -103,6 +133,8 @@ void vtkHorosFixedPointVolumeRayCastMapper::Render( vtkRenderer *ren, vtkVolume 
   if ( renWin && renWin->CheckAbortStatus() )
     {
     this->AbortRender();
+    this->SampleDistance = sekhvetSampleDistance;
+    this->InteractiveSampleDistance = sekhvetInteractiveSampleDistance;
     return;
     }
 
@@ -110,6 +142,8 @@ void vtkHorosFixedPointVolumeRayCastMapper::Render( vtkRenderer *ren, vtkVolume 
   if ( renWin && renWin->CheckAbortStatus() )
     {
     this->AbortRender();
+    this->SampleDistance = sekhvetSampleDistance;
+    this->InteractiveSampleDistance = sekhvetInteractiveSampleDistance;
     return;
     }
 
@@ -119,6 +153,8 @@ void vtkHorosFixedPointVolumeRayCastMapper::Render( vtkRenderer *ren, vtkVolume 
   if ( renWin && renWin->CheckAbortStatus() )
     {
     this->AbortRender();
+    this->SampleDistance = sekhvetSampleDistance;
+    this->InteractiveSampleDistance = sekhvetInteractiveSampleDistance;
     return;
     }
 
@@ -137,4 +173,7 @@ void vtkHorosFixedPointVolumeRayCastMapper::Render( vtkRenderer *ren, vtkVolume 
 			   this->OldSampleDistance ) );
 
   this->SampleDistance = this->OldSampleDistance;
+
+  this->SampleDistance = sekhvetSampleDistance;
+  this->InteractiveSampleDistance = sekhvetInteractiveSampleDistance;
 }

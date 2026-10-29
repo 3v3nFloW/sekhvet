@@ -13,6 +13,7 @@ extern NSString* const SekhmetScreenAreaRectsKey;    // Dict: gleiche Schluessel
 extern NSString* const SekhmetAnnotationBackgroundKey; // 0 Horos, 1 Kontur, 2 Kasten, 3 beide
 extern NSString* const SekhmetMPRSyncKey;
 extern NSString* const SekhmetMPRSyncWLWWKey; // SekhVet Paket EC: WL/WW follows between MPR windows of the same modality
+extern NSString* const SekhmetMPRSyncLayoutKey; // SekhVet Paket EH: the view sizes (split dividers) follow between MPR windows
 extern NSString* const SekhmetMPRSyncSettingDidChangeNotification; // SekhVet Paket CS: MPR-Sync umgeschaltet (Toolbar-Knopf oder Panel) -> alle Anzeigen des Schalters folgen
 extern NSString* const SekhmetTile3DWindowsKey;
 extern NSString* const SekhmetAppearanceKey;        // SekhVet Paket N: 0 System, 1 Hell, 2 Dunkel
@@ -30,7 +31,7 @@ extern NSString* const SekhmetWorkplacesKey;         // SekhVet Paket EE: Dict A
     NSMutableArray *areaPopups;     // je Bildschirm
     NSMutableArray *rectFields;
     NSPopUpButton *annotationPopup;
-    NSButton *syncButton, *tileButton, *staticCursorButton, *zoomSyncButton, *magneticButton, *wlwwSyncButton; // wlwwSyncButton: SekhVet Paket EC; // magneticButton: SekhVet Paket AH // zoomSyncButton: SekhVet Paket P
+    NSButton *syncButton, *tileButton, *staticCursorButton, *zoomSyncButton, *magneticButton, *wlwwSyncButton, *layoutSyncButton; // layoutSyncButton: SekhVet Paket EH; // wlwwSyncButton: SekhVet Paket EC; // magneticButton: SekhVet Paket AH // zoomSyncButton: SekhVet Paket P
     NSTextField *centerZoneField, *lineZoneField;
     NSPopUpButton *appearancePopup, *fontPopup, *textColorPopup; // SekhVet Paket N
     NSButton *modalityColorsButton;

@@ -83,6 +83,7 @@ static NSArray* sekhmetDefaultKeywords( void)
 #ifndef SEKHVET_LOGIC_TEST   // everything below needs the application classes
 
 #import "SekhmetMPRKategorie.h" // SekhVet Stufe 6c
+#import "SekhmetDisplayPanel.h" // SekhVet Paket EH: SekhmetMPRSyncLayoutKey (Testhaken)
 #import "SekhmetTesthaken.h" // SekhVet: Testhaken nur mit Build-Flag SEKHVET_TESTHAKEN=1
 #if SEKHVET_TESTHAKEN
 #import "SekhmetDCMViewKategorie.h" // only the point tests call into this category
@@ -1273,6 +1274,7 @@ static NSString* sekhmetOrientReason( int r)
     }
     if( sekhvetTesthaken( "SEKHVET_HP_SWITCH_TEST")) [self performSelector: @selector(debugHPSwitch) withObject: nil afterDelay: 20 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
     if( sekhvetTesthaken( "SEKHVET_DOUBLE_MPR_ZOOM_TEST")) [self performSelector: @selector(debugDoubleMPRZoom) withObject: nil afterDelay: 25 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]]; // SekhVet Paket AT
+    if( sekhvetTesthaken( "SEKHVET_MPR_LAYOUT_TEST")) [self performSelector: @selector(debugLayoutSync) withObject: nil afterDelay: 25 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]]; // SekhVet Paket EH
     if( sekhvetTesthaken( "SEKHVET_MPR_RCLICK_TEST")) [self performSelector: @selector(debugMPRRightClick) withObject: nil afterDelay: 20 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]]; // SekhVet Paket DQ
 }
 #endif // SEKHVET_TESTHAKEN
@@ -1372,6 +1374,194 @@ static MPRDCMView *sekhmetZoomTestView = nil;   // SekhVet Paket CS: only the te
 + (void) debugDoubleMPRZoomStep3
 {
     [self debugDoubleMPRZoomLog: @"nach dem 2. Doppelklick (wieder geteilt)"];
+}
+
+// SekhVet Paket EH: Ansichtsgroessen zwischen zwei MPR-Fenstern. SEKHVET_MPR_LAYOUT_TEST=1 zusammen mit SEKHVET_MPR_TEST=all.
+// Zieht Teiler mit echten Mausereignissen (NSSplitView-Tracking), doppelklickt zum Zoomen und prueft je Schritt selbst:
+//  1 Fenster A, waagrechter Teiler -> B zieht nach        2 Fenster B, senkrechter Teiler -> A zieht nach
+//  3 Doppelklick-Zoom in A -> B bleibt                    4 Teiler in B, waehrend A gezoomt ist -> A bleibt gezoomt
+//  5 Zoom in A zurueck -> A uebernimmt den Stand aus 4, B bleibt   6 Schalter aus, Teiler in A -> B bleibt
+// Jede Zeile "OK"/"FEHLER", am Ende "ERGEBNIS n/6". Keine Ansicht darf 0 Punkte haben (Paket BK).
+static NSArray *ltCtl = nil;
+static BOOL ltWasOn = NO;
+static int ltOk = 0, ltStep = 0;
+static float ltExpectH = -1, ltExpectV = -1;    // Soll fuer das gepruefte Fenster
+static float ltKeepH = -1, ltKeepV = -1;        // Stand, der sich NICHT aendern darf
+
++ (MPRController*) ltC:(int) i { return [ltCtl objectAtIndex: i]; }
+
++ (void) ltLog:(NSString*) phase
+{
+    for( int i = 0; i < 2; i++)
+    {
+        MPRController *c = [self ltC: i];
+        NSMutableString *views = [NSMutableString string];
+        BOOL entartet = NO;
+        for( int k = 0; k < 3; k++)
+        {
+            NSRect r = [[c sekhmetView: k] frame];
+            [views appendFormat: @"%@%.0fx%.0f", k ? @"/" : @"", r.size.width, r.size.height];
+            if( r.size.width < 1 || r.size.height < 1) entartet = YES;
+        }
+        NSLog( @"SekhVet Layout-Sync %@: Fenster %c H %.3f V %.3f zoomed=%d Ansichten %@%@", phase, 'A' + i,
+              [c sekhmetLayoutFraction: c.horizontalSplit], [c sekhmetLayoutFraction: c.verticalSplit], c.sekhmetFrameZoomed, views,
+              entartet && c.sekhmetFrameZoomed == NO ? @"  <-- ENTARTET (0 Punkte)" : @"");
+    }
+}
+
++ (BOOL) ltCheck:(NSString*) what window:(int) i expectH:(float) h expectV:(float) v
+{
+    MPRController *c = [self ltC: i];
+    float ch = [c sekhmetLayoutFraction: c.horizontalSplit], cv = [c sekhmetLayoutFraction: c.verticalSplit];
+    BOOL ok = (h < 0 || fabsf( ch - h) < 0.02f) && (v < 0 || fabsf( cv - v) < 0.02f);
+    NSLog( @"SekhVet Layout-Sync Schritt %d %@: Fenster %c H %.3f (Soll %.3f) V %.3f (Soll %.3f) -> %@", ltStep, what, 'A' + i, ch, h, cv, v, ok ? @"OK" : @"FEHLER");
+    return ok;
+}
+
++ (NSEvent*) ltEvent:(NSEventType) t at:(NSPoint) p window:(NSWindow*) w
+{
+    BOOL up = (t == NSEventTypeLeftMouseUp);
+    return [NSEvent mouseEventWithType: t location: p modifierFlags: 0 timestamp: [[NSProcessInfo processInfo] systemUptime]
+                          windowNumber: [w windowNumber] context: nil eventNumber: 0 clickCount: 1 pressure: up ? 0 : 1];
+}
+
+// Teiler 0 von sv mit Maus ziehen, bis die erste Ansicht den Anteil fr hat. Greift das Ziehen nicht, wird es gemeldet (kein stiller Ersatz).
++ (void) ltDrag:(NSSplitView*) sv to:(float) fr
+{
+    NSWindow *w = [sv window];
+    NSRect f0 = [[[sv subviews] objectAtIndex: 0] frame];
+    CGFloat t = [sv dividerThickness];
+    CGFloat len = ([sv isVertical] ? NSWidth( [sv bounds]) : NSHeight( [sv bounds])) - t;
+    CGFloat from = [sv isVertical] ? NSMaxX( f0) : NSMaxY( f0), to = round( fr * len);
+    NSPoint a = [sv isVertical] ? NSMakePoint( from + t / 2, NSMidY( [sv bounds])) : NSMakePoint( NSMidX( [sv bounds]), from + t / 2);
+    NSPoint b = [sv isVertical] ? NSMakePoint( to + t / 2, a.y) : NSMakePoint( a.x, to + t / 2);
+    a = [sv convertPoint: a toView: nil]; b = [sv convertPoint: b toView: nil];
+    for( int k = 1; k <= 6; k++)
+        [NSApp postEvent: [self ltEvent: NSEventTypeLeftMouseDragged at: NSMakePoint( a.x + (b.x - a.x) * k / 6, a.y + (b.y - a.y) * k / 6) window: w] atStart: NO];
+    [NSApp postEvent: [self ltEvent: NSEventTypeLeftMouseUp at: b window: w] atStart: NO];
+    [sv mouseDown: [self ltEvent: NSEventTypeLeftMouseDown at: a window: w]];   // NSSplitView verfolgt die Maus bis zum mouseUp
+}
+
++ (void) ltDoubleClick:(MPRController*) c
+{
+    MPRDCMView *v = [c sekhmetView: 0];
+    NSWindow *w = [v window];
+    [w makeFirstResponder: v];
+    NSPoint p = [v convertPoint: NSMakePoint( NSMidX( [v bounds]), NSMidY( [v bounds])) toView: nil];
+    [v mouseDown: [NSEvent mouseEventWithType: NSEventTypeLeftMouseDown location: p modifierFlags: 0 timestamp: [[NSProcessInfo processInfo] systemUptime]
+                                 windowNumber: [w windowNumber] context: nil eventNumber: 0 clickCount: 2 pressure: 1]];
+}
+
++ (void) ltNext:(SEL) s { [self performSelector: s withObject: nil afterDelay: 2 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]]; }
+
++ (void) debugLayoutSync
+{
+    NSMutableArray *a = [NSMutableArray array];
+    for( NSWindow *w in [NSApp windows])
+    {
+        id wc = [w windowController];
+        if( [wc isKindOfClass: [MPRController class]] && [(MPRController*) wc windowWillClose] == NO) [a addObject: wc];
+    }
+    if( a.count < 2) { NSLog( @"SekhVet Layout-Sync: nur %lu MPR-Fenster - der Test braucht zwei (SEKHVET_MPR_TEST=all)", (unsigned long) a.count); return; }
+    ltCtl = [[a subarrayWithRange: NSMakeRange( 0, 2)] retain];
+    ltWasOn = [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetMPRSyncLayoutKey];
+    [[NSUserDefaults standardUserDefaults] setBool: YES forKey: SekhmetMPRSyncLayoutKey];
+    [MPRController sekhmetLayoutSyncSwitchedOn];
+    NSLog( @"SekhVet Layout-Sync: A = [%@], B = [%@], Schalter war %d, jetzt an", [[[self ltC: 0] window] title], [[[self ltC: 1] window] title], ltWasOn);
+    [self ltLog: @"Ausgangslage"];
+    [self ltNext: @selector(ltStep1)];
+}
+
++ (void) ltStep1
+{
+    ltStep = 1;
+    MPRController *A = [self ltC: 0];
+    [self ltDrag: A.horizontalSplit to: 0.30f];
+    ltExpectH = [A sekhmetLayoutFraction: A.horizontalSplit]; ltExpectV = [A sekhmetLayoutFraction: A.verticalSplit];
+    NSLog( @"SekhVet Layout-Sync Schritt 1: A waagrecht gezogen auf %.3f (Ziel 0.300)%@", ltExpectH, fabsf( ltExpectH - 0.30f) > 0.02f ? @" <-- ZIEHEN GRIFF NICHT" : @"");
+    [self performSelector: @selector(ltStep1b) withObject: nil afterDelay: 1 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
++ (void) ltStep1b { [self ltLog: @"nach 1"]; if( [self ltCheck: @"B zieht nach" window: 1 expectH: ltExpectH expectV: ltExpectV]) ltOk++; [self ltNext: @selector(ltStep2)]; }
+
++ (void) ltStep2
+{
+    ltStep = 2;
+    MPRController *B = [self ltC: 1];
+    [self ltDrag: B.verticalSplit to: 0.70f];
+    ltExpectH = [B sekhmetLayoutFraction: B.horizontalSplit]; ltExpectV = [B sekhmetLayoutFraction: B.verticalSplit];
+    NSLog( @"SekhVet Layout-Sync Schritt 2: B senkrecht gezogen auf %.3f (Ziel 0.700)%@", ltExpectV, fabsf( ltExpectV - 0.70f) > 0.02f ? @" <-- ZIEHEN GRIFF NICHT" : @"");
+    [self performSelector: @selector(ltStep2b) withObject: nil afterDelay: 1 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
++ (void) ltStep2b { [self ltLog: @"nach 2"]; if( [self ltCheck: @"A zieht nach" window: 0 expectH: ltExpectH expectV: ltExpectV]) ltOk++; [self ltNext: @selector(ltStep3)]; }
+
++ (void) ltStep3
+{
+    ltStep = 3;
+    MPRController *B = [self ltC: 1];
+    ltKeepH = [B sekhmetLayoutFraction: B.horizontalSplit]; ltKeepV = [B sekhmetLayoutFraction: B.verticalSplit];
+    [self ltDoubleClick: [self ltC: 0]];
+    [self performSelector: @selector(ltStep3b) withObject: nil afterDelay: 1.5 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
++ (void) ltStep3b
+{
+    [self ltLog: @"nach 3"];
+    BOOL zoomed = [self ltC: 0].sekhmetFrameZoomed;
+    if( zoomed == NO) NSLog( @"SekhVet Layout-Sync Schritt 3: A ist NICHT gezoomt <-- Doppelklick griff nicht (Schritt zaehlt nicht)");
+    if( [self ltCheck: @"Zoom in A, B bleibt" window: 1 expectH: ltKeepH expectV: ltKeepV] && zoomed) ltOk++;
+    [self ltNext: @selector(ltStep4)];
+}
+
++ (void) ltStep4
+{
+    ltStep = 4;
+    MPRController *A = [self ltC: 0], *B = [self ltC: 1];
+    ltKeepH = [A sekhmetLayoutFraction: A.horizontalSplit]; ltKeepV = [A sekhmetLayoutFraction: A.verticalSplit];   // gezoomter Stand von A
+    [self ltDrag: B.horizontalSplit to: 0.55f];
+    ltExpectH = [B sekhmetLayoutFraction: B.horizontalSplit]; ltExpectV = [B sekhmetLayoutFraction: B.verticalSplit];
+    [self performSelector: @selector(ltStep4b) withObject: nil afterDelay: 1 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
++ (void) ltStep4b
+{
+    [self ltLog: @"nach 4"];
+    BOOL zoomed = [self ltC: 0].sekhmetFrameZoomed;
+    NSLog( @"SekhVet Layout-Sync Schritt 4: A gezoomt=%d (Soll 1)", zoomed);
+    if( [self ltCheck: @"Teiler in B, gezoomtes A bleibt" window: 0 expectH: ltKeepH expectV: ltKeepV] && zoomed) ltOk++;
+    [self ltNext: @selector(ltStep5)];
+}
+
++ (void) ltStep5
+{
+    ltStep = 5;
+    MPRController *B = [self ltC: 1];
+    ltKeepH = [B sekhmetLayoutFraction: B.horizontalSplit]; ltKeepV = [B sekhmetLayoutFraction: B.verticalSplit];
+    [self ltDoubleClick: [self ltC: 0]];
+    [self performSelector: @selector(ltStep5b) withObject: nil afterDelay: 1.5 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
++ (void) ltStep5b
+{
+    [self ltLog: @"nach 5"];
+    BOOL a = [self ltCheck: @"Zoom zurueck, A uebernimmt Stand aus 4" window: 0 expectH: ltExpectH expectV: ltExpectV];
+    BOOL b = [self ltCheck: @"Zoom zurueck, B bleibt" window: 1 expectH: ltKeepH expectV: ltKeepV];
+    if( a && b && [self ltC: 0].sekhmetFrameZoomed == NO) ltOk++;   // Schritt 5 zaehlt einmal, wenn beide Fenster stimmen
+    [self ltNext: @selector(ltStep6)];
+}
+
++ (void) ltStep6
+{
+    ltStep = 6;
+    MPRController *A = [self ltC: 0], *B = [self ltC: 1];
+    [[NSUserDefaults standardUserDefaults] setBool: NO forKey: SekhmetMPRSyncLayoutKey];
+    ltKeepH = [B sekhmetLayoutFraction: B.horizontalSplit]; ltKeepV = [B sekhmetLayoutFraction: B.verticalSplit];
+    [self ltDrag: A.horizontalSplit to: 0.40f];
+    [self performSelector: @selector(ltStep6b) withObject: nil afterDelay: 1 inModes: [NSArray arrayWithObject: NSRunLoopCommonModes]];
+}
++ (void) ltStep6b
+{
+    [self ltLog: @"nach 6"];
+    if( [self ltCheck: @"Schalter aus, B bleibt" window: 1 expectH: ltKeepH expectV: ltKeepV]) ltOk++;
+    [[NSUserDefaults standardUserDefaults] setBool: ltWasOn forKey: SekhmetMPRSyncLayoutKey];
+    NSLog( @"SekhVet Layout-Sync ERGEBNIS %d/6 (Schalter zurueck auf %d)", ltOk, ltWasOn);
+    [ltCtl release]; ltCtl = nil;
 }
 
 // SekhVet Paket DQ: MPR-Rechtsklickmenue, danach Linksklick aufs Fadenkreuz und ziehen (Eigentuemer 05.10.: "manchmal kommt

@@ -383,6 +383,7 @@ static float deg2rad = M_PI/180.0;
         sekhmetObserving = YES;
         [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetSyncFromNotification:) name: SekhmetMPRDidChangeNotification object: nil];
         [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetWLWWFromNotification:) name: SekhmetMPRWLWWDidChangeNotification object: nil]; // SekhVet Paket EC
+        [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetLayoutFromNotification:) name: SekhmetMPRLayoutDidChangeNotification object: nil]; // SekhVet Paket EH
         if( [[NSUserDefaults standardUserDefaults] boolForKey: SekhmetTile3DWindowsKey])
             [[AppController sharedAppController] performSelector: @selector(tile3DWindows:) withObject: nil afterDelay: 0.6];
         [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(sekhmetPresetDidChange:) name: SekhmetVetPresetDidChangeNotification object: nil];
@@ -2379,7 +2380,11 @@ static float deg2rad = M_PI/180.0;
 						[curExportView.vrView setViewSizeToMatrix3DExport];
 					}
 					
-					[curExportView restoreCameraAndCheckForFrame: NO];
+					// SekhVet: oben hat die mitgedrehte Nachbaransicht per restoreCamera den GEMEINSAMEN vrView auf IHRE
+					// Groesse gesetzt. Ohne checkForFrame rendert die Exportansicht dann mit dieser fremden Groesse — im
+					// Film nur ein Streifen in Breite der Nachbaransicht (Fehler aus Horos). Nur beim DICOM-Vollformat
+					// gilt die Matrix aus setViewSizeToMatrix3DExport und darf nicht ueberschrieben werden.
+					[curExportView restoreCameraAndCheckForFrame: self.dcmFormat == 0];
 					
                     [curExportView updateViewMPR: NO];
                     
@@ -2429,7 +2434,7 @@ static float deg2rad = M_PI/180.0;
                     [curExportView.vrView setViewSizeToMatrix3DExport];
                 }
                 
-				[curExportView restoreCameraAndCheckForFrame: NO];
+				[curExportView restoreCameraAndCheckForFrame: self.dcmFormat == 0];	// SekhVet: siehe 3D-Rotation
 				
 				if( self.dcmBatchNumberOfFrames < 1)
 					self.dcmBatchNumberOfFrames = 1;
@@ -2454,7 +2459,7 @@ static float deg2rad = M_PI/180.0;
 						curExportView.camera.position = [Point3D pointWithX: curExportView.camera.position.x - interval*cos[ 6] y:curExportView.camera.position.y - interval*cos[ 7] z:curExportView.camera.position.z - interval*cos[ 8]];
 					curExportView.camera.focalPoint = [Point3D pointWithX: curExportView.camera.position.x + cos[ 6] y:curExportView.camera.position.y + cos[ 7] z:curExportView.camera.position.z + cos[ 8]];
 					
-					[curExportView restoreCameraAndCheckForFrame: NO];
+					[curExportView restoreCameraAndCheckForFrame: self.dcmFormat == 0];	// SekhVet: siehe 3D-Rotation
 					
 					[progress incrementBy: 1];
 					
@@ -3625,6 +3630,11 @@ static float deg2rad = M_PI/180.0;
 - (BOOL) splitView:(NSSplitView*) sv canCollapseSubview:(NSView*) subview
 {
 	return NO;
+}
+// SekhVet Paket EH: ein Teiler hat sich bewegt (Ziehen, Fenstergroesse, Doppelklick-Zoom) - die Kategorie entscheidet, ob es rausgeht.
+- (void) splitViewDidResizeSubviews:(NSNotification*) notification
+{
+	[self sekhmetScheduleLayoutBroadcast];
 }
 
 @end

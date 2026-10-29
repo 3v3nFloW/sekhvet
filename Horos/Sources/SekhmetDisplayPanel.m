@@ -3,6 +3,7 @@
  ============================================================================*/
 
 #import "SekhmetDisplayPanel.h"
+#import "SekhmetMPRKategorie.h" // SekhVet Paket EH: Ansichtsgroessen-Gleichlauf einschalten
 #import "SekhmetUeberlagerung.h" // SekhVet Paket CJ
 #import "SekhmetMessNavigator.h" // SekhVet Paket DO
 #import "SekhmetTesthaken.h" // SekhVet: Testhaken nur mit Build-Flag SEKHVET_TESTHAKEN=1
@@ -24,6 +25,7 @@ NSString* const SekhmetWorkplacesKey = @"SekhmetWorkplaces"; // SekhVet Paket EE
 NSString* const SekhmetAnnotationBackgroundKey = @"SekhmetAnnotationBackground";
 NSString* const SekhmetMPRSyncKey = @"SekhmetMPRSync";
 NSString* const SekhmetMPRSyncWLWWKey = @"SekhmetMPRSyncWLWW"; // SekhVet Paket EC
+NSString* const SekhmetMPRSyncLayoutKey = @"SekhmetMPRSyncLayout"; // SekhVet Paket EH
 NSString* const SekhmetMPRSyncSettingDidChangeNotification = @"SekhmetMPRSyncSettingDidChangeNotification"; // SekhVet Paket CS
 NSString* const SekhmetTile3DWindowsKey = @"SekhmetTile3DWindows";
 NSString* const SekhmetAppearanceKey = @"SekhmetAppearance"; // SekhVet Paket N
@@ -630,7 +632,7 @@ static NSArray *sekhmetMonitorCache = nil;
 + (float) contentHeight   // one row per screen on top of the fixed part
 {
     NSUInteger n = [[NSScreen screens] count];
-    return 484 + 66 + 30 + 30 + 22 + 22 + 22 + 32 * n; // SekhVet Paket EE: Arbeitsplatz-Zeile (+22); Paket EC: WL/WW-Zeile (+22); Paket N: zwei Abschnitte mehr; Paket P: Zoom-Zeile; Paket AH: Magnetic-Zeile; Paket CD: Messungen (+66); Paket CF: Lupengroesse (+30); Paket CJ: Overlay-Tasten (+30); Paket DO: Navigator (+22)
+    return 484 + 66 + 30 + 30 + 22 + 22 + 22 + 22 + 32 * n; // SekhVet Paket EH: Ansichtsgroessen-Zeile (+22); Paket EE: Arbeitsplatz-Zeile (+22); Paket EC: WL/WW-Zeile (+22); Paket N: zwei Abschnitte mehr; Paket P: Zoom-Zeile; Paket AH: Magnetic-Zeile; Paket CD: Messungen (+66); Paket CF: Lupengroesse (+30); Paket CJ: Overlay-Tasten (+30); Paket DO: Navigator (+22)
 }
 
 - (id) init
@@ -897,6 +899,14 @@ static NSArray *sekhmetMonitorCache = nil;
     [wlwwSyncButton setTarget: self]; [wlwwSyncButton setAction: @selector(wlwwSyncChanged:)];
     [cv addSubview: wlwwSyncButton];
     y -= 22;
+    layoutSyncButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 36, y, 560, 18)] autorelease]; // SekhVet Paket EH
+    [layoutSyncButton setButtonType: NSButtonTypeSwitch];
+    [layoutSyncButton setTitle: NSLocalizedString( @"View sizes: dragging a divider in one MPR window resizes the views of the others", nil)];
+    [layoutSyncButton setToolTip: NSLocalizedString( @"The double-click zoom of a single view stays in its own window", nil)];
+    [layoutSyncButton setFont: [NSFont systemFontOfSize: 12]];
+    [layoutSyncButton setTarget: self]; [layoutSyncButton setAction: @selector(layoutSyncChanged:)];
+    [cv addSubview: layoutSyncButton];
+    y -= 22;
     staticCursorButton = [[[NSButton alloc] initWithFrame: NSMakeRect( 36, y, 560, 18)] autorelease];
     [staticCursorButton setButtonType: NSButtonTypeSwitch];
     [staticCursorButton setTitle: NSLocalizedString( @"MPR: plain arrow cursor (no tool / crosshair cursor symbols)", nil)];
@@ -961,6 +971,7 @@ static NSArray *sekhmetMonitorCache = nil;
     [tileButton setState: [d boolForKey: SekhmetTile3DWindowsKey] ? NSControlStateValueOn : NSControlStateValueOff];
     [zoomSyncButton setState: [d boolForKey: @"syncZoomLevelMPR"] ? NSControlStateValueOn : NSControlStateValueOff]; // SekhVet Paket P
     [wlwwSyncButton setState: [d boolForKey: SekhmetMPRSyncWLWWKey] ? NSControlStateValueOn : NSControlStateValueOff]; // SekhVet Paket EC
+    [layoutSyncButton setState: [d boolForKey: SekhmetMPRSyncLayoutKey] ? NSControlStateValueOn : NSControlStateValueOff]; // SekhVet Paket EH
     [staticCursorButton setState: [d boolForKey: @"SekhmetMPRStaticCursor"] ? NSControlStateValueOn : NSControlStateValueOff];
     [magneticButton setState: [d boolForKey: @"MagneticWindows"] ? NSControlStateValueOn : NSControlStateValueOff]; // SekhVet Paket AH
     [centerZoneField setIntegerValue: (NSInteger) [d floatForKey: @"SekhmetMPRCenterZone"]];
@@ -1267,6 +1278,13 @@ static NSArray *sekhmetMonitorCache = nil;
 - (IBAction) zoomSyncChanged:(id) sender // SekhVet Paket P
 {
     [[NSUserDefaults standardUserDefaults] setBool: ([zoomSyncButton state] == NSControlStateValueOn) forKey: @"syncZoomLevelMPR"]; // Paket Q: nur Horos-Zoomsync
+}
+
+- (IBAction) layoutSyncChanged:(id) sender // SekhVet Paket EH
+{
+    BOOL on = ([layoutSyncButton state] == NSControlStateValueOn);
+    [[NSUserDefaults standardUserDefaults] setBool: on forKey: SekhmetMPRSyncLayoutKey];
+    if( on) [MPRController sekhmetLayoutSyncSwitchedOn];   // the front MPR window gives its view sizes to the others
 }
 
 - (IBAction) wlwwSyncChanged:(id) sender // SekhVet Paket EC: the toolbar switches of the open MPR windows follow by their binding

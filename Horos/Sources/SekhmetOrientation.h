@@ -107,6 +107,7 @@ NSString* SekhmetVetLetter( NSString* letter);
 #if SEKHVET_TESTHAKEN
 + (NSString*) debugLettersForView:(DCMView*) view;
 + (void) debugResliceFromEnvironment;    // SEKHVET_RESLICE_TEST=<0 axial|1 coronal|2 sagittal>: vorderster Viewer reslicen, Buchstaben loggen
++ (void) debugLayoutSync;                 // SekhVet Paket EH: SEKHVET_MPR_LAYOUT_TEST=1 (mit SEKHVET_MPR_TEST=all) — Ansichtsgroessen zwischen zwei MPR-Fenstern
 + (void) debugMPRFromEnvironment;         // SEKHVET_MPR_TEST=1: MPR des vordersten Viewers oeffnen (all = aller Viewer), 1/3/6/15 s spaeter Buchstaben je Ebene loggen
 + (void) debugMPRTake;                    // SekhVet Paket AX: SEKHVET_MPR_TAKE_TEST=1 — Anordnung des ersten MPR fuer sein Preset uebernehmen
 + (void) debugMPRTilt;                    // SekhVet Paket AN: SEKHVET_MPR_TILT_TEST="<Grad>,<mm>" — Ebenen schraeg stellen und verschieben

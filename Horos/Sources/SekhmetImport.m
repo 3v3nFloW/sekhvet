@@ -597,7 +597,7 @@ static NSString * const SekhmetDBImportHinweisKey = @"SekhmetDatenbankImportHinw
         [aus addObject: q];
     };
     // Eigene Orte aus den Einstellungen von OsiriX (MD/Lite) und Horos
-    for( NSArray *paar in @[ @[ @"com.rossetantoine.osirix", @"OsiriX" ], @[ @"com.pixmeo.osirixlite", @"OsiriX Lite" ], @[ @"com.horosproject.horos", @"Horos" ] ])
+    for( NSArray *paar in @[ @[ @"com.rossetantoine.osirix", @"OsiriX" ], @[ @"com.pixmeo.osirixlite", @"OsiriX Lite" ], @[ @"org.horosproject.horos", @"Horos" ], @[ @"com.horosproject.horos", @"Horos" ] ])   // SekhVet Paket EI: Horos 3/4 schreibt org.horosproject.horos
     {
         NSString *ort = [self eigenerOrtInEinstellungenVon: [paar objectAtIndex: 0]];
         if( ort) dazu( [self quelleFuerOrdner: ort herkunft: [NSString stringWithFormat: NSLocalizedString( @"%@ settings", nil), [paar objectAtIndex: 1]]]);

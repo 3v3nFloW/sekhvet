@@ -1,6 +1,6 @@
 # SekhVet — Anleitung (Deutsch)
 
-Version 1.1.1, Build 194 · Stand 26.10.2026
+Version 1.1.2, Build 197 · Stand 29.10.2026
 
 > **SekhVet ist ein veterinärmedizinischer DICOM-Viewer und kein zertifiziertes Medizinprodukt.**
 > Es ist weder FDA-cleared noch CE-gekennzeichnet und hat keine formale Validierung durchlaufen.
@@ -424,6 +424,10 @@ Fadenkreuzpunkt, Ebenenlage, Schichtdicke, Rotation/Spiegelung und der Zoom je A
   Fenster, in dem man klickt, die Fensterung vor; ein neu geöffnetes MPR übernimmt sie. Aus = jedes
   Fenster behält seine eigene Fensterung (z. B. Knochen- neben Weichteilkern). Derselbe Schalter
   steht unter **Vet Tools › Display** (5.14).
+- **Ansichtsgrössen** (Vet Tools › Display, Vorgabe aus): an = zieht man in einem MPR-Fenster einen
+  Teiler zwischen den Ansichten, übernehmen die anderen MPR-Fenster dieselbe Aufteilung – als Anteil,
+  passend auch bei verschieden grossen Fenstern. Beim Einschalten gibt das vorderste MPR-Fenster vor,
+  ein neu geöffnetes übernimmt sie. Der Doppelklick-Zoom einer Ansicht bleibt im eigenen Fenster.
 - Neue MPR-Fenster öffnen über ihrer 2D-Serie und werden in der Viewer-Fläche gekachelt; sie
   bleiben frei verschiebbar.
 - Ein zweites MPR übernimmt beim Öffnen die Lage des ersten.
@@ -441,6 +445,17 @@ Fadenkreuzpunkt, Ebenenlage, Schichtdicke, Rotation/Spiegelung und der Zoom je A
   Highpass auf allen drei Ebenen.
 - **Thick Slab** steht ab Werk auf Mean (Horos: MIP). Der Modus (MIP/Mean) gilt je MPR-Fenster,
   nicht für alle offenen MPR.
+- **Keine Streifen bei schrägen Ebenen:** Horos tastet eine dünne MPR-Schicht mit nur ein bis zwei
+  Proben je Bildpunkt ab; steht die Ebene fast, aber nicht genau achsparallel (nach Drehen in nur
+  einer Ansicht), zerfällt das Bild dann in schwarze Zeilen. SekhVet nimmt mindestens vier Proben je
+  Schichtdicke. Geometrie und Messungen ändern sich dadurch nicht.
+- **Film-Export zeigt die ganze Ansicht:** In Horos ist ein QuickTime-Film einer MPR-Ansicht
+  (3D-Rotation oder Stapel) oft nur ein Streifen in der Mitte, weil die mitgedrehte Nachbaransicht
+  ihre Grösse aufzwingt; bei Exportgrösse 512 oder 768 wird zudem ein Quadrat ausgeschnitten.
+  SekhVet exportiert Ausschnitt, Zoom und Drehung so, wie sie in der Ansicht eingestellt sind; 512/768
+  verkleinern die ganze Ansicht (lange Seite), das Seitenverhältnis bleibt (seit Build 196). Ebenso beim
+  DICOM-Export als Bildschirmfoto (MPR, CPR) mit 512/768: ganze Ansicht statt Quadrat, Pixelabstand
+  passend umgerechnet (seit Build 197).
 - **Zoom** (Checkbox in der MPR-Toolbar): koppelt den Zoom der drei Ansichten eines Fensters.
   Vorgabe aus; zwischen Fenstern folgt der Zoom je Ansicht immer. Der Knopf lässt sich über
   Customize Toolbar entfernen.
@@ -602,7 +617,7 @@ Fotos, Screenshots, Laborbefunde und Überweisungen in die Studie legen.
 - **Modality colours:** Studien- und Serienzeilen in der Datenbank nach Modalität getönt
   (CT blau, MR violett, Röntgen grün, US orange …). Abschaltbar.
 - **Magnetic windows:** ab Werk aus, Fenster bleiben frei verschiebbar.
-- **MPR:** Trefferzonen, statischer Cursor, MPR-Sync, Kachelung, Zoom-Sync, WL/WW-Sync.
+- **MPR:** Trefferzonen, statischer Cursor, MPR-Sync, Kachelung, Zoom-Sync, WL/WW-Sync, Ansichtsgrössen.
 - Die Bildschirm-Zeilen (Screen Area) folgen neu angeschlossenen Bildschirmen von selbst; die
   Werte gehören zum jeweiligen Arbeitsplatz (siehe oben).
 
@@ -673,7 +688,7 @@ Knopf **Import Databases** (Horos: „Migration Assistant“).
 - Bilder, die schon in SekhVet liegen, werden erkannt (SOPInstanceUID) und **nicht doppelt**
   angelegt — ein zweiter Import derselben Datenbank holt nur Neues.
 - ROIs, die als DICOM (SR) in der Datenbank liegen, kommen mit. **Nicht** übernommen werden
-  Alben, Berichte und Einstellungen.
+  Alben und Berichte; Einstellungen holt der eigene Dialog in 5.27.
 - Beim ersten Start mit gefundener Fremddatenbank weist SekhVet einmal darauf hin.
 - Warum „SekhVet Data" und nicht „Horos Data": SekhVet ist ein eigenständiger Fork; der
   eigene Datenordner hält die Horos-Datenbank unberührt (und die Marke „Horos" aus SekhVet heraus).
@@ -897,6 +912,49 @@ Fensterpositionen. Unbekannte Einträge in einer Datei werden verworfen.
 - Einige Änderungen (Hanging-Protokolle, Tasten, Symbolleisten) wirken vollständig erst nach einem
   Neustart von SekhVet.
 
+### 5.27 Einstellungen aus Horos / OsiriX übernehmen (File › Import oder Vet Tools) *(neu in 1.1.2)*
+
+Für den Umstieg auf einem Rechner, auf dem Horos oder OsiriX schon eingerichtet ist: Der Dialog
+**Import Settings from Horos / OsiriX…** liest deren Einstellungen und ergänzt SekhVet damit.
+Beim ersten Start öffnet er sich von selbst, wenn SekhVet noch keinen eigenen DICOM-Knoten hat
+und eine Quelle gefunden wird; später jederzeit über **File › Import** oder **Vet Tools**.
+
+- **Quellen:** Horos (`org.horosproject.horos`, ältere Builds `com.horosproject.horos`), OsiriX und
+  OsiriX Lite. Mehrere Treffer stehen in der Liste **Source**, die zuletzt geänderte zuerst.
+- **Gruppen** (alle vorangehakt): DICOM-Knoten · Listener (AE-Titel, Port) · Tastenkürzel ·
+  Fenster-/CLUT-/Deckkraft-Presets · Anzeige (ROI-Farben, Annotationen, Hanging Protocols,
+  Standardwerkzeug) · Query/Retrieve-Einstellungen. Der Datenbank-Ort und „Horos Data“ bleiben
+  immer unangetastet; Studien holt 5.18.
+- **Ergänzen, nicht ersetzen:** Was Sie in SekhVet schon selbst eingestellt haben, bleibt. Nur
+  Fehlendes wird gefüllt; Listen werden gemischt (Knoten gleich bei AE + Adresse + Port, Tasten
+  je Funktion, Presets je Name). Der Haken **Overwrite existing SekhVet settings** (ab Werk aus)
+  kehrt das um.
+- **DICOM-Knoten:** Jeder Knoten der Quelle wird im Hintergrund angesprochen (TCP, 3 s, dann
+  C-ECHO) und das Ergebnis steht in der Spalte **Check**: *echo OK*, *port open, echo rejected*
+  oder *no answer*. Tote Knoten sind vorangehakt, Sie können sie abwählen.
+- **Listener — die Frage, die über den Parallelbetrieb entscheidet:**
+  - **New AE title and port:** SekhVet bekommt einen eigenen AE-Titel (Vorschlag: der Horos-Titel
+    plus „SV“, höchstens 16 Zeichen) und einen eigenen Port (Vorschlag: Horos-Port + 1). Horos oder
+    OsiriX können weiterlaufen. **Das PACS kennt den neuen AE-Titel nicht:** dort muss dieser Mac
+    mit neuem Titel und Port als zweites Ziel eingetragen werden, sonst scheitert der Abruf
+    (C-MOVE), obwohl die Abfrage geht.
+  - **Same as the source:** AE-Titel und Port kommen 1:1 aus Horos/OsiriX, das PACS braucht keine
+    Änderung — aber Horos/OsiriX und SekhVet dürfen **nie gleichzeitig** laufen, der zweite kann
+    den Port nicht öffnen.
+  - Die Antwort hier hat Vorrang vor der Ergänzen-Regel. **Die Listener-Werte greifen erst nach
+    einem Neustart von SekhVet:** die Meldung nach der Übernahme bietet „Quit and reopen SekhVet“
+    an (SekhVet öffnet sich danach von selbst); mit „Later“ bleibt der alte Port offen, bis Sie
+    SekhVet beenden. Kontrolle: Preferences › Listener. Hat Horos keinen eigenen AE-Titel
+    gesetzt (es nimmt dann den Rechnernamen), übernimmt SekhVet bei „Same as the source“
+    ebenfalls den Rechnernamen.
+- **Sicherung:** Vor dem Schreiben legt SekhVet seine bisherigen Einstellungen als
+  `~/Library/Application Support/SekhVet/prefs-vor-import-<Datum>.plist` ab; der Pfad steht in der
+  Meldung nach der Übernahme. Zurück geht es im Terminal mit
+  `defaults import vet.kappa1.sekhvet.horos <Datei>` bei beendetem SekhVet. Kann die Sicherung
+  nicht geschrieben werden, wird nichts übernommen.
+- Gibt es keine Quelle, sagt der Dialog „Nothing to take over“. Der Erststart-Dialog kommt nur
+  einmal; über das Menü ist er jederzeit wieder da.
+
 ## 6. Bedienung, die anders ist als in Horos
 
 | Thema | Horos | SekhVet |
@@ -916,6 +974,8 @@ Fensterpositionen. Unbekannte Einträge in einer Datei werden verworfen.
 | Propagate settings | je nach Protokoll wieder an | bleibt aus, bis man es einschaltet |
 | Magnetische Fenster | an | aus |
 | Thick Slab | MIP | Mean |
+| Dünne MPR-Schicht, Ebene fast achsparallel | schwarze Streifen möglich | mindestens 4 Proben je Schicht, keine Streifen |
+| MPR als Film / DICOM-Bildschirmfoto exportieren | oft nur ein Streifen bzw. mittiges Quadrat | ganze Ansicht wie eingestellt |
 | Serie öffnen | Regler mit einem Strich je Bild (langsam bei grossen Serien) | ohne Striche, deutlich schneller |
 | Update-Prüfung | stündlich gegen Horos-Server | wahlweise, einmal täglich gegen GitHub; nur Hinweis |
 | Horos Cloud | Plugin | entfernt |
@@ -927,7 +987,19 @@ Alle SekhVet-Fenster öffnen sich innerhalb der Viewer-Fläche. Alle Toolbar-Kn�
 lassen sich über **Customize Toolbar** verschieben oder entfernen; neue Knöpfe erscheinen einmal
 automatisch, entfernt man sie, bleiben sie weg.
 
-## 7. Stand 1.1, Grenzen und bekannte Einschränkungen (Build 190)
+## 7. Stand 1.1.2, Grenzen und bekannte Einschränkungen (Build 197)
+
+**Neu in 1.1.2, erst an wenigen Geräten geprüft:**
+
+- **Einstellungen aus Horos / OsiriX übernehmen** (5.27): an einem Klinikrechner mit Horos 4
+  (drei DICOM-Knoten, 41 Tastenkürzel) und an einem frisch installierten SekhVet geprüft
+  (Oktober 2026). Der Datenbank-Import (5.18) findet jetzt auch Horos-Installationen, die ihre
+  Einstellungen unter `org.horosproject.horos` ablegen (Horos 3 und 4).
+- **Double MPR: Ansichtsgrössen im Gleichlauf** (5.10, Vet Tools › Display, Vorgabe aus): an einem
+  Gerät geprüft (Oktober 2026).
+- **MPR-Verbesserungen** (5.11): keine Streifen bei schrägen dünnen Schichten, Messwerte wieder in HU,
+  Film- und DICOM-Bildschirmfoto-Export zeigen die ganze Ansicht — an CT-Studien eines Geräts
+  geprüft (Oktober 2026).
 
 **Neu in 1.1, erst an wenigen Geräten geprüft:**
 
